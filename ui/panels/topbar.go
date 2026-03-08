@@ -14,26 +14,26 @@ var (
 			Padding(0, 1)
 
 	brandStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("86")).
+			Foreground(lipgloss.Color("117")).
 			Bold(true)
 
 	infoStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("244"))
+			Foreground(lipgloss.Color("117"))
 
 	sepStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("238"))
+			Foreground(lipgloss.Color("117"))
 
 	dividerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("238"))
+			Foreground(lipgloss.Color("117"))
 
 	bannerLabelStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("240"))
+				Foreground(lipgloss.Color("117"))
 
 	bannerValueStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("252"))
+				Foreground(lipgloss.Color("117"))
 
 	bannerDimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).
+			Foreground(lipgloss.Color("117")).
 			Italic(true)
 )
 
