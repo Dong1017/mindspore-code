@@ -300,24 +300,12 @@ func renderPanel(id model.TrainPanelID, tv model.TrainWorkspaceState, width, hei
 	bodyHeight := maxInt(1, height-3)
 	bodyWidth := maxInt(1, width-4)
 
-	// For logs panel, pass scroll info so renderPanelBox can place the
-	// scrollbar flush against the right border.
-	var totalLines, scrollOffset int
-	if id == model.TrainPanelLogs {
-		if run := tv.ActiveRun(); run != nil {
-			totalLines = len(run.Logs.Lines)
-			if totalLines > bodyHeight {
-				scrollOffset = totalLines - bodyHeight
-			}
-		}
-	}
-
 	body := panelBody(id, tv, bodyWidth, bodyHeight)
 	state := tv.Panels[id]
 	focused := state != nil && state.Focused
 	collapsed := state != nil && state.Collapsed
 	accent := panelAccent(id, tv)
-	return renderPanelBoxWithScroll(title, body, width, height, focused, collapsed, accent, totalLines, scrollOffset)
+	return renderPanelBoxWithScroll(title, body, width, height, focused, collapsed, accent, 0, 0)
 }
 
 func panelTitle(id model.TrainPanelID, tv model.TrainWorkspaceState) string {

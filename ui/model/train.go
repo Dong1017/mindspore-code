@@ -561,12 +561,6 @@ func (s *TrainWorkspaceState) SetActiveRun(runID string) {
 		return
 	}
 	s.ActiveRunID = runID
-	switch run.Phase {
-	case TrainPhaseRunning, TrainPhaseEvaluating:
-		s.Panels[TrainPanelStatus].Collapsed = true
-	case TrainPhaseSetup, TrainPhaseReady, TrainPhaseFailed, TrainPhaseDriftDetected, TrainPhaseAnalyzing, TrainPhaseFixing, TrainPhaseStopped, TrainPhaseCompleted:
-		s.Panels[TrainPanelStatus].Collapsed = false
-	}
 	s.RefreshActions()
 }
 
@@ -599,49 +593,33 @@ func (s *TrainWorkspaceState) SetRunPhase(runID string, phase TrainPhase) {
 	run := s.EnsureRun(runID, "", "", "", "", "")
 	run.Phase = phase
 
+	// Derive stage from phase; SetStage handles panel collapse layout.
 	switch phase {
 	case TrainPhaseSetup:
-		s.Stage = StageSetup
 		run.Ready = false
-		s.Panels[TrainPanelStatus].Collapsed = false
-		s.Panels[TrainPanelMetrics].Collapsed = true
-		s.Panels[TrainPanelLogs].Collapsed = true
+		s.SetStage(StageSetup)
 	case TrainPhaseReady:
-		s.Stage = StageReady
 		run.Ready = true
-		s.Panels[TrainPanelStatus].Collapsed = false
-		s.Panels[TrainPanelMetrics].Collapsed = true
-		s.Panels[TrainPanelLogs].Collapsed = true
+		s.SetStage(StageReady)
 	case TrainPhaseRunning, TrainPhaseEvaluating:
-		s.Stage = StageRunning
 		run.StatusMessage = ""
 		run.Logs.AutoFollow = true
-		s.Panels[TrainPanelMetrics].Collapsed = false
-		s.Panels[TrainPanelLogs].Collapsed = false
-		if s.ActiveRunID == run.ID {
-			s.Panels[TrainPanelStatus].Collapsed = true
-		}
-	case TrainPhaseFailed, TrainPhaseDriftDetected, TrainPhaseAnalyzing, TrainPhaseFixing, TrainPhaseStopped:
+		s.SetStage(StageRunning)
+	case TrainPhaseAnalyzing:
 		run.Ready = false
-		switch phase {
-		case TrainPhaseAnalyzing:
-			s.Stage = StageAnalyzing
-		case TrainPhaseFixing:
-			s.Stage = StageFixing
-		case TrainPhaseStopped:
-			s.Stage = StageDone
-		default:
-			s.Stage = StageRunning
-		}
-		if s.ActiveRunID == run.ID {
-			s.Panels[TrainPanelStatus].Collapsed = false
-		}
+		s.SetStage(StageAnalyzing)
+	case TrainPhaseFixing:
+		run.Ready = false
+		s.SetStage(StageFixing)
+	case TrainPhaseStopped:
+		run.Ready = false
+		s.SetStage(StageDone)
+	case TrainPhaseFailed, TrainPhaseDriftDetected:
+		run.Ready = false
+		s.SetStage(StageRunning)
 	case TrainPhaseCompleted:
-		s.Stage = StageDone
 		run.Logs.AutoFollow = false
-		if s.ActiveRunID == run.ID {
-			s.Panels[TrainPanelStatus].Collapsed = false
-		}
+		s.SetStage(StageDone)
 	}
 
 	s.RefreshActions()
