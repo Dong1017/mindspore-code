@@ -64,66 +64,6 @@ go run ./cmd/ms-cli
 ./ms-cli --api-key sk-xxx
 ```
 
-## Commands
-
-In TUI input, use slash commands:
-
-### Project Commands
-- `/roadmap status [path]` (default: `roadmap.yaml`)
-- `/weekly status [path]` (default: `weekly.md`)
-
-### Model Commands
-- `/model` - Show current model configuration
-- `/model <model-name>` - Switch to a new model
-- `/model <openai:model>` - Backward-compatible provider prefix format (e.g., `/model openai:gpt-4o-mini`)
-
-### Session Commands
-- `/compact` - Compact conversation context to save tokens
-- `/clear` - Clear chat history
-- `/mouse [on|off|toggle|status]` - Control mouse wheel scrolling
-- `/exit` - Exit the application
-- `/help` - Show available commands
-
-Any non-slash input is treated as a normal task prompt and routed to the engine.
-
-### Slash Command Autocomplete
-
-Type `/` to see available slash commands. Use `↑`/`↓` keys to navigate and `Tab` or `Enter` to select.
-
-## Keybindings
-
-| Key | Action |
-|-----|--------|
-| `enter` | Send input |
-| `mouse wheel` | Scroll chat |
-| `pgup` / `pgdn` | Scroll chat |
-| `up` / `down` | Scroll chat / Navigate slash suggestions |
-| `home` / `end` | Jump to top / bottom |
-| `tab` / `enter` | Accept slash suggestion |
-| `esc` | Cancel slash suggestions |
-| `/` | Start a slash command |
-| `ctrl+c` | Quit |
-
-## Project Status Data
-
-Roadmap status engine:
-
-- `internal/project/roadmap.go`
-- Parses roadmap YAML, validates schema, and computes phase + overall progress.
-
-Weekly update parser (Markdown + YAML front matter):
-
-- `internal/project/weekly.go`
-- Template: `docs/updates/WEEKLY_TEMPLATE.md`
-
-Public roadmap page:
-
-- `docs/roadmap/ROADMAP.md`
-
-Project reports:
-
-- `docs/updates/` (see latest `*-report.md`)
-
 ## Repository Structure
 
 See [`docs/arch.md`](docs/arch.md) and [`docs/ms-cli-arch.md`](docs/ms-cli-arch.md)
@@ -135,41 +75,6 @@ source of truth for either:
 
 - the current checkout layout, or
 - explicitly labeled target-state planning docs under [`docs/`](docs/)
-
-## Configuration
-
-Configuration can be provided via:
-
-1. **Config file** (`mscli.yaml` or `~/.config/mscli/config.yaml`)
-2. **Environment variables**
-3. **Command-line flags** (highest priority)
-
-### Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `MSCLI_BASE_URL` | OpenAI-compatible API base URL (higher priority) |
-| `MSCLI_MODEL` | Model name |
-| `MSCLI_API_KEY` | API key (higher priority) |
-| `OPENAI_BASE_URL` | API base URL (fallback) |
-| `OPENAI_MODEL` | Model name (fallback) |
-| `OPENAI_API_KEY` | API key (fallback) |
-
-### Example Config File
-
-```yaml
-model:
-  url: https://api.openai.com/v1
-  model: gpt-4o-mini
-  key: ""
-  temperature: 0.7
-budget:
-  max_tokens: 32768
-  max_cost_usd: 10
-context:
-  max_tokens: 24000
-  compaction_threshold: 0.85
-```
 
 ## Known Limitations
 
