@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vigo999/ms-cli/integrations/skills"
 	"github.com/vigo999/ms-cli/internal/project"
 	"github.com/vigo999/ms-cli/permission"
 	"github.com/vigo999/ms-cli/ui/model"
@@ -41,6 +42,8 @@ func (a *Application) handleCommand(input string) {
 		a.cmdTrain(parts[1:])
 	case "/mouse":
 		a.cmdMouse(parts[1:])
+	case "/skill":
+		a.cmdSkill(parts[1:])
 	case "/help":
 		a.cmdHelp()
 	default:
@@ -363,9 +366,43 @@ func (a *Application) cmdMouse(args []string) {
 	}
 }
 
+func (a *Application) cmdSkill(args []string) {
+	if a.skillLoader == nil {
+		a.EventCh <- model.Event{Type: model.AgentReply, Message: "Skills not available."}
+		return
+	}
+	if len(args) == 0 {
+		summaries := a.skillLoader.List()
+		if len(summaries) == 0 {
+			a.EventCh <- model.Event{Type: model.AgentReply, Message: "No skills available."}
+			return
+		}
+		msg := "Available skills:\n\n" + skills.FormatSummaries(summaries) + "\nUsage: /skill <name> [request...]"
+		a.EventCh <- model.Event{Type: model.AgentReply, Message: msg}
+		return
+	}
+
+	skillName := args[0]
+	content, err := a.skillLoader.Load(skillName)
+	if err != nil {
+		a.EventCh <- model.Event{
+			Type:    model.ToolError,
+			Message: fmt.Sprintf("Failed to load skill %q: %v", skillName, err),
+		}
+		return
+	}
+
+	desc := content
+	if len(args) > 1 {
+		desc = content + "\n\nUser request: " + strings.Join(args[1:], " ")
+	}
+	go a.runTask(desc)
+}
+
 func (a *Application) cmdHelp() {
 	helpText := `Available commands:
 
+  /skill [name] [request] Load and run a skill (e.g. /skill pdf extract text from report.pdf)
   /train <model> <method> Set up and run model training (e.g. /train qwen3 lora)
   /roadmap status [path]  Check roadmap status (default: roadmap.yaml)
   /weekly status [path]   Check weekly update status (default: weekly.md)

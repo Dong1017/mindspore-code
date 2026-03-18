@@ -39,7 +39,7 @@ func NewEngine(cfg EngineConfig, provider llm.Provider, tools *tools.Registry) *
 		cfg.Temperature = 0.7
 	}
 	if cfg.SystemPrompt == "" {
-		cfg.SystemPrompt = defaultSystemPrompt()
+		cfg.SystemPrompt = DefaultSystemPrompt()
 	}
 
 	engine := &Engine{
@@ -345,7 +345,7 @@ func extractPathArg(raw json.RawMessage) string {
 	return ""
 }
 
-func defaultSystemPrompt() string {
+func DefaultSystemPrompt() string {
 	return `You are an AI assistant that helps users with software development tasks.
 
 You have access to the following tools:
