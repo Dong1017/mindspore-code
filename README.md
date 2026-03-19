@@ -6,7 +6,7 @@ AI infrastructure agent
 
 Current documentation in [`docs/`](docs/) is split into:
 
-- shared repository policy: [`docs/ai/contributor-guide.md`](docs/ai/contributor-guide.md)
+- shared repository policy: [`docs/agent-contributor-guide.md`](docs/agent-contributor-guide.md)
 - current architecture references:
   - [`docs/arch.md`](docs/arch.md)
   - [`docs/ms-cli-arch.md`](docs/ms-cli-arch.md)

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Follow the shared repository policy in [`docs/ai/contributor-guide.md`](./docs/ai/contributor-guide.md).
+Follow the shared repository policy in [`docs/agent-contributor-guide.md`](./docs/agent-contributor-guide.md).
 
 Codex/OpenAI-specific notes:
 
@@ -9,5 +9,5 @@ Codex/OpenAI-specific notes:
 - When architecture notes conflict, trust the current code and update the docs.
 - For current architecture, read [`docs/arch.md`](./docs/arch.md).
 - For design rationale, read docs under [`docs/design/`](./docs/design/).
-- For implementation plans, read docs under [`docs/impl/`](./docs/impl/).
+- For implementation plans, read docs under [`docs/impl-guide/`](./docs/impl-guide/).
 - For deferred features, read [`docs/features-backlog.md`](./docs/features-backlog.md).

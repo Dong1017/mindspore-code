@@ -2,7 +2,7 @@
 
 ## Authoritative Design Source
 
-Use `docs/design/factory/ms-factory-impl-guide.md` (NOT the older `docs/design/factory/incubating-factory-plan.md`
+Use `docs/design/ms-factory-impl-guide.md` (NOT the older `docs/design/incubating-factory-plan.md`
 which uses outdated terms like `failure`, `perf_feature`, `algo_feature` and 8
 lifecycle states).
 
