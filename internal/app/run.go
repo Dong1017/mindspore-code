@@ -19,12 +19,20 @@ const provideAPIKeyFirstMsg = "provide api key first"
 
 // Run parses CLI args, wires dependencies, and starts the application.
 func Run(args []string) error {
-	cfg, err := parseBootstrapConfig(args)
-	if err != nil {
+	fs := flag.NewFlagSet("ms-cli", flag.ContinueOnError)
+	url := fs.String("url", "", "OpenAI-compatible base URL")
+	modelFlag := fs.String("model", "", "Model name")
+	apiKey := fs.String("api-key", "", "API key")
+
+	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	app, err := Wire(cfg)
+	app, err := Wire(BootstrapConfig{
+		URL:   *url,
+		Model: *modelFlag,
+		Key:   *apiKey,
+	})
 	if err != nil {
 		return err
 	}

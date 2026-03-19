@@ -1,0 +1,38 @@
+version: "v0.1"
+channel: stable
+created_at: "2026-03-19"
+card_count:
+  operators: 6
+  known_issues: 3
+  perf_features: 9
+  algo_features: 9
+  models: 1
+cards:
+  - { id: dsa, kind: operator, path: operators/dsa.yaml }
+  - { id: adam, kind: operator, path: operators/adam.yaml }
+  - { id: fused-adam, kind: operator, path: operators/fused-adam.yaml }
+  - { id: softmax, kind: operator, path: operators/softmax.yaml }
+  - { id: flash-attention, kind: operator, path: operators/flash-attention.yaml }
+  - { id: sdpa, kind: operator, path: operators/sdpa.yaml }
+  - { id: dsa-torch27-ascend, kind: known_issue, path: known_issues/dsa-torch27-ascend.yaml }
+  - { id: fp16-softmax-drift, kind: known_issue, path: known_issues/fp16-softmax-drift.yaml }
+  - { id: cann-flash-attn-version, kind: known_issue, path: known_issues/cann-flash-attn-version.yaml }
+  - { id: fused-adam, kind: perf_feature, path: perf_features/fused-adam.yaml }
+  - { id: flash-attn-v2, kind: perf_feature, path: perf_features/flash-attn-v2.yaml }
+  - { id: gradient-ckpt, kind: perf_feature, path: perf_features/gradient-ckpt.yaml }
+  - { id: bf16-mixed, kind: perf_feature, path: perf_features/bf16-mixed.yaml }
+  - { id: graph-mode, kind: perf_feature, path: perf_features/graph-mode.yaml }
+  - { id: comm-overlap, kind: perf_feature, path: perf_features/comm-overlap.yaml }
+  - { id: zero-offload, kind: perf_feature, path: perf_features/zero-offload.yaml }
+  - { id: sequence-parallel, kind: perf_feature, path: perf_features/sequence-parallel.yaml }
+  - { id: selective-recompute, kind: perf_feature, path: perf_features/selective-recompute.yaml }
+  - { id: mhc, kind: algo_feature, path: algo_features/mhc.yaml }
+  - { id: lora-plus, kind: algo_feature, path: algo_features/lora-plus.yaml }
+  - { id: galore, kind: algo_feature, path: algo_features/galore.yaml }
+  - { id: dpo, kind: algo_feature, path: algo_features/dpo.yaml }
+  - { id: rope-scaling, kind: algo_feature, path: algo_features/rope-scaling.yaml }
+  - { id: moe-routing, kind: algo_feature, path: algo_features/moe-routing.yaml }
+  - { id: flash-attn, kind: algo_feature, path: algo_features/flash-attn.yaml }
+  - { id: sparse-attn, kind: algo_feature, path: algo_features/sparse-attn.yaml }
+  - { id: ddpm-noise, kind: algo_feature, path: algo_features/ddpm-noise.yaml }
+  - { id: qwen3-7b-lora-ascend-910b, kind: model, path: models/qwen3-7b-lora-ascend-910b.yaml }

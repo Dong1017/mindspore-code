@@ -15,8 +15,8 @@ import (
 	"github.com/vigo999/ms-cli/agent/session"
 	"github.com/vigo999/ms-cli/configs"
 	"github.com/vigo999/ms-cli/integrations/llm"
-	openai "github.com/vigo999/ms-cli/integrations/llm/openai"
 	"github.com/vigo999/ms-cli/integrations/skills"
+	providerpkg "github.com/vigo999/ms-cli/integrations/llm/provider"
 	itrain "github.com/vigo999/ms-cli/internal/train"
 	"github.com/vigo999/ms-cli/permission"
 	rshell "github.com/vigo999/ms-cli/runtime/shell"
@@ -37,7 +37,6 @@ const Version = "MindSpore AI Infra Agent CLI. v0.2.0"
 type Application struct {
 	Engine        *loop.Engine
 	EventCh       chan model.Event
-	Demo          bool
 	llmReady      bool
 	WorkDir       string
 	RepoURL       string
@@ -46,7 +45,6 @@ type Application struct {
 	toolRegistry  *tools.Registry
 	ctxManager    *agentctx.Manager
 	permService   permission.PermissionService
-	stateManager  *configs.StateManager
 	session       *session.Session
 	replayBacklog []model.Event
 
@@ -70,8 +68,6 @@ type Application struct {
 
 // BootstrapConfig holds bootstrap configuration.
 type BootstrapConfig struct {
-	Demo            bool
-	ConfigPath      string
 	URL             string
 	Model           string
 	Key             string
@@ -81,28 +77,16 @@ type BootstrapConfig struct {
 
 // Wire builds and returns the Application.
 func Wire(cfg BootstrapConfig) (*Application, error) {
-	configPath := cfg.ConfigPath
-	if configPath == "" {
-		configPath = configs.FindConfigFile()
-	}
-
-	config, err := configs.LoadWithEnv(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("load config: %w", err)
-	}
-
 	workDir, err := os.Getwd()
 	if err != nil {
 		workDir = "."
 	}
 	workDir, _ = filepath.Abs(workDir)
 
-	stateManager := configs.NewStateManager(workDir)
-	if err := stateManager.Load(); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to load state: %v\n", err)
+	config, err := configs.LoadWithEnv()
+	if err != nil {
+		return nil, fmt.Errorf("load config: %w", err)
 	}
-	stateManager.ApplyToConfig(config)
-	configs.ApplyEnvOverrides(config)
 
 	if cfg.URL != "" {
 		config.Model.URL = cfg.URL
@@ -116,17 +100,17 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 
 	var provider llm.Provider
 	llmReady := true
-	if cfg.Demo {
-		llmReady = false
-	} else {
-		provider, err = initProvider(config.Model)
-		if err != nil {
-			if errors.Is(err, errAPIKeyNotFound) {
-				llmReady = false
-				provider = nil
-			} else {
-				return nil, fmt.Errorf("init provider: %w", err)
-			}
+	resolveOpts := providerpkg.ResolveOptions{
+		PreferConfigAPIKey:  strings.TrimSpace(cfg.Key) != "",
+		PreferConfigBaseURL: strings.TrimSpace(cfg.URL) != "",
+	}
+	provider, err = initProvider(config.Model, resolveOpts)
+	if err != nil {
+		if errors.Is(err, errAPIKeyNotFound) {
+			llmReady = false
+			provider = nil
+		} else {
+			return nil, fmt.Errorf("init provider: %w", err)
 		}
 	}
 
@@ -216,7 +200,6 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 	return &Application{
 		Engine:        engine,
 		EventCh:       make(chan model.Event, 64),
-		Demo:          cfg.Demo,
 		WorkDir:       workDir,
 		RepoURL:       "github.com/vigo999/ms-cli",
 		Config:        config,
@@ -224,7 +207,6 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		toolRegistry:  toolRegistry,
 		ctxManager:    ctxManager,
 		permService:   permService,
-		stateManager:  stateManager,
 		session:       runtimeSession,
 		replayBacklog: replayBacklog,
 		llmReady:      llmReady,
@@ -234,8 +216,13 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 
 // SetProvider updates model/key and reinitializes the engine.
 func (a *Application) SetProvider(providerName, modelName, apiKey string) error {
-	if providerName != "" && providerName != "openai" {
-		return fmt.Errorf("unsupported provider: %s (only openai-compatible is supported)", providerName)
+	normalizedProvider := providerpkg.NormalizeProvider(providerName)
+	if normalizedProvider != "" && !providerpkg.IsSupportedProvider(normalizedProvider) {
+		return fmt.Errorf("unsupported provider: %s", providerName)
+	}
+
+	if normalizedProvider != "" {
+		a.Config.Model.Provider = normalizedProvider
 	}
 
 	if modelName != "" {
@@ -245,7 +232,10 @@ func (a *Application) SetProvider(providerName, modelName, apiKey string) error 
 		a.Config.Model.Key = apiKey
 	}
 
-	provider, err := initProvider(a.Config.Model)
+	resolveOpts := providerpkg.ResolveOptions{
+		PreferConfigAPIKey: strings.TrimSpace(apiKey) != "",
+	}
+	provider, err := initProvider(a.Config.Model, resolveOpts)
 	if err != nil {
 		if err == errAPIKeyNotFound {
 			a.llmReady = false
@@ -271,50 +261,21 @@ func (a *Application) SetProvider(providerName, modelName, apiKey string) error 
 	a.Engine = newEngine
 	a.provider = provider
 
-	if a.stateManager != nil {
-		a.stateManager.SaveFromConfig(a.Config)
-		if err := a.stateManager.Save(); err != nil {
-			return fmt.Errorf("save state: %w", err)
-		}
-	}
-
 	return nil
 }
 
-// SaveState saves current configuration to persistent state.
-func (a *Application) SaveState() error {
-	if a.stateManager == nil {
-		return nil
-	}
-	a.stateManager.SaveFromConfig(a.Config)
-	return a.stateManager.Save()
-}
-
-func initProvider(cfg configs.ModelConfig) (llm.Provider, error) {
-	key := strings.TrimSpace(cfg.Key)
-	if key == "" {
-		key = strings.TrimSpace(os.Getenv("MSCLI_API_KEY"))
-	}
-	if key == "" {
-		key = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
-	}
-	if key == "" {
-		return nil, errAPIKeyNotFound
-	}
-
-	url := strings.TrimSpace(cfg.URL)
-	if url == "" {
-		url = "https://api.openai.com/v1"
-	}
-
-	client, err := openai.NewClient(openai.Config{
-		Key:     key,
-		URL:     url,
-		Model:   cfg.Model,
-		Timeout: time.Duration(cfg.TimeoutSec) * time.Second,
-	})
+func initProvider(cfg configs.ModelConfig, opts providerpkg.ResolveOptions) (llm.Provider, error) {
+	resolved, err := providerpkg.ResolveConfigWithOptions(cfg, opts)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, providerpkg.ErrMissingAPIKey) {
+			return nil, errAPIKeyNotFound
+		}
+		return nil, fmt.Errorf("resolve provider config: %w", err)
+	}
+
+	client, err := providerpkg.DefaultManager().Build(resolved)
+	if err != nil {
+		return nil, fmt.Errorf("build provider: %w", err)
 	}
 	return client, nil
 }

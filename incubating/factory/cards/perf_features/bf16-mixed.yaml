@@ -1,0 +1,27 @@
+kind: perf_feature
+id: bf16-mixed
+name: BF16 Mixed Precision
+category: compute
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+description: |
+  Use bfloat16 mixed precision training. BF16 has the same dynamic range
+  as fp32 (8 exponent bits) but lower precision (7 mantissa bits). Gradients
+  are kept in fp32 to maintain training stability. Avoids the precision
+  drift issues of fp16 on Ascend.
+expected_gain: "better precision/perf tradeoff vs fp16"
+platforms: [ascend-910b]
+compatible_methods: [lora, full]
+config_diff: |
+  --- a/configs/qwen3_lora.yaml
+  +++ b/configs/qwen3_lora.yaml
+  @@ -6,3 +6,5 @@
+   precision:
+  -  dtype: "fp16"
+  +  dtype: "bf16"
+  +  mixed_precision: True
+  +  grad_dtype: "fp32"  # keep grads in fp32

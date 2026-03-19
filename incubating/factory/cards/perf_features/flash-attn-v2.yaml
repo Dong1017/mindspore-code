@@ -1,0 +1,27 @@
+kind: perf_feature
+id: flash-attn-v2
+name: Flash Attention v2
+category: compute
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+description: |
+  Replace standard attention with Flash Attention v2, an IO-aware fused
+  kernel that reduces memory reads/writes during attention computation.
+  Uses tiling and recomputation to avoid materializing the full attention
+  matrix.
+expected_gain: "faster forward pass, reduced memory"
+platforms: [ascend-910b]
+compatible_methods: [lora, full]
+config_diff: |
+  --- a/configs/qwen3_lora.yaml
+  +++ b/configs/qwen3_lora.yaml
+  @@ -12,3 +12,5 @@
+   attention:
+  -  backend: "default"
+  +  backend: "flash_attention_2"
+  +  flash_attn_version: 2
+  +  use_sliding_window: True

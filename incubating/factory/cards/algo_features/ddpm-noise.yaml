@@ -1,0 +1,26 @@
+kind: algo_feature
+id: ddpm-noise
+name: DDPM Noise Schedule
+category: loss
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+description: |
+  Apply denoising diffusion probabilistic model (DDPM) noise scheduling
+  to the training process. Uses a cosine noise schedule with 1000
+  timesteps to improve sample quality through progressive denoising.
+expected_gain: "improved sample quality via cosine noise schedule"
+platforms: [ascend-910b]
+compatible_methods: [lora, full]
+config_diff: |
+  --- a/configs/qwen3_lora.yaml
+  +++ b/configs/qwen3_lora.yaml
+  @@ -35,2 +35,6 @@
+   training:
+  +  noise_schedule: "cosine"
+  +  timesteps: 1000
+  +  beta_start: 0.0001
+  +  beta_end: 0.02

@@ -1,0 +1,28 @@
+kind: perf_feature
+id: zero-offload
+name: ZeRO Offload
+category: memory
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+description: |
+  Offload optimizer states to CPU memory using ZeRO stage 2. Reduces
+  GPU/NPU memory pressure by keeping optimizer states and gradients
+  on CPU with pinned memory for fast transfers. Communication is
+  overlapped with computation.
+expected_gain: "reduced device memory usage for optimizer states"
+platforms: [ascend-910b]
+compatible_methods: [lora, full]
+config_diff: |
+  --- a/configs/qwen3_lora.yaml
+  +++ b/configs/qwen3_lora.yaml
+  @@ -22,4 +22,8 @@
+   optimizer:
+     type: "adam"
+  +  zero_stage: 2
+  +  offload_device: "cpu"
+  +  offload_pin_memory: True
+  +  overlap_comm: True

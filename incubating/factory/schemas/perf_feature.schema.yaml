@@ -1,0 +1,45 @@
+required: [kind, id, lifecycle, source, confidence, name, category]
+properties:
+  kind:
+    const: perf_feature
+  id:
+    type: string
+  name:
+    type: string
+  category:
+    enum: [compute, memory, communication, compilation]
+  lifecycle:
+    type: object
+    properties:
+      state:
+        enum: [draft, stable, archived]
+  source:
+    type: object
+    properties:
+      kind:
+        enum: [bootstrap, execution, manual]
+  confidence:
+    type: object
+    properties:
+      level:
+        enum: [bootstrap, observed, verified]
+  description:
+    type: string
+  expected_gain:
+    type: string
+  platforms:
+    type: array
+    items:
+      type: string
+  compatible_methods:
+    type: array
+    items:
+      type: string
+  config_diff:
+    type: string
+  code_diff:
+    type: string
+  dependencies:
+    type: array
+    items:
+      type: string

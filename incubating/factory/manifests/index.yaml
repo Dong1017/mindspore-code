@@ -1,0 +1,4 @@
+channels:
+  stable:
+    latest: "v0.1"
+    url: "packs/stable/v0.1/"

@@ -1,0 +1,27 @@
+kind: algo_feature
+id: dpo
+name: DPO
+category: loss
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+description: |
+  Direct Preference Optimization (DPO). Replaces reward model training
+  with a direct loss on preference pairs. Computes log-probability ratios
+  between policy and reference model on chosen vs rejected responses.
+expected_gain: "direct preference optimization for human alignment"
+platforms: [ascend-910b]
+compatible_methods: [lora, full]
+config_diff: |
+  --- a/configs/qwen3_lora.yaml
+  +++ b/configs/qwen3_lora.yaml
+  @@ -18,4 +18,7 @@
+   loss:
+  -  type: "cross_entropy"
+  +  type: "dpo_loss"
+  +  dpo_beta: 0.1
+  +  ref_model: "qwen3-base-frozen"
+  +  label_smoothing: 0.0

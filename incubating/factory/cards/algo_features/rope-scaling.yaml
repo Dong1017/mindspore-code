@@ -1,0 +1,28 @@
+kind: algo_feature
+id: rope-scaling
+name: RoPE Scaling
+category: scaling
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+description: |
+  Extend context length via dynamic NTK-aware Rotary Position Embedding
+  (RoPE) interpolation. Scales the frequency base dynamically based on
+  sequence length to support longer contexts without retraining from
+  scratch.
+expected_gain: "4x context length extension"
+platforms: [ascend-910b]
+compatible_methods: [lora, full]
+config_diff: |
+  --- a/configs/qwen3_lora.yaml
+  +++ b/configs/qwen3_lora.yaml
+  @@ -10,2 +10,6 @@
+   model:
+  +  position_encoding:
+  +    type: "rope"
+  +    rope_scaling:
+  +      type: "dynamic_ntk"
+  +      factor: 4.0  # extend context 4x

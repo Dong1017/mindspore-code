@@ -1,0 +1,27 @@
+kind: algo_feature
+id: galore
+name: GaLore
+category: optimizer
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+description: |
+  Gradient Low-Rank Projection (GaLore). Projects gradients into a
+  low-rank subspace to reduce optimizer memory footprint. The projection
+  matrix is re-computed periodically to track the changing gradient
+  distribution during training.
+expected_gain: "reduced optimizer memory via low-rank projection"
+platforms: [ascend-910b]
+compatible_methods: [lora, full]
+config_diff: |
+  --- a/configs/qwen3_lora.yaml
+  +++ b/configs/qwen3_lora.yaml
+  @@ -22,3 +22,6 @@
+   optimizer:
+     type: "adam"
+  +  galore_enabled: True
+  +  galore_rank: 128
+  +  galore_update_proj_gap: 200  # re-project every 200 steps

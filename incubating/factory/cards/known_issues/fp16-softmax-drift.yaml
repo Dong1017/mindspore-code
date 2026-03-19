@@ -1,0 +1,33 @@
+kind: known_issue
+id: fp16-softmax-drift
+symptom: accuracy
+severity: high
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+tags: [softmax, fp16, accuracy, drift, ascend, dtype]
+affects_operators: [softmax]
+affects_platforms: [ascend-910b]
+detection:
+  pattern: "accuracy drift.*16\\.8 pts"
+  metric: eval_acc
+  threshold: -10.0
+description: |
+  Softmax accumulation in float16 causes precision loss during evaluation
+  on Ascend 910B. The trained model scores 55.3% vs 72.1% baseline on
+  ceval-valid, a regression of 16.8 points. The root cause is fp16
+  softmax dtype which loses precision in the accumulation step.
+fix:
+  summary: Patch softmax dtype to bf16
+  diff: |
+    --- a/configs/qwen3_lora.yaml
+    +++ b/configs/qwen3_lora.yaml
+    @@ -18,5 +18,6 @@
+     attention:
+    -  softmax_dtype: "float16"
+    +  softmax_dtype: "bfloat16"
+    +  force_upcast_softmax: True  # prevent fp16 accumulation drift
+  operator_id: softmax

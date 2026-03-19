@@ -10,55 +10,23 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// LoadFromFile loads configuration from a YAML file.
-func LoadFromFile(path string) (*Config, error) {
-	if path == "" {
-		return nil, fmt.Errorf("config path is required")
-	}
-
-	// Expand home directory
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			path = filepath.Join(home, path[2:])
-		}
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read config file %q: %w", path, err)
-	}
-
-	cfg := DefaultConfig()
-	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return nil, fmt.Errorf("parse config file %q: %w", path, err)
-	}
-
-	return cfg, nil
-}
-
 // LoadWithEnv loads configuration from file and applies environment variable overrides.
-func LoadWithEnv(path string) (*Config, error) {
-	// Auto-discover config file when no explicit path is provided.
-	if strings.TrimSpace(path) == "" {
-		path = FindConfigFile()
-	}
-
+func LoadWithEnv() (*Config, error) {
 	cfg := DefaultConfig()
-	if path != "" {
-		loaded, err := LoadFromFile(path)
-		if err != nil {
-			// If file doesn't exist, continue with defaults.
-			if !os.IsNotExist(err) {
-				return nil, err
-			}
-		} else {
-			cfg = loaded
-		}
+
+	// Fixed config layers: defaults -> user -> project -> env.
+	if err := mergeConfigFile(cfg, userConfigPath()); err != nil {
+		return nil, err
 	}
 
-	// ENV > YAML > default
+	projectPath := filepath.Join(".ms-cli", "config.yaml")
+	if err := mergeConfigFile(cfg, projectPath); err != nil {
+		return nil, err
+	}
+
+	// ENV > project > user > default
 	ApplyEnvOverrides(cfg)
+	cfg.normalize()
 
 	// Validate
 	if err := cfg.Validate(); err != nil {
@@ -68,59 +36,21 @@ func LoadWithEnv(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// FindConfigFile searches for config file in standard locations.
-func FindConfigFile() string {
-	// Check environment variable
-	if path := os.Getenv("MSCLI_CONFIG"); path != "" {
-		return path
-	}
-
-	// Check current directory
-	if _, err := os.Stat("mscli.yaml"); err == nil {
-		return "mscli.yaml"
-	}
-	if _, err := os.Stat("configs/mscli.yaml"); err == nil {
-		return "configs/mscli.yaml"
-	}
-
-	// Check config directories
-	home, err := os.UserHomeDir()
-	if err == nil {
-		paths := []string{
-			filepath.Join(home, ".config", "mscli", "config.yaml"),
-			filepath.Join(home, ".ms-cli", "config.yaml"),
-		}
-		for _, path := range paths {
-			if _, err := os.Stat(path); err == nil {
-				return path
-			}
-		}
-	}
-
-	return ""
-}
-
 // ApplyEnvOverrides applies environment variable overrides to the config.
-// Precedence: MSCLI_* > OPENAI_* > YAML > defaults.
+// Config-layer precedence uses unified MSCLI_* overrides.
 func ApplyEnvOverrides(cfg *Config) {
 	// Model settings
-	if v := os.Getenv("OPENAI_MODEL"); v != "" {
+	if v := strings.TrimSpace(os.Getenv("MSCLI_MODEL")); v != "" {
 		cfg.Model.Model = v
-	}
-	if v := os.Getenv("MSCLI_MODEL"); v != "" {
-		cfg.Model.Model = v
-	}
-	if v := strings.TrimSpace(os.Getenv("OPENAI_API_KEY")); v != "" {
-		cfg.Model.Key = v
 	}
 	if v := strings.TrimSpace(os.Getenv("MSCLI_API_KEY")); v != "" {
 		cfg.Model.Key = v
 	}
-	if v := strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")); v != "" {
-		cfg.Model.URL = v
-	}
 	if v := strings.TrimSpace(os.Getenv("MSCLI_BASE_URL")); v != "" {
 		cfg.Model.URL = v
+	}
+	if v := strings.TrimSpace(os.Getenv("MSCLI_PROVIDER")); v != "" {
+		cfg.Model.Provider = v
 	}
 	if v := os.Getenv("MSCLI_TEMPERATURE"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
@@ -233,4 +163,39 @@ func StringSliceEnv(key string) []string {
 		parts[i] = strings.TrimSpace(p)
 	}
 	return parts
+}
+
+func userConfigPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return ""
+	}
+	return filepath.Join(home, ".ms-cli", "config.yaml")
+}
+
+func mergeConfigFile(cfg *Config, path string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil
+	}
+
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			path = filepath.Join(home, path[2:])
+		}
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read config file %q: %w", path, err)
+	}
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return fmt.Errorf("parse config file %q: %w", path, err)
+	}
+
+	return nil
 }

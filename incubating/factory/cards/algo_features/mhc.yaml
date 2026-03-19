@@ -1,0 +1,40 @@
+kind: algo_feature
+id: mhc
+name: MHC
+category: loss
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+description: |
+  Multi-Head Contrastive (MHC) loss. Injects a contrastive loss branch
+  on attention head outputs to improve generalization. A projection layer
+  maps hidden states to per-head representations, and contrastive loss
+  encourages diverse head utilization.
+expected_gain: "+1.5 pts accuracy (72.1->73.6% on ceval-valid)"
+platforms: [ascend-910b]
+compatible_methods: [lora, full]
+config_diff: |
+  --- a/configs/qwen3_lora.yaml
+  +++ b/configs/qwen3_lora.yaml
+  @@ -18,6 +18,9 @@
+   loss:
+  -  type: "cross_entropy"
+  +  type: "mhc_loss"
+  +  mhc_heads: 8
+  +  contrastive_weight: 0.15
+  +  temperature: 0.07
+code_diff: |
+  --- a/models/qwen3_lora_forward.py
+  +++ b/models/qwen3_lora_forward.py
+  @@ -42,4 +42,12 @@
+   def forward(self, input_ids, attention_mask):
+       hidden = self.base_model(input_ids, attention_mask)
+  +    # MHC: multi-head contrastive branch
+  +    head_outputs = self.mhc_project(hidden)  # [B, S, num_heads, D]
+  +    contrastive_loss = mhc_contrastive(
+  +        head_outputs, temperature=0.07
+  +    )
+  +    loss = ce_loss + 0.15 * contrastive_loss

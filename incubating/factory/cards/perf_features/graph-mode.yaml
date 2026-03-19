@@ -1,0 +1,26 @@
+kind: perf_feature
+id: graph-mode
+name: Graph Mode
+category: compilation
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+description: |
+  Enable Graph Engine (GE) compilation for Ascend NPU. Converts the model
+  into a static computation graph that can be optimized by the NPU compiler
+  with operator fusion, memory planning, and kernel scheduling.
+expected_gain: "graph engine optimization, reduced kernel launch overhead"
+platforms: [ascend-910b]
+compatible_methods: [lora, full]
+config_diff: |
+  --- a/configs/qwen3_lora.yaml
+  +++ b/configs/qwen3_lora.yaml
+  @@ -2,2 +2,6 @@
+   runtime:
+  +  mode: "graph"
+  +  graph_compiler: "ge"  # Graph Engine for Ascend NPU
+  +  compile_level: "O2"
+  +  static_shape: True

@@ -1,0 +1,36 @@
+kind: algo_feature
+id: flash-attn
+name: Flash Attention
+category: attention
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+description: |
+  Replace standard scaled dot-product attention with Flash Attention,
+  an IO-aware fused kernel. Avoids materializing the full NxN attention
+  matrix by using tiling and online softmax computation, reducing both
+  memory usage and wall-clock time.
+expected_gain: "faster forward pass, reduced attention memory"
+platforms: [ascend-910b]
+compatible_methods: [lora, full]
+code_diff: |
+  --- a/models/qwen3_lora_forward.py
+  +++ b/models/qwen3_lora_forward.py
+  @@ -1,4 +1,5 @@
+   import torch
+  +from flash_attn import flash_attn_func
+  
+  @@ -28,7 +29,10 @@
+       def _attention(self, q, k, v, mask):
+  -        scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
+  -        scores = scores.masked_fill(mask == 0, -1e9)
+  -        attn = torch.softmax(scores, dim=-1)
+  -        return torch.matmul(attn, v)
+  +        return flash_attn_func(
+  +            q, k, v,
+  +            causal=True,
+  +            softmax_scale=1.0 / math.sqrt(self.head_dim),
+  +        )
