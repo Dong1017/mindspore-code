@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vigo999/ms-cli/integrations/llm"
 	"github.com/vigo999/ms-cli/integrations/skills"
 	"github.com/vigo999/ms-cli/internal/project"
 	"github.com/vigo999/ms-cli/permission"
@@ -47,15 +48,11 @@ func (a *Application) handleCommand(input string) {
 	case "/help":
 		a.cmdHelp()
 	default:
-		// Check if the command matches a skill name (e.g. /pdf → load skill "pdf")
+		// Check if the command matches a skill name directly (e.g. /pdf → /skill pdf).
+		skillName := strings.TrimPrefix(parts[0], "/")
 		if a.skillLoader != nil {
-			skillName := strings.TrimPrefix(parts[0], "/")
-			if content, err := a.skillLoader.Load(skillName); err == nil {
-				desc := content
-				if len(parts) > 1 {
-					desc = content + "\n\nUser request: " + strings.Join(parts[1:], " ")
-				}
-				go a.runTask(desc)
+			if _, err := a.skillLoader.Load(skillName); err == nil {
+				a.cmdSkill(append([]string{skillName}, parts[1:]...))
 				return
 			}
 		}
@@ -404,11 +401,31 @@ func (a *Application) cmdSkill(args []string) {
 		return
 	}
 
-	desc := content
-	if len(args) > 1 {
-		desc = content + "\n\nUser request: " + strings.Join(args[1:], " ")
+	// Inject a synthetic assistant tool_call + tool result into context so the
+	// model sees the skill as already loaded and won't call load_skill again.
+	toolCallID := "slash_skill_" + skillName
+	argBytes, _ := json.Marshal(map[string]string{"name": skillName})
+	assistantMsg := llm.Message{
+		Role: "assistant",
+		ToolCalls: []llm.ToolCall{
+			{
+				ID:   toolCallID,
+				Type: "function",
+				Function: llm.ToolCallFunc{
+					Name:      "load_skill",
+					Arguments: json.RawMessage(argBytes),
+				},
+			},
+		},
 	}
-	go a.runTask(desc)
+	_ = a.ctxManager.AddMessage(assistantMsg)
+	_ = a.ctxManager.AddMessage(llm.NewToolMessage(toolCallID, content))
+
+	userRequest := ""
+	if len(args) > 1 {
+		userRequest = strings.Join(args[1:], " ")
+	}
+	go a.runTask(userRequest)
 }
 
 func (a *Application) cmdHelp() {

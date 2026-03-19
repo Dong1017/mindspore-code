@@ -355,6 +355,7 @@ You have access to the following tools:
 - grep: Search for patterns in files
 - glob: Find files matching patterns
 - shell: Execute shell commands
+- load_skill: Load a skill's detailed instructions. Call this when the user's task matches an available skill listed in the system prompt.
 
 Guidelines:
 1. Use tools to gather information before making changes
