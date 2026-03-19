@@ -1,7 +1,7 @@
 # ms-cli Architecture
 
 This document describes the target architecture after the refactor
-(see `docs/impl-guide/ms-cli-refactor.md`). It is the single contributor-facing
+(see `docs/impl-guide/ms-cli-refactor-3.md`). It is the single contributor-facing
 architecture reference.
 
 ## Three-Repo Model
@@ -182,7 +182,7 @@ Constraints:
 
 ## Removed Packages (refactor)
 
-The following packages are removed by the refactor (see `docs/impl-guide/ms-cli-refactor.md`):
+The following packages are removed by the refactor (see `docs/impl-guide/ms-cli-refactor-3.md`):
 
 - `agent/orchestrator/` — was a dispatch layer between planner and executors.
   After removing workflow mode, it became a passthrough. The app now calls
@@ -198,9 +198,9 @@ The following packages are removed by the refactor (see `docs/impl-guide/ms-cli-
 
 ## Related Docs
 
-- `docs/impl-guide/ms-cli-refactor.md` — refactor plan (workstream A)
-- `docs/impl-guide/ms-skills-update-plan.md` — skills plan (workstream B)
-- `docs/design/incubating-factory-plan.md` — factory plan (workstream C)
+- `docs/impl-guide/ms-cli-refactor-3.md` — refactor plan (workstream A)
+- `docs/impl-guide/ms-skills-whole-update-plan.md` — skills plan (workstream B)
+- `docs/impl-guide/ms-factory-struct-v0.1.md` — factory structure and schemas (workstream C)
 - `docs/features-backlog.md` — deferred features
 - `docs/agent-contributor-guide.md` — contributor conventions
 
