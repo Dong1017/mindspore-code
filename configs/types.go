@@ -3,6 +3,7 @@ package configs
 
 import (
 	"fmt"
+	"strings"
 )
 
 // Config holds the complete application configuration.
@@ -17,10 +18,17 @@ type Config struct {
 	Execution   ExecutionConfig   `yaml:"execution"`
 }
 
+func (c *Config) normalize() {
+	if strings.TrimSpace(c.Model.Provider) == "" {
+		c.Model.Provider = "openai-compatible"
+	}
+}
+
 // ModelConfig holds the LLM model configuration.
 type ModelConfig struct {
 	URL         string            `yaml:"url,omitempty"`
 	Key         string            `yaml:"key,omitempty"`
+	Provider    string            `yaml:"provider,omitempty"`
 	Model       string            `yaml:"model"`
 	Temperature float64           `yaml:"temperature"`
 	MaxTokens   int               `yaml:"max_tokens"`
@@ -96,9 +104,10 @@ type DockerConfig struct {
 
 // DefaultConfig returns a configuration with default values.
 func DefaultConfig() *Config {
-	return &Config{
+	cfg := &Config{
 		Model: ModelConfig{
 			URL:         "https://api.openai.com/v1",
+			Provider:    "openai-compatible",
 			Model:       "gpt-4o-mini",
 			Temperature: 0.7,
 			MaxTokens:   4096,
@@ -155,16 +164,24 @@ func DefaultConfig() *Config {
 			},
 		},
 	}
+	cfg.normalize()
+	return cfg
 }
 
 // Validate validates the configuration.
 func (c *Config) Validate() error {
-	if c.Model.URL == "" {
-		return fmt.Errorf("model url is required")
+	c.normalize()
+
+	if strings.TrimSpace(c.Model.Model) == "" {
+		return fmt.Errorf("model name is required")
 	}
 
-	if c.Model.Model == "" {
-		return fmt.Errorf("model name is required")
+	if provider := strings.ToLower(strings.TrimSpace(c.Model.Provider)); provider != "" {
+		switch provider {
+		case "openai", "openai-compatible", "anthropic":
+		default:
+			return fmt.Errorf("unsupported provider %q", strings.TrimSpace(c.Model.Provider))
+		}
 	}
 
 	if c.Model.Temperature < 0 || c.Model.Temperature > 2 {
@@ -189,6 +206,9 @@ func (c *Config) Merge(other *Config) {
 	}
 	if other.Model.Key != "" {
 		c.Model.Key = other.Model.Key
+	}
+	if other.Model.Provider != "" {
+		c.Model.Provider = other.Model.Provider
 	}
 	if other.Model.Model != "" {
 		c.Model.Model = other.Model.Model
