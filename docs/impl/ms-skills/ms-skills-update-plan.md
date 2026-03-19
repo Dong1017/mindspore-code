@@ -447,10 +447,10 @@ important, that can be added through a small Factory vocab layer.
 
 ### Relationship to incubating-factory-plan
 
-The `docs/incubating-factory-plan.md` was written before the impl guide and
+The `docs/design/factory/incubating-factory-plan.md` was written before the impl guide and
 uses outdated terms (`failure`, `perf_feature`, `algo_feature`, separate
 schemas for perf and algo features, 8 lifecycle states, different directory
-layout). The authoritative Factory design is now `docs/ms-factory-impl-guide.md`.
+layout). The authoritative Factory design is now `docs/design/factory/ms-factory-impl-guide.md`.
 The incubating plan should be treated as historical context, not current spec.
 
 ## Summary

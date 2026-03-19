@@ -2,7 +2,7 @@
 
 ## Authoritative Design Source
 
-Use `docs/ms-factory-impl-guide.md` (NOT the older `incubating-factory-plan.md`
+Use `docs/design/factory/ms-factory-impl-guide.md` (NOT the older `docs/design/factory/incubating-factory-plan.md`
 which uses outdated terms like `failure`, `perf_feature`, `algo_feature` and 8
 lifecycle states).
 
@@ -16,14 +16,14 @@ incubating/factory/
 ├── docs/
 │   └── overview.md
 ├── schemas/
-│   ├── known_failure.schema.yaml
+│   ├── known_issue.schema.yaml
 │   ├── operator.schema.yaml
 │   ├── perf_feature.schema.yaml
 │   ├── algo_feature.schema.yaml
 │   ├── model.schema.yaml
 │   └── report.schema.yaml
 ├── cards/
-│   ├── known_failures/
+│   ├── known_issues/
 │   ├── operators/
 │   ├── perf_features/
 │   ├── algo_features/
@@ -47,7 +47,7 @@ metadata fields inside cards.
 
 | kind | directory | what it holds |
 |------|-----------|---------------|
-| `known_failure` | `cards/known_failures/` | Diagnosed failure patterns with detection rules and fixes |
+| `known_issue` | `cards/known_issues/` | Diagnosed problems (failure, accuracy, performance) with detection rules and fixes |
 | `operator` | `cards/operators/` | Operator support/status per platform, fallbacks, variants |
 | `perf_feature` | `cards/perf_features/` | Performance optimizations (compute, memory, communication, compilation) |
 | `algo_feature` | `cards/algo_features/` | Algorithm-level techniques (loss, attention, optimizer, regularization, scaling) |
@@ -63,7 +63,7 @@ schemas and directories. This makes filtering and skill routing straightforward.
 Every card YAML file has these top-level fields:
 
 ```yaml
-kind: <operator | known_failure | perf_feature | algo_feature | model>
+kind: <operator | known_issue | perf_feature | algo_feature | model>
 id: <kebab-case-unique-id>
 lifecycle:
   state: <draft | stable | archived>    # only 3 states
@@ -84,13 +84,14 @@ confidence:
 
 ## 4. Schema Designs Per Kind
 
-### 4.1 known_failure.schema.yaml
+### 4.1 known_issue.schema.yaml
 
 ```yaml
-required: [kind, id, lifecycle, source, confidence, severity, description, detection]
+required: [kind, id, lifecycle, source, confidence, symptom, severity, description, detection]
 properties:
-  kind: { const: known_failure }
+  kind: { const: known_issue }
   id: { type: string }
+  symptom: { enum: [failure, accuracy, performance] }  # problem category
   lifecycle:
     state: { enum: [draft, stable, archived] }
   source:
@@ -111,6 +112,11 @@ properties:
     diff: { type: string }          # optional inline diff
     operator_id: { type: string }   # optional link to operator card
 ```
+
+The `symptom` field drives skill routing:
+- `failure` -> `failure-agent` consults these during `/diagnose` and `/fix`
+- `accuracy` -> `accuracy-agent` consults these
+- `performance` -> `performance-agent` consults these
 
 ### 4.2 operator.schema.yaml
 
@@ -217,7 +223,7 @@ properties:
       pretrain_acc: { type: number }
       posttrain_acc: { type: number }
       tolerance: { type: number }
-  known_issues: { type: array, items: string }  # failure card ids
+  known_issues: { type: array, items: string }  # known_issue card ids
   verified_perf_features: { type: object }   # perf_feature id -> observed metrics
   verified_algo_features: { type: object }   # algo_feature id -> observed metrics
 ```
@@ -274,13 +280,13 @@ All seeded cards use `source.kind: bootstrap` and `confidence.level: bootstrap`.
 | `flash-attention` | Flash Attention | attention | requires CANN >= 8.0.RC3, fallback: sdpa |
 | `sdpa` | SDPA | attention | fallback for flash-attention |
 
-### 5.2 Known Failures (3 cards)
+### 5.2 Known Issues (3 cards)
 
-| id | severity | detection pattern | from demo function |
-|----|----------|-------------------|--------------------|
-| `dsa-torch27-ascend` | critical | `DSA operator.*not implemented` | `AnalyzeFailure()` — DSA op not in torch 2.7 |
-| `fp16-softmax-drift` | high | `accuracy drift.*16.8 pts` | `AnalyzeSingleLaneDrift()` — fp16 softmax causes 16.8pt accuracy drop |
-| `cann-flash-attn-version` | high | `FlashAttentionScore.*not found` | `RunNPUAnalysis()` — FlashAttention needs CANN >= 8.0.RC3 |
+| id | symptom | severity | detection pattern | from demo function |
+|----|---------|----------|-------------------|--------------------|
+| `dsa-torch27-ascend` | failure | critical | `DSA operator.*not implemented` | `AnalyzeFailure()` — DSA op not in torch 2.7 |
+| `fp16-softmax-drift` | accuracy | high | `accuracy drift.*16.8 pts` | `AnalyzeSingleLaneDrift()` — fp16 softmax causes 16.8pt accuracy drop |
+| `cann-flash-attn-version` | failure | high | `FlashAttentionScore.*not found` | `RunNPUAnalysis()` — FlashAttention needs CANN >= 8.0.RC3 |
 
 ### 5.3 Perf Features (9 cards, from `RunSingleLanePerfFeature`)
 
@@ -349,7 +355,7 @@ channel: stable
 created_at: "2026-03-18"
 card_count:
   operators: 6
-  known_failures: 3
+  known_issues: 3
   perf_features: 9
   algo_features: 9
   models: 1
@@ -360,9 +366,9 @@ cards:
   - { id: softmax, kind: operator, path: operators/softmax.yaml }
   - { id: flash-attention, kind: operator, path: operators/flash-attention.yaml }
   - { id: sdpa, kind: operator, path: operators/sdpa.yaml }
-  - { id: dsa-torch27-ascend, kind: known_failure, path: known_failures/dsa-torch27-ascend.yaml }
-  - { id: fp16-softmax-drift, kind: known_failure, path: known_failures/fp16-softmax-drift.yaml }
-  - { id: cann-flash-attn-version, kind: known_failure, path: known_failures/cann-flash-attn-version.yaml }
+  - { id: dsa-torch27-ascend, kind: known_issue, path: known_issues/dsa-torch27-ascend.yaml }
+  - { id: fp16-softmax-drift, kind: known_issue, path: known_issues/fp16-softmax-drift.yaml }
+  - { id: cann-flash-attn-version, kind: known_issue, path: known_issues/cann-flash-attn-version.yaml }
   - { id: fused-adam, kind: perf_feature, path: perf_features/fused-adam.yaml }
   - { id: flash-attn-v2, kind: perf_feature, path: perf_features/flash-attn-v2.yaml }
   - { id: gradient-ckpt, kind: perf_feature, path: perf_features/gradient-ckpt.yaml }
@@ -408,7 +414,7 @@ cards:
 1. Create directory structure
 2. Write 6 schema YAML files
 3. Seed 6 operator cards
-4. Seed 3 known_failure cards
+4. Seed 3 known_issue cards
 5. Seed 9 perf_feature cards
 6. Seed 9 algo_feature cards
 7. Seed 1 model card
