@@ -1,0 +1,31 @@
+kind: known_issue
+id: cann-flash-attn-version
+symptom: failure
+severity: high
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+tags: [flash-attention, cann, version, ascend, kernel, crash]
+affects_operators: [flash-attention]
+affects_platforms: [ascend-910b]
+detection:
+  pattern: "FlashAttentionScore.*not found"
+description: |
+  FlashAttention fails during graph compilation on Ascend 910B when CANN
+  version is below 8.0.RC3. The FlashAttentionScore kernel was added in
+  CANN 8.0.RC3. Hosts with CANN 8.0.RC2 will get a "kernel not found"
+  error at launch time.
+fix:
+  summary: Disable FlashAttention, use standard SDPA path
+  diff: |
+    --- a/configs/qwen3_lora.yaml
+    +++ b/configs/qwen3_lora.yaml
+    @@ -15,7 +15,8 @@
+     attention:
+    -  use_flash_attention: True
+    +  use_flash_attention: False
+    +  attn_implementation: "sdpa"  # fallback for CANN < 8.0.RC3
+  operator_id: flash-attention

@@ -1,0 +1,25 @@
+kind: perf_feature
+id: fused-adam
+name: Fused Adam
+category: compute
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+description: |
+  Replace standard Adam optimizer with a fused kernel implementation
+  for Ascend 910B. Reduces per-step optimizer latency from ~400ms to
+  ~250ms by fusing parameter update operations into a single kernel call.
+expected_gain: "+10% throughput (518->571 tok/s)"
+platforms: [ascend-910b]
+compatible_methods: [lora, full]
+config_diff: |
+  --- a/configs/qwen3_lora.yaml
+  +++ b/configs/qwen3_lora.yaml
+  @@ -22,3 +22,4 @@
+   optimizer:
+  -  type: "adam"
+  +  type: "fused_adam"
+  +  fused_kernel: True  # Ascend 910B fused adam

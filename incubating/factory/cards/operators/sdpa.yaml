@@ -1,0 +1,19 @@
+kind: operator
+id: sdpa
+name: SDPA
+category: attention
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+platforms:
+  torch-2.7+ascend-910b:
+    status: supported
+    profiled: false
+description: |
+  Scaled Dot-Product Attention (SDPA) operator. Standard attention
+  implementation that serves as a fallback for Flash Attention when
+  CANN version requirements are not met. Compatible with all CANN
+  versions on Ascend 910B.

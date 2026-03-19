@@ -1,0 +1,63 @@
+required: [kind, id, lifecycle, source, confidence, model, method, platform]
+properties:
+  kind:
+    const: model
+  id:
+    type: string
+  model:
+    type: string
+  method:
+    type: string
+  platform:
+    type: string
+  framework:
+    type: string
+  lifecycle:
+    type: object
+    properties:
+      state:
+        enum: [draft, stable, archived]
+  source:
+    type: object
+    properties:
+      kind:
+        enum: [bootstrap, execution, manual]
+  confidence:
+    type: object
+    properties:
+      level:
+        enum: [bootstrap, observed, verified]
+  config:
+    type: object
+  expected:
+    type: object
+    properties:
+      final_loss:
+        type: number
+      throughput:
+        type: string
+      eval_acc:
+        type: object
+      training_time:
+        type: string
+  baselines:
+    type: array
+    items:
+      type: object
+      properties:
+        benchmark:
+          type: string
+        pretrain_acc:
+          type: number
+        posttrain_acc:
+          type: number
+        tolerance:
+          type: number
+  known_issues:
+    type: array
+    items:
+      type: string
+  verified_perf_features:
+    type: object
+  verified_algo_features:
+    type: object

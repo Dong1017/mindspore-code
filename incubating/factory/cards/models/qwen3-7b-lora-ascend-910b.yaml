@@ -1,0 +1,43 @@
+kind: model
+id: qwen3-7b-lora-ascend-910b
+model: qwen3-7b
+method: lora
+platform: ascend-910b
+framework: torch-2.7
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+config:
+  lora_rank: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  dataset: alpaca_gpt4_zh
+  dataset_samples: 52002
+  total_steps: 300
+  learning_rate: 2.0e-4
+  lr_scheduler: cosine
+expected:
+  final_loss: 0.831
+  throughput: "510-520 tok/s"
+  eval_acc:
+    ceval-valid: "72.1%"
+  training_time: "~300 steps"
+baselines:
+  - benchmark: ceval-valid
+    pretrain_acc: 72.1
+    posttrain_acc: 71.8
+    tolerance: 2.0
+known_issues:
+  - dsa-torch27-ascend
+  - fp16-softmax-drift
+verified_perf_features:
+  fused-adam:
+    throughput: "565-572 tok/s"
+    gain: "+10%"
+verified_algo_features:
+  mhc:
+    eval_acc_ceval_valid: "73.6%"
+    gain: "+1.5 pts"

@@ -1,0 +1,26 @@
+kind: perf_feature
+id: selective-recompute
+name: Selective Recompute
+category: memory
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+description: |
+  Apply activation checkpointing only to attention layers instead of all
+  layers. Attention activations are the largest memory consumers, so
+  selectively recomputing only those gives most of the memory savings
+  with less recomputation overhead than full gradient checkpointing.
+expected_gain: "reduced memory with less recomputation than full checkpointing"
+platforms: [ascend-910b]
+compatible_methods: [lora, full]
+config_diff: |
+  --- a/configs/qwen3_lora.yaml
+  +++ b/configs/qwen3_lora.yaml
+  @@ -30,2 +30,5 @@
+   memory:
+  +  selective_recompute: True
+  +  recompute_modules: ["attention"]
+  +  recompute_granularity: "selective"

@@ -1,0 +1,57 @@
+required: [kind, id, lifecycle, source, confidence, symptom, severity, description, detection]
+properties:
+  kind:
+    const: known_issue
+  id:
+    type: string
+  symptom:
+    enum: [failure, accuracy, performance]
+  lifecycle:
+    type: object
+    properties:
+      state:
+        enum: [draft, stable, archived]
+  source:
+    type: object
+    properties:
+      kind:
+        enum: [bootstrap, execution, manual]
+  confidence:
+    type: object
+    properties:
+      level:
+        enum: [bootstrap, observed, verified]
+  severity:
+    enum: [low, medium, high, critical]
+  tags:
+    type: array
+    items:
+      type: string
+  affects_operators:
+    type: array
+    items:
+      type: string
+  affects_platforms:
+    type: array
+    items:
+      type: string
+  detection:
+    type: object
+    properties:
+      pattern:
+        type: string
+      metric:
+        type: string
+      threshold:
+        type: number
+  description:
+    type: string
+  fix:
+    type: object
+    properties:
+      summary:
+        type: string
+      diff:
+        type: string
+      operator_id:
+        type: string

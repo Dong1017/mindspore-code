@@ -1,0 +1,22 @@
+kind: operator
+id: flash-attention
+name: Flash Attention
+category: attention
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+platforms:
+  torch-2.7+ascend-910b:
+    status: supported
+    profiled: false
+    constraints:
+      - "requires CANN >= 8.0.RC3"
+      - "FlashAttentionScore kernel not available in CANN 8.0.RC2"
+fallback: sdpa
+description: |
+  Flash Attention operator for IO-aware fused attention computation.
+  On Ascend 910B, the FlashAttentionScore kernel requires CANN >= 8.0.RC3.
+  Hosts with CANN 8.0.RC2 must use the SDPA fallback path instead.

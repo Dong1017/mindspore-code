@@ -1,0 +1,20 @@
+kind: operator
+id: dsa
+name: DSA
+category: attention
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+platforms:
+  torch-2.7+ascend-910b:
+    status: not_supported
+    profiled: false
+    constraints:
+      - "torch.ops.npu.dsa not implemented in torch 2.7"
+description: |
+  Dynamic Sparse Attention (DSA) operator. Not available in torch 2.7
+  for the Ascend 910B backend. Requires custom kernel implementation
+  and torch-npu recompilation to use on this platform.
