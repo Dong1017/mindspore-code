@@ -31,7 +31,7 @@ echo "Detected: ${OS}/${ARCH}"
 
 # Fetch latest release tag.
 echo "Fetching latest release..."
-LATEST="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"tag_name":\s*"([^"]+)".*/\1/')"
+LATEST="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" </dev/null | tr -d ' ,' | grep '"tag_name"' | cut -d'"' -f4)"
 
 if [ -z "$LATEST" ]; then
   echo "Error: could not determine latest release" >&2
@@ -47,7 +47,7 @@ URL="https://github.com/${REPO}/releases/download/${LATEST}/${ASSET}"
 # Download binary.
 echo "Downloading ${URL}..."
 mkdir -p "$INSTALL_DIR"
-curl -fSL -o "${INSTALL_DIR}/${BINARY_NAME}" "$URL"
+curl -fSL -o "${INSTALL_DIR}/${BINARY_NAME}" "$URL" </dev/null
 chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
 
 echo ""
