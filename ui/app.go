@@ -451,6 +451,8 @@ func (a App) maybeDispatchQueuedInput() App {
 }
 
 func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
+	a = a.applyUsageSnapshot(ev)
+
 	var eventCmd tea.Cmd
 
 	switch ev.Type {
@@ -566,11 +568,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: ev.Message})
 
 	case model.TokenUpdate:
-		mi := a.state.Model
-		mi.CtxUsed = ev.CtxUsed
-		mi.CtxMax = ev.CtxMax
-		mi.TokensUsed = ev.TokensUsed
-		a.state = a.state.WithModel(mi)
+		// usage snapshot is applied before the event switch
 
 	case model.TaskUpdated:
 		// no-op for now
@@ -950,6 +948,19 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(eventCmd, a.waitForEvent)
 	}
 	return a, a.waitForEvent
+}
+
+func (a App) applyUsageSnapshot(ev model.Event) App {
+	if ev.CtxMax <= 0 {
+		return a
+	}
+
+	mi := a.state.Model
+	mi.CtxUsed = ev.CtxUsed
+	mi.CtxMax = ev.CtxMax
+	mi.TokensUsed = ev.TokensUsed
+	a.state = a.state.WithModel(mi)
+	return a
 }
 
 // handleTrainAction executes the currently focused action button.
