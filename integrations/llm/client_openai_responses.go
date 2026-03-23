@@ -101,7 +101,7 @@ func (c *openAIResponsesClient) CompleteStream(ctx context.Context, req *Complet
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
+		defer resp.Body.Close()
 		return nil, parseOpenAIError(resp)
 	}
 

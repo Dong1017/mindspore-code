@@ -117,7 +117,7 @@ func (c *openAIClient) CompleteStream(ctx context.Context, req *CompletionReques
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
+		defer resp.Body.Close()
 		return nil, parseOpenAIError(resp)
 	}
 

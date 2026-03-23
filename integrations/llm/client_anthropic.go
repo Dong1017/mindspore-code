@@ -39,6 +39,7 @@ func newAnthropicClient(cfg ResolvedConfig, name string, httpClient HTTPClient) 
 
 	headers := copyHeaders(cfg.Headers)
 	ensureAuthHeader(headers, "x-api-key", apiKey)
+	ensureAuthHeader(headers, "Authorization", "Bearer "+apiKey)
 	ensureRequiredHeader(headers, "anthropic-version", anthropicVersionHeader)
 
 	timeout := cfg.Timeout
@@ -111,7 +112,7 @@ func (c *anthropicClient) CompleteStream(ctx context.Context, req *CompletionReq
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
+		defer resp.Body.Close()
 		return nil, parseAnthropicError(resp)
 	}
 
