@@ -143,7 +143,7 @@ func DefaultConfig() *Config {
 			BlockedTools: []string{},
 		},
 		Context: ContextConfig{
-			Window:              240000,
+			Window:              200000,
 			ReserveTokens:       4000,
 			CompactionThreshold: 0.85,
 			MaxHistoryRounds:    10,

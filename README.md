@@ -113,7 +113,7 @@ model:
   model: gpt-4o-mini
   key: ""
 context:
-  window: 240000
+  window: 200000
 ```
 
 ### Environment variables
@@ -135,7 +135,7 @@ CLI flags `--api-key`, `--url`, `--model` are startup overrides for the current 
 
 ### Model token defaults (auto + override)
 
-When `model.model` matches known families (`gpt-5*`, `claude-4*`, `glm-4.7*`, `glm-5*`, `kimi-k2.5*`, `minimax-m2.5*`, `minimax-m2.7*`), ms-cli auto-fills:
+When `model.model` matches known families (`gpt-5` ~ `gpt-5.4`, `claude-4.5` ~ `claude-4.6`, `glm-4.7*`, `glm-5*`, `kimi-k2*`, `kimi-k2.5*`, `minimax-m2.5*`, `minimax-m2.7*`, `deepseek*`, `qwen3*`, `qwen3.5*`), ms-cli auto-fills:
 
 - `model.max_tokens`
 - `context.window`
