@@ -19,14 +19,15 @@ import (
 )
 
 const (
-	DefaultRepoURL      = "https://github.com/vigo999/mindspore-skills"
-	DefaultRepoBranch   = "refactor-arch-3.0"
-	defaultRepoName     = "mindspore-skills"
-	defaultSkillsDir    = "skills"
-	defaultCommitFile   = ".ms-cli-commit"
-	defaultLogPrefix    = "skills sync"
-	defaultHTTPTimeout  = 2 * time.Minute
-	defaultCommandLimit = 2 * time.Minute
+	DefaultRepoURL           = "https://github.com/vigo999/mindspore-skills"
+	DefaultRepoBranch        = "refactor-arch-3.0"
+	defaultRepoName          = "mindspore-skills"
+	defaultSkillsDir         = "skills"
+	defaultCommitFile        = ".ms-cli-commit"
+	defaultLogPrefix         = "skills sync"
+	defaultHTTPTimeout       = 2 * time.Minute
+	defaultRemoteHEADTimeout = 3 * time.Second
+	defaultCommandLimit      = 2 * time.Minute
 )
 
 // RepoSync manages skills repository sync.
@@ -347,7 +348,10 @@ func (s *DefaultRepoSync) remoteCommit() (string, error) {
 		return "", err
 	}
 
-	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultRemoteHEADTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("build remote commit request: %w", err)
 	}
