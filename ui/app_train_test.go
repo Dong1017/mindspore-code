@@ -8,6 +8,8 @@ import (
 	"github.com/vigo999/ms-cli/ui/model"
 )
 
+const largePastedBlock = "line 01\nline 02\nline 03\nline 04\nline 05\nline 06\nline 07\nline 08\n"
+
 func TestTrainFixActionClearsStaleButtonAndKeepsCompletionMessage(t *testing.T) {
 	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
 	app.bootActive = false
@@ -329,6 +331,118 @@ func TestUpDownRecallInputHistoryInsteadOfScrollingViewport(t *testing.T) {
 	app = next.(App)
 	if got := app.input.Value(); got != "second message" {
 		t.Fatalf("expected down to move forward in history, got %q", got)
+	}
+}
+
+func TestCtrlJInsertsComposerNewlineWithoutSubmitting(t *testing.T) {
+	userCh := make(chan string, 1)
+	app := New(nil, userCh, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	app = next.(App)
+
+	app.input.Model.SetValue("line one")
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	app = next.(App)
+
+	if got := app.input.Value(); got != "line one\n" {
+		t.Fatalf("expected ctrl+j to insert newline, got %q", got)
+	}
+	select {
+	case msg := <-userCh:
+		t.Fatalf("expected ctrl+j not to submit input, got %q", msg)
+	default:
+	}
+
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("line two")})
+	app = next.(App)
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	app = next.(App)
+
+	select {
+	case msg := <-userCh:
+		if msg != "line one\nline two" {
+			t.Fatalf("expected multiline submit, got %q", msg)
+		}
+	default:
+		t.Fatal("expected enter to submit multiline input")
+	}
+}
+
+func TestLargePastedUserMessageRendersAsSummary(t *testing.T) {
+	userCh := make(chan string, 1)
+	app := New(nil, userCh, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	app = next.(App)
+
+	next, _ = app.handleKey(tea.KeyMsg{
+		Type:  tea.KeyRunes,
+		Runes: []rune(largePastedBlock),
+		Paste: true,
+	})
+	app = next.(App)
+
+	if !app.input.HasPasteSummary() {
+		t.Fatal("expected collapsed summary in composer after large paste")
+	}
+	if view := app.View(); !strings.Contains(view, "[pasted content:") {
+		t.Fatalf("expected composer view to show paste summary, got:\n%s", view)
+	}
+
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	app = next.(App)
+	if view := app.View(); !strings.Contains(view, "[pasted content:") {
+		t.Fatalf("expected composer view to stay collapsed after typing, got:\n%s", view)
+	}
+	if strings.Contains(app.View(), "line 07") {
+		t.Fatalf("expected full pasted content to stay out of composer view after typing, got:\n%s", app.View())
+	}
+
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	app = next.(App)
+
+	select {
+	case msg := <-userCh:
+		if msg != strings.TrimSpace(largePastedBlock) {
+			t.Fatalf("expected submitted value to preserve raw pasted content, got %q", msg)
+		}
+	default:
+		t.Fatal("expected pasted input submit to reach backend")
+	}
+
+	view := app.View()
+	if !strings.Contains(view, "[pasted content:") {
+		t.Fatalf("expected chat view to render pasted content summary, got:\n%s", view)
+	}
+	if strings.Contains(view, "line 07") {
+		t.Fatalf("expected full pasted content to stay out of chat view, got:\n%s", view)
+	}
+}
+
+func TestUpDoesNotRecallHistoryWhileInsideMultilineComposer(t *testing.T) {
+	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	app = next.(App)
+
+	app.input.Model.SetValue("first message")
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	app = next.(App)
+
+	app.input.Model.SetValue("second message")
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	app = next.(App)
+
+	app.input.Model.SetValue("draft line 1\ndraft line 2")
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyUp})
+	app = next.(App)
+
+	if got := app.input.Value(); got != "draft line 1\ndraft line 2" {
+		t.Fatalf("expected up to stay inside multiline draft instead of recalling history, got %q", got)
 	}
 }
 

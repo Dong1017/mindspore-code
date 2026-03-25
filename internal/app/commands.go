@@ -39,7 +39,7 @@ func (a *Application) handleCommand(input string) {
 	case "/login":
 		a.cmdLogin(parts[1:])
 	case "/report":
-		a.cmdIssueReportInput(strings.TrimSpace(strings.TrimPrefix(input, "/report")))
+		a.cmdUnifiedReport(strings.TrimSpace(strings.TrimPrefix(input, "/report")))
 	case "/issues":
 		a.cmdIssues(parts[1:])
 	case "/__issue_detail":

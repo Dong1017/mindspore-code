@@ -6,12 +6,30 @@ import (
 	"strings"
 
 	"github.com/vigo999/ms-cli/internal/bugs"
+	"github.com/vigo999/ms-cli/internal/issues"
 	"github.com/vigo999/ms-cli/ui/model"
 	"github.com/vigo999/ms-cli/ui/render"
 )
 
 func (a *Application) cmdReport(args []string) {
 	a.cmdReportInput(strings.Join(args, " "))
+}
+
+func (a *Application) cmdUnifiedReport(input string) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		a.EventCh <- model.Event{
+			Type:    model.AgentReply,
+			Message: "Usage: /report [tags] <title> | /report acc|fail|perf <title>",
+		}
+		return
+	}
+	fields := strings.Fields(input)
+	if _, err := issues.NormalizeKind(fields[0]); err == nil {
+		a.cmdIssueReportInput(input)
+	} else {
+		a.cmdReportInput(input)
+	}
 }
 
 func (a *Application) cmdReportInput(input string) {

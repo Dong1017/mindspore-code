@@ -375,6 +375,12 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.resizeActiveLayout()
 		return a, cmd
 
+	case "ctrl+j", "shift+enter":
+		var cmd tea.Cmd
+		a.input, cmd = a.input.Update(msg)
+		a.resizeActiveLayout()
+		return a, cmd
+
 	case "enter":
 		// Don't process enter if in slash mode (handled above)
 		if a.input.IsSlashMode() {
@@ -423,13 +429,19 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, cmd
 
 	case "up", "down":
-		if msg.String() == "up" {
-			a.input = a.input.PrevHistory()
-		} else {
-			a.input = a.input.NextHistory()
+		if a.input.CanNavigateHistory(msg.String()) {
+			if msg.String() == "up" {
+				a.input = a.input.PrevHistory()
+			} else {
+				a.input = a.input.NextHistory()
+			}
+			a.resizeActiveLayout()
+			return a, nil
 		}
+		var cmd tea.Cmd
+		a.input, cmd = a.input.Update(msg)
 		a.resizeActiveLayout()
-		return a, nil
+		return a, cmd
 
 	default:
 		var cmd tea.Cmd
@@ -2066,7 +2078,7 @@ func (a App) View() string {
 	if len(a.queuedInputs) > 0 {
 		queueBanner = queueBannerStyle.Render("messages queued (press esc to interrupt)")
 	}
-	input := "  " + a.input.View()
+	input := a.input.View()
 	hintBar := panels.RenderHintBar(a.state, a.width)
 
 	parts := []string{topBar}

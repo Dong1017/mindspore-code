@@ -200,8 +200,8 @@ func (r *Registry) registerDefaults() {
 
 	r.Register(Command{
 		Name:        "/report",
-		Description: "Create a new issue",
-		Usage:       "/report <failure|accuracy|performance> <title>",
+		Description: "Report a bug or issue",
+		Usage:       "/report [tags] <title> | /report acc|fail|perf <title>",
 	})
 
 	r.Register(Command{

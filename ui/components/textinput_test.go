@@ -9,6 +9,8 @@ import (
 	"github.com/vigo999/ms-cli/ui/slash"
 )
 
+const largePastedBlock = "line 01\nline 02\nline 03\nline 04\nline 05\nline 06\nline 07\nline 08\n"
+
 func TestTextInputHistoryRecall(t *testing.T) {
 	input := NewTextInput()
 	input = input.PushHistory("first prompt")
@@ -48,6 +50,117 @@ func TestTextInputHistoryDoesNotBreakSlashSuggestions(t *testing.T) {
 	}
 }
 
+func TestTextInputCtrlJInsertsNewline(t *testing.T) {
+	input := NewTextInput()
+	if got := input.Height(); got != 3 {
+		t.Fatalf("expected single-row composer block height 3, got %d", got)
+	}
+
+	input, _ = input.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	if got := input.Value(); got != "\n" {
+		t.Fatalf("expected ctrl+j to insert newline, got %q", got)
+	}
+	if got := input.Height(); got != 4 {
+		t.Fatalf("expected two-row composer block height 4, got %d", got)
+	}
+
+	input, _ = input.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
+
+	if got := input.Value(); got != "\n\n" {
+		t.Fatalf("expected second ctrl+j to insert another newline, got %q", got)
+	}
+	if got := input.Height(); got != 5 {
+		t.Fatalf("expected three-row composer block height 5, got %d", got)
+	}
+}
+
+func TestTextInputUsesSinglePromptWithContinuationLines(t *testing.T) {
+	input := NewTextInput()
+	input = input.SetWidth(40)
+	input.Model.SetValue("one\ntwo\nthree")
+	input.syncHeight()
+
+	view := input.View()
+	if got := strings.Count(view, composerPrompt); got != 1 {
+		t.Fatalf("expected one primary prompt, got %d in view %q", got, view)
+	}
+	if got := strings.Count(view, composerContinue+"two"); got != 1 {
+		t.Fatalf("expected continuation prompt for second line, got view %q", view)
+	}
+	if got := strings.Count(view, composerContinue+"three"); got != 1 {
+		t.Fatalf("expected continuation prompt for third line, got view %q", view)
+	}
+}
+
+func TestTextInputKeepsFirstLineVisibleAfterExplicitNewlineGrowth(t *testing.T) {
+	input := NewTextInput()
+	input = input.SetWidth(40)
+	input.Model.SetValue("alpha")
+
+	input, _ = input.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	input, _ = input.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("beta")})
+
+	view := input.View()
+	if !strings.Contains(view, composerPrompt+"alpha") {
+		t.Fatalf("expected first line to remain visible after newline growth, got %q", view)
+	}
+	if !strings.Contains(view, composerContinue+"beta") {
+		t.Fatalf("expected second line to remain visible after newline growth, got %q", view)
+	}
+}
+
+func TestTextInputLargePasteShowsCollapsedSummary(t *testing.T) {
+	input := NewTextInput()
+	input = input.SetWidth(60)
+
+	input, _ = input.Update(tea.KeyMsg{
+		Type:  tea.KeyRunes,
+		Runes: []rune(largePastedBlock),
+		Paste: true,
+	})
+
+	if !input.HasPasteSummary() {
+		t.Fatal("expected large paste to enter collapsed summary mode")
+	}
+	if got := input.Height(); got != 3 {
+		t.Fatalf("expected collapsed paste preview height 3, got %d", got)
+	}
+
+	view := input.View()
+	if !strings.Contains(view, "[pasted content:") {
+		t.Fatalf("expected collapsed paste summary in view, got %q", view)
+	}
+	if strings.Contains(view, "line 07") {
+		t.Fatalf("expected full pasted content to stay hidden in collapsed view, got %q", view)
+	}
+}
+
+func TestTextInputLargePasteStaysCollapsedAfterTyping(t *testing.T) {
+	input := NewTextInput()
+	input = input.SetWidth(60)
+
+	input, _ = input.Update(tea.KeyMsg{
+		Type:  tea.KeyRunes,
+		Runes: []rune(largePastedBlock),
+		Paste: true,
+	})
+	input, _ = input.Update(tea.KeyMsg{
+		Type:  tea.KeyRunes,
+		Runes: []rune{' '},
+	})
+
+	view := input.View()
+	if !strings.Contains(view, "[pasted content:") {
+		t.Fatalf("expected collapsed paste summary to remain after typing, got %q", view)
+	}
+	if strings.Contains(view, "line 07") {
+		t.Fatalf("expected full pasted content to stay hidden after typing, got %q", view)
+	}
+	if got := input.Value(); got != largePastedBlock+" " {
+		t.Fatalf("expected reconstructed value to preserve raw paste and typed suffix, got %q", got)
+	}
+}
+
 func TestTextInputHistoryRecallOfSlashCommandDoesNotReopenSuggestions(t *testing.T) {
 	input := NewTextInput()
 	input = input.PushHistory("/project")
@@ -69,6 +182,31 @@ func TestTextInputHistoryRecallOfSlashCommandDoesNotReopenSuggestions(t *testing
 	input = input.NextHistory()
 	if got := input.Value(); got != "hello" {
 		t.Fatalf("expected down to continue history recall even in slash mode, got %q", got)
+	}
+}
+
+func TestTextInputHistoryOnlyTriggersAtEditorBoundaries(t *testing.T) {
+	input := NewTextInput()
+	input.Model.SetValue("first line\nsecond line")
+	input.syncHeight()
+
+	if input.CanNavigateHistory("up") {
+		t.Fatal("expected up to stay inside multiline editor while on the last line")
+	}
+
+	input, _ = input.Update(tea.KeyMsg{Type: tea.KeyUp})
+
+	if !input.CanNavigateHistory("up") {
+		t.Fatal("expected up history at the top boundary of the editor")
+	}
+	if input.CanNavigateHistory("down") {
+		t.Fatal("expected down history to stay disabled away from the bottom boundary")
+	}
+
+	input, _ = input.Update(tea.KeyMsg{Type: tea.KeyDown})
+
+	if !input.CanNavigateHistory("down") {
+		t.Fatal("expected down history at the bottom boundary of multiline input")
 	}
 }
 

@@ -45,12 +45,12 @@ type Activity struct {
 }
 
 func NormalizeKind(kind string) (Kind, error) {
-	switch Kind(strings.ToLower(strings.TrimSpace(kind))) {
-	case KindFailure:
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case string(KindFailure), "fail":
 		return KindFailure, nil
-	case KindAccuracy:
+	case string(KindAccuracy), "acc":
 		return KindAccuracy, nil
-	case KindPerformance:
+	case string(KindPerformance), "perf":
 		return KindPerformance, nil
 	default:
 		return "", fmt.Errorf("invalid issue kind: %s", kind)

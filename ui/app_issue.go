@@ -139,6 +139,11 @@ func (a App) handleIssueDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
+	case "ctrl+j", "shift+enter":
+		var cmd tea.Cmd
+		a.input, cmd = a.input.Update(msg)
+		a.resizeActiveLayout()
+		return a, cmd
 	case "enter":
 		if a.input.IsSlashMode() {
 			var cmd tea.Cmd
@@ -165,13 +170,19 @@ func (a App) handleIssueDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	case "up", "down":
-		if msg.String() == "up" {
-			a.input = a.input.PrevHistory()
-		} else {
-			a.input = a.input.NextHistory()
+		if a.input.CanNavigateHistory(msg.String()) {
+			if msg.String() == "up" {
+				a.input = a.input.PrevHistory()
+			} else {
+				a.input = a.input.NextHistory()
+			}
+			a.resizeActiveLayout()
+			return a, nil
 		}
+		var cmd tea.Cmd
+		a.input, cmd = a.input.Update(msg)
 		a.resizeActiveLayout()
-		return a, nil
+		return a, cmd
 	default:
 		var cmd tea.Cmd
 		a.input, cmd = a.input.Update(msg)
@@ -272,7 +283,7 @@ func (a App) renderIssueView() string {
 	hintBar := panels.RenderIssueHintBar(a.width, a.issueView.Mode)
 	input := ""
 	if a.issueView.Mode == model.IssueModeDetail {
-		input = "  " + a.input.View()
+		input = a.input.View()
 	}
 	bodyHeight := a.height - lipgloss.Height(topBar) - lipgloss.Height(hintBar) - lipgloss.Height(input) - bottomSafePadding
 	if bodyHeight < 1 {
