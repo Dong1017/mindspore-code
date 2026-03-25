@@ -116,6 +116,7 @@ type App struct {
 	trainView     model.TrainViewState
 	trainFocus    model.TrainPanelID
 	bugView       model.BugViewState
+	issueView     model.IssueViewState
 	bootActive    bool
 	bootHighlight int
 	queuedInputs  []string
@@ -275,6 +276,10 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		})
 		a.updateViewport()
 		return a, nil
+	}
+
+	if a.issueView.Active() {
+		return a.handleIssueKey(msg)
 	}
 
 	if a.bugView.Active() {
@@ -475,6 +480,12 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 	switch ev.Type {
 	case model.UserInput:
 		a.state = a.state.WithMessage(model.Message{Kind: model.MsgUser, Content: ev.Message})
+	case model.IssueIndexOpen:
+		a.openIssueIndex(ev.IssueView)
+
+	case model.IssueDetailOpen:
+		a.openIssueDetail(ev.IssueView)
+
 	case model.BugIndexOpen:
 		a.openBugIndex(ev.BugView)
 
@@ -2026,6 +2037,9 @@ func (a App) chatLine() string {
 func (a App) View() string {
 	if a.bootActive {
 		return panels.RenderBootScreen(a.width, a.height, a.bootHighlight)
+	}
+	if a.issueView.Active() {
+		return a.renderIssueView()
 	}
 	if a.bugView.Active() {
 		return a.renderBugView()
