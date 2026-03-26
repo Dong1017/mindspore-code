@@ -80,7 +80,7 @@ jobs:
           if [ "${{ github.event_name }}" = "release" ]; then
             asset_count="$(jq '.release.assets | length' "${GITHUB_EVENT_PATH}")"
           else
-            asset_count="$(gh release view "${GH_TAG}" --json assets --jq '.assets | length' 2>/dev/null || echo 0)"
+            asset_count="$(gh release view "${GH_TAG}" --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets | length' 2>/dev/null || echo 0)"
           fi
 
           echo "GitHub release asset count: ${asset_count}"
@@ -90,7 +90,7 @@ jobs:
             exit 0
           fi
 
-          gh release download "${GH_TAG}" --dir release-assets
+          gh release download "${GH_TAG}" --repo "${GITHUB_REPOSITORY}" --dir release-assets
           ls -lah release-assets
 
       - name: Sync release metadata to GitCode
