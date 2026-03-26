@@ -145,22 +145,16 @@ func (a *Application) cmdIssueStatus(args []string) {
 }
 
 func (a *Application) cmdDiagnose(input string) {
-	target, err := parseIssueCommandTarget(input, "/diagnose")
-	if err != nil {
-		a.EventCh <- model.Event{Type: model.AgentReply, Message: err.Error()}
-		return
-	}
-	if target.HasIssue && !a.ensureIssueService() {
-		return
-	}
-	a.EventCh <- model.Event{
-		Type:    model.AgentReply,
-		Message: pendingIssueFlowMessage("diagnose", target),
-	}
+	a.runSkillCommand(input, "/diagnose")
 }
 
 func (a *Application) cmdFix(input string) {
-	target, err := parseIssueCommandTarget(input, "/fix")
+	a.runSkillCommand(input, "/fix")
+}
+
+func (a *Application) runSkillCommand(input, command string) {
+	mode := strings.TrimPrefix(command, "/")
+	target, err := parseIssueCommandTarget(input, command)
 	if err != nil {
 		a.EventCh <- model.Event{Type: model.AgentReply, Message: err.Error()}
 		return
@@ -168,10 +162,65 @@ func (a *Application) cmdFix(input string) {
 	if target.HasIssue && !a.ensureIssueService() {
 		return
 	}
-	a.EventCh <- model.Event{
-		Type:    model.AgentReply,
-		Message: pendingIssueFlowMessage("fix", target),
+
+	task, err := a.buildSkillTask(target, mode)
+	if err != nil {
+		a.EventCh <- model.Event{Type: model.AgentReply, Message: err.Error()}
+		return
 	}
+
+	a.EventCh <- model.Event{Type: model.AgentThinking}
+	go a.runTask(task)
+}
+
+// buildSkillTask constructs a task description that instructs the agent to load
+// the appropriate diagnosis skill in the given mode (diagnose or fix).
+func (a *Application) buildSkillTask(target issueCommandTarget, mode string) (string, error) {
+	if target.HasIssue {
+		issueCtx, err := a.buildIssueContext(target.IssueID)
+		if err != nil {
+			return "", fmt.Errorf("fetch issue failed: %w", err)
+		}
+		task := fmt.Sprintf("Load skill %s-agent in %s mode.\n\n%s", issueCtx.kind, mode, issueCtx.text)
+		if target.Prompt != "" {
+			task += "\n\nAdditional context: " + target.Prompt
+		}
+		return task, nil
+	}
+
+	return fmt.Sprintf(
+		"Load the appropriate diagnosis skill (failure-agent, accuracy-agent, or performance-agent) in %s mode.\n\nUser problem: %s",
+		mode, target.Prompt,
+	), nil
+}
+
+type issueContext struct {
+	kind string // failure, accuracy, performance
+	text string // formatted issue details
+}
+
+func (a *Application) buildIssueContext(id int) (issueContext, error) {
+	issue, err := a.issueService.GetIssue(id)
+	if err != nil {
+		return issueContext{}, err
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Issue: %s — %s\n", issue.Key, issue.Title)
+	fmt.Fprintf(&b, "Kind: %s\n", issue.Kind)
+	if issue.Summary != "" {
+		fmt.Fprintf(&b, "Summary: %s\n", issue.Summary)
+	}
+
+	notes, err := a.issueService.ListNotes(id)
+	if err == nil && len(notes) > 0 {
+		b.WriteString("\nNotes:\n")
+		for _, n := range notes {
+			fmt.Fprintf(&b, "- [%s] %s\n", n.Author, n.Content)
+		}
+	}
+
+	return issueContext{kind: string(issue.Kind), text: b.String()}, nil
 }
 
 func (a *Application) emitIssueDetail(id int, fromIndex bool) {
@@ -278,12 +327,3 @@ func looksLikeIssueKey(token string) bool {
 	return strings.HasPrefix(strings.ToUpper(strings.TrimSpace(token)), "ISSUE-")
 }
 
-func pendingIssueFlowMessage(action string, target issueCommandTarget) string {
-	if target.HasIssue {
-		if target.Prompt != "" {
-			return fmt.Sprintf("%s flow for %s is not wired yet (extra context: %s)", action, issuepkg.IssueKey(target.IssueID), target.Prompt)
-		}
-		return fmt.Sprintf("%s flow for %s is not wired yet", action, issuepkg.IssueKey(target.IssueID))
-	}
-	return fmt.Sprintf("%s flow for %q is not wired yet", action, target.Prompt)
-}

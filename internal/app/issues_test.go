@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -94,36 +95,124 @@ func TestParseIssueCommandTargetRejectsMalformedIssueKey(t *testing.T) {
 	}
 }
 
-func TestCmdDiagnoseAcceptsFreeTextInput(t *testing.T) {
-	app := &Application{
-		EventCh: make(chan model.Event, 4),
+func TestBuildSkillTaskFreeTextDiagnose(t *testing.T) {
+	app := &Application{}
+	target := issueCommandTarget{Prompt: "training crashes on Ascend"}
+	task, err := app.buildSkillTask(target, "diagnose")
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	app.cmdDiagnose("training loss too big")
-
-	ev := <-app.EventCh
-	if ev.Type != model.AgentReply {
-		t.Fatalf("event type = %s, want %s", ev.Type, model.AgentReply)
+	if !strings.Contains(task, "diagnose mode") {
+		t.Fatalf("task should contain diagnose mode, got %q", task)
 	}
-	if got, want := ev.Message, `diagnose flow for "training loss too big" is not wired yet`; got != want {
-		t.Fatalf("message = %q, want %q", got, want)
+	if !strings.Contains(task, "training crashes on Ascend") {
+		t.Fatalf("task should contain user problem, got %q", task)
 	}
 }
 
-func TestCmdFixAcceptsIssueTarget(t *testing.T) {
+func TestBuildSkillTaskFreeTextFix(t *testing.T) {
+	app := &Application{}
+	target := issueCommandTarget{Prompt: "accuracy dropped after migration"}
+	task, err := app.buildSkillTask(target, "fix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(task, "fix mode") {
+		t.Fatalf("task should contain fix mode, got %q", task)
+	}
+	if !strings.Contains(task, "accuracy dropped after migration") {
+		t.Fatalf("task should contain user problem, got %q", task)
+	}
+}
+
+func TestBuildSkillTaskIssueTargetUsesIssueKind(t *testing.T) {
+	store := &fakeAppIssueStore{
+		issue: &issuepkg.Issue{
+			ID: 42, Key: "ISSUE-42", Title: "throughput too low on NPU",
+			Kind: issuepkg.KindPerformance, Summary: "NPU utilization at 30%",
+		},
+		notes: []issuepkg.Note{
+			{Author: "alice", Content: "profiler shows idle cycles"},
+		},
+	}
 	app := &Application{
-		EventCh:      make(chan model.Event, 4),
-		issueService: issuepkg.NewService(&fakeAppIssueStore{}),
+		issueService: issuepkg.NewService(store),
 	}
 
-	app.cmdFix("ISSUE-42")
+	target := issueCommandTarget{HasIssue: true, IssueID: 42, Prompt: "extra info"}
+	task, err := app.buildSkillTask(target, "diagnose")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(task, "performance-agent") {
+		t.Fatalf("task should route to performance-agent, got %q", task)
+	}
+	if !strings.Contains(task, "ISSUE-42") {
+		t.Fatalf("task should contain issue key, got %q", task)
+	}
+	if !strings.Contains(task, "throughput too low on NPU") {
+		t.Fatalf("task should contain issue title, got %q", task)
+	}
+	if !strings.Contains(task, "NPU utilization at 30%") {
+		t.Fatalf("task should contain issue summary, got %q", task)
+	}
+	if !strings.Contains(task, "profiler shows idle cycles") {
+		t.Fatalf("task should contain issue notes, got %q", task)
+	}
+	if !strings.Contains(task, "extra info") {
+		t.Fatalf("task should contain additional context, got %q", task)
+	}
+}
 
+func TestBuildSkillTaskIssueTargetFailureKind(t *testing.T) {
+	store := &fakeAppIssueStore{
+		issue: &issuepkg.Issue{
+			ID: 1, Key: "ISSUE-1", Title: "OOM on training",
+			Kind: issuepkg.KindFailure,
+		},
+	}
+	app := &Application{
+		issueService: issuepkg.NewService(store),
+	}
+
+	target := issueCommandTarget{HasIssue: true, IssueID: 1}
+	task, err := app.buildSkillTask(target, "fix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(task, "failure-agent") {
+		t.Fatalf("task should route to failure-agent, got %q", task)
+	}
+	if !strings.Contains(task, "fix mode") {
+		t.Fatalf("task should contain fix mode, got %q", task)
+	}
+}
+
+func TestCmdDiagnoseEmptyInputReturnsUsage(t *testing.T) {
+	app := &Application{
+		EventCh: make(chan model.Event, 4),
+	}
+	app.cmdDiagnose("")
 	ev := <-app.EventCh
 	if ev.Type != model.AgentReply {
 		t.Fatalf("event type = %s, want %s", ev.Type, model.AgentReply)
 	}
-	if got, want := ev.Message, "fix flow for ISSUE-42 is not wired yet"; got != want {
-		t.Fatalf("message = %q, want %q", got, want)
+	if !strings.Contains(ev.Message, "Usage:") {
+		t.Fatalf("message should contain Usage, got %q", ev.Message)
+	}
+}
+
+func TestCmdFixEmptyInputReturnsUsage(t *testing.T) {
+	app := &Application{
+		EventCh: make(chan model.Event, 4),
+	}
+	app.cmdFix("")
+	ev := <-app.EventCh
+	if ev.Type != model.AgentReply {
+		t.Fatalf("event type = %s, want %s", ev.Type, model.AgentReply)
+	}
+	if !strings.Contains(ev.Message, "Usage:") {
+		t.Fatalf("message should contain Usage, got %q", ev.Message)
 	}
 }
 
