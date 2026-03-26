@@ -8,9 +8,14 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/vigo999/ms-cli/internal/update"
 	"github.com/vigo999/ms-cli/internal/version"
 )
+
+var updatePromptSelectedStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("117")).
+	Bold(true)
 
 // updateChoice is the result of the update prompt.
 type updateChoice int
@@ -22,16 +27,16 @@ const (
 
 // updatePrompt is a mini Bubble Tea model for the pre-TUI update screen.
 type updatePrompt struct {
-	result       *update.CheckResult
-	program      *tea.Program
-	cursor       int
-	options      []string
-	chosen       bool
-	choice       updateChoice
-	message      string // status message after selection
-	quitting     bool
-	downloaded   int64
-	total        int64
+	result         *update.CheckResult
+	program        *tea.Program
+	cursor         int
+	options        []string
+	chosen         bool
+	choice         updateChoice
+	message        string // status message after selection
+	quitting       bool
+	downloaded     int64
+	total          int64
 	formattedNotes string // pre-computed from ReleaseNotes
 }
 
@@ -136,7 +141,8 @@ func (m *updatePrompt) View() string {
 
 	for i, opt := range m.options {
 		if i == m.cursor {
-			b.WriteString(fmt.Sprintf("  > %s\n", opt))
+			b.WriteString(updatePromptSelectedStyle.Render(fmt.Sprintf("  > %s", opt)))
+			b.WriteString("\n")
 		} else {
 			b.WriteString(fmt.Sprintf("    %s\n", opt))
 		}

@@ -19,7 +19,7 @@ import (
 
 const (
 	DefaultRepoURL           = "https://github.com/vigo999/mindspore-skills"
-	DefaultRepoBranch        = "refactor-arch-4.0"
+	DefaultRepoBranch        = "refactor-arch-4.1"
 	defaultRepoName          = "mindspore-skills"
 	defaultSkillsDir         = "skills"
 	defaultCommitFile        = ".ms-cli-commit"
@@ -505,7 +505,6 @@ func (s *DefaultRepoSync) ensureSkillsDir(skillsDir string) error {
 	return nil
 }
 
-
 func (s *DefaultRepoSync) logf(format string, args ...any) {
 	if s.logWriter == nil {
 		return
@@ -664,7 +663,6 @@ func ShortCommit(commit string) string {
 	}
 	return commit[:12]
 }
-
 
 func defaultRunCommand(name string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultCommandLimit)
