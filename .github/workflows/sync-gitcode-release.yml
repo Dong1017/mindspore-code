@@ -217,6 +217,7 @@ jobs:
             echo "Uploading ${file_name} to GitCode release..."
             curl -sS --fail \
               -X POST \
+              -H "PRIVATE-TOKEN: ${GITCODE_TOKEN}" \
               "${upload_url}" \
               -F "file=@${file}"
           done
