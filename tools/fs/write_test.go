@@ -73,8 +73,8 @@ func TestWriteToolMissingPathReturnsGuidanceError(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("result.Error = nil, want guidance error")
 	}
-	if got := result.Error.Error(); !strings.Contains(got, `use "path"`) {
-		t.Fatalf("result.Error = %q, want path guidance", got)
+	if got := result.Error.Error(); !strings.Contains(got, "invalid_write_args: missing path") {
+		t.Fatalf("result.Error = %q, want structured path guidance", got)
 	}
 }
 

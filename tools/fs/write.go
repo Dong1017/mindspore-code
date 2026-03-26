@@ -72,7 +72,7 @@ func (t *WriteTool) Execute(ctx context.Context, params json.RawMessage) (*tools
 		path = strings.TrimSpace(p.Filename)
 	}
 	if path == "" {
-		return tools.ErrorResultf(`path is required (use "path"; aliases "file_path"/"filename" are only fallback)`), nil
+		return tools.ErrorResultf(`invalid_write_args: missing path (required keys: "path","content"; aliases "file_path"/"filename" are fallback only)`), nil
 	}
 
 	fullPath, err := resolveSafePath(t.workDir, path)

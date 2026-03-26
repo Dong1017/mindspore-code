@@ -652,6 +652,8 @@ Guidelines:
 3. Make minimal, focused changes
 4. Use grep and glob to explore the codebase
 5. Run tests with shell to verify changes
+6. Before any write call, verify arguments contain BOTH "path" and "content"; if either is missing, do not call write yet.
+7. Never call write with empty JSON arguments ({}).
 
 IMPORTANT: When you have gathered enough information to answer the user's question, you MUST provide your final answer directly WITHOUT using any more tools. Do not keep calling tools indefinitely - provide a clear, concise response once you have the information needed.
 
