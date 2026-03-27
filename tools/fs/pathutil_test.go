@@ -45,6 +45,19 @@ func TestResolveSafePathRejectsAbsolutePathOutsideAllowedRoots(t *testing.T) {
 	}
 }
 
+func TestResolveSafePathAllowsAbsolutePathInsideWorkDir(t *testing.T) {
+	workDir := t.TempDir()
+	input := filepath.Join(workDir, "nested", "file.txt")
+
+	got, err := resolveSafePath(workDir, input)
+	if err != nil {
+		t.Fatalf("resolveSafePath returned error: %v", err)
+	}
+	if got != input {
+		t.Fatalf("resolveSafePath = %q, want %q", got, input)
+	}
+}
+
 func TestResolveSafePathAllowsConfiguredHomeDirectories(t *testing.T) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {

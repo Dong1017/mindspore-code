@@ -17,6 +17,11 @@ func resolveSafePath(workDir, input string) (string, error) {
 		return "", fmt.Errorf("path is required")
 	}
 
+	baseAbs, err := filepath.Abs(workDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve working directory: %w", err)
+	}
+
 	cleaned := filepath.Clean(input)
 	normalized, err := normalizeAllowedAbsolutePath(cleaned)
 	if err != nil {
@@ -25,22 +30,28 @@ func resolveSafePath(workDir, input string) (string, error) {
 	cleaned = normalized
 
 	if filepath.IsAbs(cleaned) {
-		allowed, err := isAllowedAbsolutePath(cleaned)
+		absPath, err := filepath.Abs(cleaned)
+		if err != nil {
+			return "", fmt.Errorf("resolve path: %w", err)
+		}
+		if pathWithinBase(baseAbs, absPath) {
+			if isIgnoredGitPath(absPath) {
+				return "", fmt.Errorf("path is ignored: %s", input)
+			}
+			return absPath, nil
+		}
+
+		allowed, err := isAllowedAbsolutePath(absPath)
 		if err != nil {
 			return "", err
 		}
 		if !allowed {
 			return "", fmt.Errorf("absolute paths are not allowed: %s", input)
 		}
-		if isIgnoredGitPath(cleaned) {
+		if isIgnoredGitPath(absPath) {
 			return "", fmt.Errorf("path is ignored: %s", input)
 		}
-		return cleaned, nil
-	}
-
-	baseAbs, err := filepath.Abs(workDir)
-	if err != nil {
-		return "", fmt.Errorf("resolve working directory: %w", err)
+		return absPath, nil
 	}
 
 	fullAbs, err := filepath.Abs(filepath.Join(baseAbs, cleaned))
