@@ -3,7 +3,6 @@ package fs
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -130,11 +129,8 @@ func (t *GlobTool) Execute(ctx context.Context, params json.RawMessage) (*tools.
 	totalMatches := len(matches)
 	matches = sliceWithOffsetLimit(matches, p.Offset, effectiveLimit)
 
-	result := strings.Join(matches, "\n")
-	summary := fmt.Sprintf("%d files", len(matches))
-	if p.Offset > 0 || p.Limit > 0 || totalMatches != len(matches) {
-		summary = fmt.Sprintf("%d files (offset=%d, limit=%d)", len(matches), p.Offset, effectiveLimit)
-	}
+	summary := pagedSearchSummary(totalMatches, p.Offset, len(matches), "files")
+	result := buildSearchResultContent(summary, matches)
 
 	return tools.StringResultWithSummary(result, summary), nil
 }

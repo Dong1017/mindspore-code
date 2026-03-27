@@ -78,3 +78,26 @@ func TestRenderMessages_ToolFailureShowsErrorSummaryAndDetails(t *testing.T) {
 		t.Fatalf("expected failure detail line, got:\n%s", view)
 	}
 }
+
+func TestRenderMessages_ToolSummaryDedupesLeadingDetailLine(t *testing.T) {
+	state := model.State{
+		Messages: []model.Message{
+			{
+				Kind:     model.MsgTool,
+				ToolName: "Grep",
+				ToolArgs: "needle",
+				Display:  model.DisplayCollapsed,
+				Summary:  "showing 2-2 of 3 matches",
+				Content:  "showing 2-2 of 3 matches\na.txt:2:needle two",
+			},
+		},
+	}
+
+	view := RenderMessages(state, "", 80, true)
+	if got, want := strings.Count(view, "showing 2-2 of 3 matches"), 1; got != want {
+		t.Fatalf("expected deduped summary count %d, got %d in view:\n%s", want, got, view)
+	}
+	if !strings.Contains(view, "a.txt:2:needle two") {
+		t.Fatalf("expected detail line after dedupe, got:\n%s", view)
+	}
+}

@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 
 	"github.com/vigo999/ms-cli/integrations/llm"
 	"github.com/vigo999/ms-cli/tools"
@@ -137,11 +136,8 @@ func (t *GrepTool) Execute(ctx context.Context, params json.RawMessage) (*tools.
 		lines = append(lines, fmt.Sprintf("%s:%d:%s", relPath, m.Line, m.Text))
 	}
 
-	result := strings.Join(lines, "\n")
-	summary := fmt.Sprintf("%d matches", len(matches))
-	if p.Offset > 0 || p.Limit > 0 || totalMatches != len(matches) {
-		summary = fmt.Sprintf("%d matches (offset=%d, limit=%d)", len(matches), p.Offset, effectiveLimit)
-	}
+	summary := pagedSearchSummary(totalMatches, p.Offset, len(matches), "matches")
+	result := buildSearchResultContent(summary, lines)
 
 	return tools.StringResultWithSummary(result, summary), nil
 }

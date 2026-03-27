@@ -189,6 +189,8 @@ func toolResult(m model.Message) (string, []string) {
 	if summary == "" && len(lines) > 0 {
 		summary = lines[0]
 		lines = lines[1:]
+	} else if summary != "" && len(lines) > 0 && strings.TrimSpace(lines[0]) == summary {
+		lines = lines[1:]
 	}
 	return summary, lines
 }

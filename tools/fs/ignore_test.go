@@ -94,10 +94,10 @@ func TestGlobToolSupportsOffsetAndLimit(t *testing.T) {
 	if result.Error != nil {
 		t.Fatalf("Execute result error = %v, want nil", result.Error)
 	}
-	if got, want := result.Content, "b.txt"; got != want {
+	if got, want := result.Content, "showing 2-2 of 3 files\nb.txt"; got != want {
 		t.Fatalf("glob content = %q, want %q", got, want)
 	}
-	if got, want := result.Summary, "1 files (offset=2, limit=1)"; got != want {
+	if got, want := result.Summary, "showing 2-2 of 3 files"; got != want {
 		t.Fatalf("glob summary = %q, want %q", got, want)
 	}
 }
@@ -123,10 +123,10 @@ func TestGlobToolDefaultsLimitTo100(t *testing.T) {
 	if result.Error != nil {
 		t.Fatalf("Execute result error = %v, want nil", result.Error)
 	}
-	if got, want := len(strings.Split(result.Content, "\n")), 100; got != want {
+	if got, want := len(strings.Split(result.Content, "\n")), 101; got != want {
 		t.Fatalf("glob returned %d files, want %d", got, want)
 	}
-	if got, want := result.Summary, "100 files (offset=0, limit=100)"; got != want {
+	if got, want := result.Summary, "showing 1-100 of 120 files"; got != want {
 		t.Fatalf("glob summary = %q, want %q", got, want)
 	}
 }
@@ -153,10 +153,10 @@ func TestGlobToolCapsLimitAt100(t *testing.T) {
 	if result.Error != nil {
 		t.Fatalf("Execute result error = %v, want nil", result.Error)
 	}
-	if got, want := len(strings.Split(result.Content, "\n")), 100; got != want {
+	if got, want := len(strings.Split(result.Content, "\n")), 101; got != want {
 		t.Fatalf("glob returned %d files, want %d", got, want)
 	}
-	if got, want := result.Summary, "100 files (offset=0, limit=100)"; got != want {
+	if got, want := result.Summary, "showing 1-100 of 120 files"; got != want {
 		t.Fatalf("glob summary = %q, want %q", got, want)
 	}
 }
@@ -184,10 +184,10 @@ func TestGrepToolSupportsOffsetAndLimit(t *testing.T) {
 	if result.Error != nil {
 		t.Fatalf("Execute result error = %v, want nil", result.Error)
 	}
-	if got, want := result.Content, "a.txt:2:needle two"; got != want {
+	if got, want := result.Content, "showing 2-2 of 3 matches\na.txt:2:needle two"; got != want {
 		t.Fatalf("grep content = %q, want %q", got, want)
 	}
-	if got, want := result.Summary, "1 matches (offset=2, limit=1)"; got != want {
+	if got, want := result.Summary, "showing 2-2 of 3 matches"; got != want {
 		t.Fatalf("grep summary = %q, want %q", got, want)
 	}
 }
@@ -216,10 +216,10 @@ func TestGrepToolDefaultsLimitTo100(t *testing.T) {
 	if result.Error != nil {
 		t.Fatalf("Execute result error = %v, want nil", result.Error)
 	}
-	if got, want := len(strings.Split(result.Content, "\n")), 100; got != want {
+	if got, want := len(strings.Split(result.Content, "\n")), 101; got != want {
 		t.Fatalf("grep returned %d matches, want %d", got, want)
 	}
-	if got, want := result.Summary, "100 matches (offset=0, limit=100)"; got != want {
+	if got, want := result.Summary, "showing 1-100 of 120 matches"; got != want {
 		t.Fatalf("grep summary = %q, want %q", got, want)
 	}
 }
@@ -249,10 +249,10 @@ func TestGrepToolCapsLimitAt100(t *testing.T) {
 	if result.Error != nil {
 		t.Fatalf("Execute result error = %v, want nil", result.Error)
 	}
-	if got, want := len(strings.Split(result.Content, "\n")), 100; got != want {
+	if got, want := len(strings.Split(result.Content, "\n")), 101; got != want {
 		t.Fatalf("grep returned %d matches, want %d", got, want)
 	}
-	if got, want := result.Summary, "100 matches (offset=0, limit=100)"; got != want {
+	if got, want := result.Summary, "showing 1-100 of 120 matches"; got != want {
 		t.Fatalf("grep summary = %q, want %q", got, want)
 	}
 }
