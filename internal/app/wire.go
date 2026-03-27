@@ -212,7 +212,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		ctxManager.SetSystemPrompt(systemPrompt)
 		ctxManager.SetNonSystemMessages(restoredMessages)
 		if cfg.Replay {
-			replayTimeline = runtimeSession.ReplayTimeline()
+			replayTimeline = runtimeSession.PlaybackTimeline()
 			if metaWorkDir := strings.TrimSpace(runtimeSession.Meta().WorkDir); metaWorkDir != "" {
 				workDir = metaWorkDir
 			}

@@ -322,8 +322,10 @@ func (a *Application) replayHistoryTimeline() {
 	for i, frame := range a.replayTimeline {
 		if i > 0 {
 			delay := frame.Timestamp.Sub(previous)
-			if err := waitReplayDelay(ctx, delay); err != nil {
-				return
+			if delay > 0 {
+				if err := waitReplayDelay(ctx, delay); err != nil {
+					return
+				}
 			}
 		}
 

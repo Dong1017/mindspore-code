@@ -195,3 +195,48 @@ func TestLoadReplayPathAcceptsTrajectoryJSONFilename(t *testing.T) {
 		t.Fatalf("second event type = %q, want %q", got, "AgentReply")
 	}
 }
+
+func TestPlaybackTimelineInsertsThinkingBetweenUserAndLLMResponse(t *testing.T) {
+	t0 := time.Date(2026, time.March, 27, 10, 0, 0, 0, time.UTC)
+	t1 := t0.Add(2 * time.Second)
+	t2 := t1.Add(3 * time.Second)
+	t3 := t2.Add(1 * time.Second)
+
+	s := &Session{
+		records: []MessageRecord{
+			{Type: recordTypeUser, Timestamp: t0, Content: "hello"},
+			{Type: recordTypeToolCall, Timestamp: t1, ToolName: "shell", Arguments: []byte(`{"command":"pwd"}`)},
+			{Type: recordTypeToolResult, Timestamp: t2, ToolName: "shell", Content: "/tmp"},
+			{Type: recordTypeAssistant, Timestamp: t3, Content: "done"},
+		},
+	}
+
+	playback := s.PlaybackTimeline()
+	if len(playback) != 6 {
+		t.Fatalf("playback timeline length = %d, want 6", len(playback))
+	}
+	if playback[0].Event.Type != "UserInput" {
+		t.Fatalf("first event type = %q, want %q", playback[0].Event.Type, "UserInput")
+	}
+	if playback[1].Event.Type != "AgentThinking" {
+		t.Fatalf("second event type = %q, want %q", playback[1].Event.Type, "AgentThinking")
+	}
+	if !playback[1].Timestamp.Equal(t0) {
+		t.Fatalf("thinking timestamp after user = %v, want %v", playback[1].Timestamp, t0)
+	}
+	if playback[2].Event.Type != "ToolCallStart" {
+		t.Fatalf("third event type = %q, want %q", playback[2].Event.Type, "ToolCallStart")
+	}
+	if playback[3].Event.Type != "ToolReplay" {
+		t.Fatalf("fourth event type = %q, want %q", playback[3].Event.Type, "ToolReplay")
+	}
+	if playback[4].Event.Type != "AgentThinking" {
+		t.Fatalf("fifth event type = %q, want %q", playback[4].Event.Type, "AgentThinking")
+	}
+	if !playback[4].Timestamp.Equal(t2) {
+		t.Fatalf("thinking timestamp after tool result = %v, want %v", playback[4].Timestamp, t2)
+	}
+	if playback[5].Event.Type != "AgentReply" {
+		t.Fatalf("sixth event type = %q, want %q", playback[5].Event.Type, "AgentReply")
+	}
+}

@@ -112,6 +112,61 @@ func TestReplayHistoryTimelinePreservesRecordedDelays(t *testing.T) {
 	}
 }
 
+func TestReplayHistoryTimelineShowsThinkingDuringLLMWait(t *testing.T) {
+	previousWait := waitReplayDelay
+	t.Cleanup(func() {
+		waitReplayDelay = previousWait
+	})
+
+	var waits []time.Duration
+	waitReplayDelay = func(ctx context.Context, d time.Duration) error {
+		waits = append(waits, d)
+		return nil
+	}
+
+	eventCh := make(chan model.Event, 3)
+	t0 := time.Date(2026, time.March, 27, 12, 0, 0, 0, time.UTC)
+	app := &Application{
+		EventCh:    eventCh,
+		replayOnly: true,
+		replayTimeline: []session.ReplayFrame{
+			{
+				Timestamp: t0,
+				Event:     model.Event{Type: model.UserInput, Message: "hello"},
+			},
+			{
+				Timestamp: t0,
+				Event:     model.Event{Type: model.AgentThinking},
+			},
+			{
+				Timestamp: t0.Add(200 * time.Millisecond),
+				Event:     model.Event{Type: model.AgentReply, Message: "hi"},
+			},
+		},
+	}
+
+	app.replayHistory()
+
+	first := <-eventCh
+	if first.Type != model.UserInput {
+		t.Fatalf("first event type = %q, want %q", first.Type, model.UserInput)
+	}
+	second := <-eventCh
+	if second.Type != model.AgentThinking {
+		t.Fatalf("second event type = %q, want %q", second.Type, model.AgentThinking)
+	}
+	third := <-eventCh
+	if third.Type != model.AgentReply {
+		t.Fatalf("third event type = %q, want %q", third.Type, model.AgentReply)
+	}
+	if len(waits) != 1 {
+		t.Fatalf("wait count = %d, want 1", len(waits))
+	}
+	if waits[0] != 200*time.Millisecond {
+		t.Fatalf("wait duration = %v, want %v", waits[0], 200*time.Millisecond)
+	}
+}
+
 func TestParseBootstrapConfigReplay(t *testing.T) {
 	cfg, err := parseBootstrapConfig([]string{"replay", "sess_123"})
 	if err != nil {

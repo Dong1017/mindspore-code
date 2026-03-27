@@ -353,6 +353,32 @@ func (s *Session) ReplayTimeline() []ReplayFrame {
 	return frames
 }
 
+// PlaybackTimeline synthesizes timestamped UI replay events for real-time playback.
+// It inserts AgentThinking between turns when the next visible event comes from LLM reasoning.
+func (s *Session) PlaybackTimeline() []ReplayFrame {
+	frames := s.ReplayTimeline()
+	if len(frames) < 2 {
+		return frames
+	}
+
+	playback := make([]ReplayFrame, 0, len(frames)*2)
+	for i, frame := range frames {
+		if i > 0 {
+			prev := frames[i-1]
+			if shouldInsertThinking(prev, frame) {
+				playback = append(playback, ReplayFrame{
+					Timestamp: prev.Timestamp,
+					Event: model.Event{
+						Type: model.AgentThinking,
+					},
+				})
+			}
+		}
+		playback = append(playback, frame)
+	}
+	return playback
+}
+
 // RestoreContext returns the system prompt and reconstructed non-system messages.
 func (s *Session) RestoreContext() (string, []llm.Message) {
 	if s == nil {
@@ -849,5 +875,24 @@ func replayEvent(record MessageRecord) (model.Event, bool) {
 		return replaySkillEvent(record.SkillName), true
 	default:
 		return model.Event{}, false
+	}
+}
+
+func shouldInsertThinking(previous, next ReplayFrame) bool {
+	if !next.Timestamp.After(previous.Timestamp) {
+		return false
+	}
+
+	switch previous.Event.Type {
+	case model.UserInput, model.ToolReplay, model.ToolSkill:
+	default:
+		return false
+	}
+
+	switch next.Event.Type {
+	case model.AgentReply, model.ToolCallStart:
+		return true
+	default:
+		return false
 	}
 }
