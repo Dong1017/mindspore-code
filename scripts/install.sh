@@ -207,13 +207,13 @@ pick_source() {
       continue
     fi
 
-    echo "Probing ${provider}..."
+    echo "Probing ${provider}..." >&2
     if ! speed="$(probe_speed "$url")"; then
-      echo "  ${provider}: unavailable"
+      echo "  ${provider}: unavailable" >&2
       continue
     fi
 
-    echo "  ${provider}: $(format_speed "$speed")"
+    echo "  ${provider}: $(format_speed "$speed")" >&2
     if [ -z "$best_speed" ] || awk -v left="$speed" -v right="$best_speed" 'BEGIN { exit !(left > right) }'; then
       best_name="$provider"
       best_url="$url"
