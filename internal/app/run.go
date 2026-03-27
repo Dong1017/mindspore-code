@@ -13,6 +13,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/vigo999/ms-cli/agent/loop"
+	"github.com/vigo999/ms-cli/agent/session"
 	"github.com/vigo999/ms-cli/integrations/llm"
 	"github.com/vigo999/ms-cli/internal/version"
 	"github.com/vigo999/ms-cli/ui"
@@ -320,10 +321,10 @@ func (a *Application) replayHistoryTimeline() {
 	a.setReplayCancel(cancel)
 	defer a.clearReplayCancel()
 
-	var previous time.Time
+	var previousFrame *session.ReplayFrame
 	for i, frame := range a.replayTimeline {
 		if i > 0 {
-			delay := frame.Timestamp.Sub(previous)
+			delay := a.replayDelayBetween(previousFrame, frame)
 			if delay > 0 {
 				if err := waitReplayDelay(ctx, a.scaledReplayDelay(delay)); err != nil {
 					return
@@ -336,7 +337,8 @@ func (a *Application) replayHistoryTimeline() {
 			return
 		case a.EventCh <- frame.Event:
 		}
-		previous = frame.Timestamp
+		current := frame
+		previousFrame = &current
 	}
 
 	if len(a.replayTimeline) == 0 || a.ctxManager == nil {
@@ -355,6 +357,28 @@ func (a *Application) scaledReplayDelay(delay time.Duration) time.Duration {
 		return time.Nanosecond
 	}
 	return time.Duration(math.Round(scaled))
+}
+
+func (a *Application) replayDelayBetween(previous *session.ReplayFrame, current session.ReplayFrame) time.Duration {
+	if previous == nil {
+		return 0
+	}
+	if shouldSkipReplayDelay(previous.Event.Type, current.Event.Type) {
+		return 0
+	}
+	return current.Timestamp.Sub(previous.Timestamp)
+}
+
+func shouldSkipReplayDelay(previousType, currentType model.EventType) bool {
+	if currentType != model.UserInput {
+		return false
+	}
+	switch previousType {
+	case model.AgentReply, model.AgentReplyDelta:
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *Application) setReplayCancel(cancel context.CancelFunc) {

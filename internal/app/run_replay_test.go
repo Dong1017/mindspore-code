@@ -167,6 +167,61 @@ func TestReplayHistoryTimelineShowsThinkingDuringLLMWait(t *testing.T) {
 	}
 }
 
+func TestReplayHistoryTimelineSkipsDelayBetweenAssistantAndNextUser(t *testing.T) {
+	previousWait := waitReplayDelay
+	t.Cleanup(func() {
+		waitReplayDelay = previousWait
+	})
+
+	var waits []time.Duration
+	waitReplayDelay = func(ctx context.Context, d time.Duration) error {
+		waits = append(waits, d)
+		return nil
+	}
+
+	eventCh := make(chan model.Event, 4)
+	t0 := time.Date(2026, time.March, 27, 12, 0, 0, 0, time.UTC)
+	app := &Application{
+		EventCh:    eventCh,
+		replayOnly: true,
+		replayTimeline: []session.ReplayFrame{
+			{
+				Timestamp: t0,
+				Event:     model.Event{Type: model.AgentReplyDelta, Message: "he"},
+			},
+			{
+				Timestamp: t0.Add(100 * time.Millisecond),
+				Event:     model.Event{Type: model.AgentReply, Message: "hello"},
+			},
+			{
+				Timestamp: t0.Add(5 * time.Second),
+				Event:     model.Event{Type: model.UserInput, Message: "next"},
+			},
+		},
+	}
+
+	app.replayHistory()
+
+	first := <-eventCh
+	if first.Type != model.AgentReplyDelta {
+		t.Fatalf("first event type = %q, want %q", first.Type, model.AgentReplyDelta)
+	}
+	second := <-eventCh
+	if second.Type != model.AgentReply {
+		t.Fatalf("second event type = %q, want %q", second.Type, model.AgentReply)
+	}
+	third := <-eventCh
+	if third.Type != model.UserInput {
+		t.Fatalf("third event type = %q, want %q", third.Type, model.UserInput)
+	}
+	if len(waits) != 1 {
+		t.Fatalf("wait count = %d, want 1", len(waits))
+	}
+	if waits[0] != 100*time.Millisecond {
+		t.Fatalf("wait duration = %v, want %v", waits[0], 100*time.Millisecond)
+	}
+}
+
 func TestParseBootstrapConfigReplay(t *testing.T) {
 	cfg, err := parseBootstrapConfig([]string{"replay", "sess_123"})
 	if err != nil {
@@ -233,5 +288,17 @@ func TestScaledReplayDelayUsesSpeedMultiplier(t *testing.T) {
 	got := app.scaledReplayDelay(300 * time.Millisecond)
 	if got != 150*time.Millisecond {
 		t.Fatalf("scaled replay delay = %v, want %v", got, 150*time.Millisecond)
+	}
+}
+
+func TestShouldSkipReplayDelay(t *testing.T) {
+	if !shouldSkipReplayDelay(model.AgentReply, model.UserInput) {
+		t.Fatal("expected agent reply to next user input to skip delay")
+	}
+	if !shouldSkipReplayDelay(model.AgentReplyDelta, model.UserInput) {
+		t.Fatal("expected agent reply delta to next user input to skip delay")
+	}
+	if shouldSkipReplayDelay(model.ToolReplay, model.UserInput) {
+		t.Fatal("did not expect tool replay to next user input to skip delay")
 	}
 }
