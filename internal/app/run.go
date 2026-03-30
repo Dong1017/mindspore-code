@@ -518,7 +518,7 @@ func (a *Application) emitToolError(toolName, format string, args ...any) {
 
 func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 	if len(args) > 0 && args[0] == "replay" {
-		fs := flag.NewFlagSet("ms-cli replay", flag.ContinueOnError)
+		fs := flag.NewFlagSet("mindspore-code replay", flag.ContinueOnError)
 		fs.SetOutput(os.Stderr)
 		if err := fs.Parse(args[1:]); err != nil {
 			return BootstrapConfig{}, err
@@ -581,7 +581,7 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 
 func parseReplayTargetAndSpeed(args []string) (string, float64, error) {
 	usageErr := func() error {
-		return fmt.Errorf("usage: ms-cli replay [sess_xxx|trajectory.json|trajectory.jsonl] [speed]")
+		return fmt.Errorf("usage: mindspore-code replay [sess_xxx|trajectory.json|trajectory.jsonl] [speed]")
 	}
 
 	switch len(args) {

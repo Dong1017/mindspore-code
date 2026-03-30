@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/vigo999/mindspore-code/ui/model"
-	uirender "github.com/vigo999/mindspore-code/ui/render"
+	// uirender "github.com/vigo999/mindspore-code/ui/render"
 )
 
 var (
