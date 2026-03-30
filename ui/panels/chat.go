@@ -168,7 +168,7 @@ func renderToolCallLine(state model.State, m model.Message, spinnerFrame string)
 	dot := toolPendingDotStyle.Render("⏺")
 	suffix := ""
 	switch {
-	case m.Pending:
+	case m.Pending || m.Streaming:
 		if strings.TrimSpace(spinnerFrame) != "" && state.WaitKind == model.WaitTool {
 			dot = spinnerFrame
 		} else {
@@ -188,7 +188,11 @@ func renderToolCallLine(state model.State, m model.Message, spinnerFrame string)
 func renderPendingToolStatus(state model.State, m model.Message) string {
 	status := strings.TrimSpace(m.Summary)
 	if status == "" {
-		status = "running..."
+		if strings.EqualFold(strings.TrimSpace(m.ToolName), "Shell") {
+			status = "running command..."
+		} else {
+			status = "running..."
+		}
 	}
 	if state.WaitKind == model.WaitTool && !state.WaitStartedAt.IsZero() {
 		elapsed := state.WaitElapsed

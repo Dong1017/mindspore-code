@@ -3,10 +3,12 @@ package shell
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	rshell "github.com/vigo999/mindspore-code/runtime/shell"
+	"github.com/vigo999/mindspore-code/tools"
 )
 
 func TestShellToolExecute_DoesNotDuplicateCommandOrExit0InContent(t *testing.T) {
@@ -32,5 +34,51 @@ func TestShellToolExecute_DoesNotDuplicateCommandOrExit0InContent(t *testing.T) 
 	}
 	if strings.TrimSpace(result.Summary) == "exit 0" {
 		t.Fatalf("expected summary not to be 'exit 0'")
+	}
+}
+
+func TestShellToolExecuteStream_EmitsStartedAndOutput(t *testing.T) {
+	runner := rshell.NewRunner(rshell.Config{
+		WorkDir: ".",
+		Timeout: 2 * time.Second,
+	})
+	tool := NewShellTool(runner)
+
+	var (
+		mu      sync.Mutex
+		updates []tools.StreamEvent
+	)
+	result, err := tool.ExecuteStream(context.Background(), []byte(`{"command":"printf 'hello\\n'; printf 'warn\\n' >&2"}`), func(ev tools.StreamEvent) {
+		mu.Lock()
+		updates = append(updates, ev)
+		mu.Unlock()
+	})
+	if err != nil {
+		t.Fatalf("execute shell tool stream: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("unexpected result error: %v", result.Error)
+	}
+	if len(updates) == 0 || updates[0].Type != tools.StreamEventStarted {
+		t.Fatalf("expected first update to be started, got %#v", updates)
+	}
+
+	var sawStdout, sawStderr bool
+	for _, update := range updates {
+		if update.Type != tools.StreamEventOutput {
+			continue
+		}
+		if strings.Contains(update.Message, "hello") {
+			sawStdout = true
+		}
+		if strings.Contains(update.Message, "[stderr] warn") {
+			sawStderr = true
+		}
+	}
+	if !sawStdout {
+		t.Fatalf("expected stdout update, got %#v", updates)
+	}
+	if !sawStderr {
+		t.Fatalf("expected stderr update, got %#v", updates)
 	}
 }

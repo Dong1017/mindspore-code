@@ -97,3 +97,77 @@ func TestCtrlO_TogglesToolExpansion(t *testing.T) {
 		t.Fatalf("expected full content after ctrl+o, got:\n%s", expanded)
 	}
 }
+
+func TestShellCmdOutputRendersLiveInUI(t *testing.T) {
+	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.ToolCallStart,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-1",
+		Message:    "go test ./ui",
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.CmdStarted,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-1",
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.CmdOutput,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-1",
+		Message:    "=== RUN   TestShell",
+	})
+	app = next.(App)
+
+	if app.state.Messages[0].Pending {
+		t.Fatal("expected shell message to stop being pending after streamed output")
+	}
+	if !app.state.Messages[0].Streaming {
+		t.Fatal("expected shell message to stay streaming before command finishes")
+	}
+	if got, want := app.state.Messages[0].Content, "=== RUN   TestShell"; got != want {
+		t.Fatalf("content = %q, want %q", got, want)
+	}
+	if got, want := app.state.WaitKind, model.WaitTool; got != want {
+		t.Fatalf("wait kind = %v, want %v", got, want)
+	}
+
+	view := app.View()
+	if !strings.Contains(view, "running command...") {
+		t.Fatalf("expected running shell status in view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "=== RUN   TestShell") {
+		t.Fatalf("expected streamed shell output in view, got:\n%s", view)
+	}
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.CmdFinished,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-1",
+		Message:    "=== RUN   TestShell\nPASS",
+		Summary:    "completed",
+	})
+	app = next.(App)
+
+	if app.state.Messages[0].Streaming {
+		t.Fatal("expected shell message streaming flag cleared after finish")
+	}
+	if got, want := app.state.WaitKind, model.WaitNone; got != want {
+		t.Fatalf("wait kind = %v, want %v", got, want)
+	}
+	if got, want := app.state.Messages[0].Summary, "completed"; got != want {
+		t.Fatalf("summary = %q, want %q", got, want)
+	}
+	if got, want := app.state.Messages[0].Content, "=== RUN   TestShell\nPASS"; got != want {
+		t.Fatalf("content = %q, want %q", got, want)
+	}
+}

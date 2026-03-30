@@ -19,6 +19,7 @@ type Event struct {
 	Task       string
 	Message    string
 	ToolName   string
+	ToolCallID string
 	Summary    string
 	CtxUsed    int
 	CtxMax     int

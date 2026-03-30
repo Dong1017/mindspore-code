@@ -255,3 +255,23 @@ func TestConvertLoopEvent_ContextCompactedUsesContextNotice(t *testing.T) {
 		t.Fatalf("convertLoopEvent message = %q, want %q", got.Message, ev.Message)
 	}
 }
+
+func TestConvertLoopEvent_PreservesToolCallID(t *testing.T) {
+	ev := loop.Event{
+		Type:       loop.EventCmdOutput,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-1",
+		Message:    "PASS",
+	}
+
+	got := convertLoopEvent(ev)
+	if got == nil {
+		t.Fatal("convertLoopEvent(CmdOutput) = nil, want non-nil")
+	}
+	if got.Type != model.CmdOutput {
+		t.Fatalf("convertLoopEvent type = %v, want %v", got.Type, model.CmdOutput)
+	}
+	if got.ToolCallID != ev.ToolCallID {
+		t.Fatalf("convertLoopEvent ToolCallID = %q, want %q", got.ToolCallID, ev.ToolCallID)
+	}
+}

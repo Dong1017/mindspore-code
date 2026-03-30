@@ -95,6 +95,21 @@ func (t stubTool) Execute(context.Context, json.RawMessage) (*tools.Result, erro
 	return &tools.Result{Content: t.content, Summary: t.summary}, nil
 }
 
+type streamingStubTool struct {
+	stubTool
+	updates []tools.StreamEvent
+}
+
+func (t streamingStubTool) ExecuteStream(ctx context.Context, raw json.RawMessage, emit func(tools.StreamEvent)) (*tools.Result, error) {
+	if emit != nil {
+		emit(tools.StreamEvent{Type: tools.StreamEventStarted})
+		for _, update := range t.updates {
+			emit(update)
+		}
+	}
+	return t.Execute(ctx, raw)
+}
+
 func newPersistenceRecorder(log *[]string) *TrajectoryRecorder {
 	last := ""
 	appendLog := func(entry string) {
@@ -231,6 +246,88 @@ func TestRunPersistsToolResultBeforeToolRender(t *testing.T) {
 
 	requireOrder(t, log, "tool_call:read", "snapshot:tool_call:read", "ui:ToolCallStart")
 	requireOrder(t, log, "tool_result:read", "snapshot:tool_result:read", "ui:ToolRead")
+}
+
+func TestRunShellStreamingEmitsLiveCommandEvents(t *testing.T) {
+	args, err := json.Marshal(map[string]string{"command": "printf 'line-1\\nline-2\\n'"})
+	if err != nil {
+		t.Fatalf("marshal tool args: %v", err)
+	}
+
+	provider := &scriptedStreamProvider{
+		responses: []*llm.CompletionResponse{
+			{
+				ToolCalls: []llm.ToolCall{{
+					ID:   "call-shell-1",
+					Type: "function",
+					Function: llm.ToolCallFunc{
+						Name:      "shell",
+						Arguments: args,
+					},
+				}},
+				FinishReason: llm.FinishToolCalls,
+			},
+			{
+				Content:      "done",
+				FinishReason: llm.FinishStop,
+			},
+		},
+	}
+
+	registry := tools.NewRegistry()
+	registry.MustRegister(streamingStubTool{
+		stubTool: stubTool{name: "shell", content: "line-1\nline-2", summary: "completed"},
+		updates: []tools.StreamEvent{
+			{Type: tools.StreamEventOutput, Message: "line-1"},
+			{Type: tools.StreamEventOutput, Message: "line-2"},
+		},
+	})
+
+	engine := NewEngine(EngineConfig{
+		MaxIterations: 2,
+		ContextWindow: 4096,
+	}, provider, registry)
+
+	var events []Event
+	err = engine.RunWithContextStream(context.Background(), Task{
+		ID:          "stream-shell-events",
+		Description: "run a shell command",
+	}, func(ev Event) {
+		switch ev.Type {
+		case EventToolCallStart, EventCmdStarted, EventCmdOutput, EventCmdFinished:
+			events = append(events, ev)
+		}
+	})
+	if err != nil {
+		t.Fatalf("RunWithContextStream failed: %v", err)
+	}
+
+	if len(events) != 5 {
+		t.Fatalf("event count = %d, want 5 (%#v)", len(events), events)
+	}
+
+	wantTypes := []string{
+		EventToolCallStart,
+		EventCmdStarted,
+		EventCmdOutput,
+		EventCmdOutput,
+		EventCmdFinished,
+	}
+	for i, want := range wantTypes {
+		if got := events[i].Type; got != want {
+			t.Fatalf("events[%d].Type = %q, want %q", i, got, want)
+		}
+		if got := events[i].ToolCallID; got != "call-shell-1" {
+			t.Fatalf("events[%d].ToolCallID = %q, want call-shell-1", i, got)
+		}
+	}
+
+	if got := events[4].Summary; got != "completed" {
+		t.Fatalf("final summary = %q, want completed", got)
+	}
+	if got := events[4].Message; got != "line-1\nline-2" {
+		t.Fatalf("final message = %q, want full shell output", got)
+	}
 }
 
 func TestRunPersistsSnapshotBeforeContextCompactionNotice(t *testing.T) {

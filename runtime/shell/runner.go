@@ -32,6 +32,12 @@ type Result struct {
 	Error    error
 }
 
+// OutputChunk is a single line emitted while a command is running.
+type OutputChunk struct {
+	Stream string
+	Text   string
+}
+
 // Runner executes shell commands within a configured workspace.
 type Runner struct {
 	config Config
@@ -40,6 +46,8 @@ type Runner struct {
 const (
 	maxScannerTokenSize = 1024 * 1024
 	maxOutputBytes      = 64 * 1024
+	StreamStdout        = "stdout"
+	StreamStderr        = "stderr"
 )
 
 // NewRunner creates a new shell runner.
@@ -52,6 +60,11 @@ func NewRunner(cfg Config) *Runner {
 
 // Run executes a command and returns the result.
 func (r *Runner) Run(ctx context.Context, command string) (*Result, error) {
+	return r.RunStream(ctx, command, nil)
+}
+
+// RunStream executes a command, emitting output lines as they arrive.
+func (r *Runner) RunStream(ctx context.Context, command string, emit func(OutputChunk)) (*Result, error) {
 	if reason := r.checkAllowed(command); reason != "" {
 		return &Result{
 			ExitCode: -1,
@@ -97,13 +110,21 @@ func (r *Runner) Run(ctx context.Context, command string) (*Result, error) {
 
 	stdoutDone := make(chan struct{})
 	go func() {
-		stdoutOut, stdoutErr = readCapped(stdout, maxOutputBytes)
+		stdoutOut, stdoutErr = readCapped(stdout, maxOutputBytes, func(line string) {
+			if emit != nil {
+				emit(OutputChunk{Stream: StreamStdout, Text: line})
+			}
+		})
 		close(stdoutDone)
 	}()
 
 	stderrDone := make(chan struct{})
 	go func() {
-		stderrOut, stderrErr = readCapped(stderr, maxOutputBytes)
+		stderrOut, stderrErr = readCapped(stderr, maxOutputBytes, func(line string) {
+			if emit != nil {
+				emit(OutputChunk{Stream: StreamStderr, Text: line})
+			}
+		})
 		close(stderrDone)
 	}()
 
@@ -136,7 +157,7 @@ func (r *Runner) Run(ctx context.Context, command string) (*Result, error) {
 	return result, nil
 }
 
-func readCapped(r io.Reader, maxBytes int) (string, error) {
+func readCapped(r io.Reader, maxBytes int, emit func(string)) (string, error) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), maxScannerTokenSize)
 
@@ -153,6 +174,9 @@ func readCapped(r io.Reader, maxBytes int) (string, error) {
 				b.WriteByte('\n')
 			}
 			b.WriteString(line)
+			if emit != nil {
+				emit(line)
+			}
 		} else {
 			truncated = true
 		}
@@ -164,7 +188,11 @@ func readCapped(r io.Reader, maxBytes int) (string, error) {
 		if b.Len() > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString("[output truncated]")
+		const marker = "[output truncated]"
+		b.WriteString(marker)
+		if emit != nil {
+			emit(marker)
+		}
 	}
 	return b.String(), nil
 }

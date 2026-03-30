@@ -872,24 +872,31 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		a.state = a.state.WithMessage(a.pendingToolMessage(ev))
 
 	case model.CmdStarted:
-		a.replayWait = nil
-		a.state = a.clearThinking()
 		stats := a.state.Stats
 		stats.Commands++
 		a.state = a.state.WithStats(stats)
 		a.state = a.resolveToolEvent(ev, model.Message{
-			Kind:     model.MsgTool,
-			ToolName: "Shell",
-			ToolArgs: ev.Message,
-			Display:  model.DisplayExpanded,
-			Content:  ev.Message,
+			Kind:       model.MsgTool,
+			ToolName:   "Shell",
+			ToolCallID: ev.ToolCallID,
+			Display:    model.DisplayExpanded,
+			Streaming:  true,
 		})
 
 	case model.CmdOutput:
-		a.state = a.appendToLastTool(ev.Message)
+		a.state = a.appendToolOutput(ev)
 
 	case model.CmdFinished:
-		// output already in the tool block
+		a.replayWait = nil
+		a.state = a.clearThinking()
+		a.state = a.resolveToolEvent(ev, model.Message{
+			Kind:       model.MsgTool,
+			ToolName:   "Shell",
+			ToolCallID: ev.ToolCallID,
+			Display:    model.DisplayExpanded,
+			Content:    ev.Message,
+			Summary:    ev.Summary,
+		})
 
 	case model.ToolRead:
 		a.replayWait = nil
@@ -2005,29 +2012,29 @@ func (a App) currentWaitElapsed() time.Duration {
 	return time.Duration(scaled)
 }
 
-func (a App) appendToLastTool(line string) model.State {
+func (a App) appendToolOutput(ev model.Event) model.State {
 	msgs := make([]model.Message, len(a.state.Messages))
 	copy(msgs, a.state.Messages)
 
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Kind == model.MsgTool {
-			content := msgs[i].Content
-			if content == "" {
-				content = line
-			} else {
-				content += "\n" + line
+	idx := toolMessageIndex(msgs, ev.ToolCallID)
+	if idx < 0 {
+		for i := len(msgs) - 1; i >= 0; i-- {
+			if msgs[i].Kind == model.MsgTool {
+				idx = i
+				break
 			}
-			msgs[i] = model.Message{
-				Kind:     model.MsgTool,
-				ToolName: msgs[i].ToolName,
-				ToolArgs: msgs[i].ToolArgs,
-				Display:  msgs[i].Display,
-				Content:  content,
-				Summary:  msgs[i].Summary,
-				Pending:  false,
-			}
-			break
 		}
+	}
+	if idx >= 0 {
+		content := msgs[idx].Content
+		if content == "" {
+			content = ev.Message
+		} else {
+			content += "\n" + ev.Message
+		}
+		msgs[idx].Content = content
+		msgs[idx].Pending = false
+		msgs[idx].Streaming = true
 	}
 
 	next := a.state
@@ -2054,13 +2061,17 @@ func (a App) pendingToolMessage(ev model.Event) model.Message {
 	if ev.ToolName == "shell" && !strings.HasPrefix(strings.TrimSpace(content), "$ ") {
 		content = "$ " + content
 	}
+	body := content
+	if ev.ToolName == "shell" {
+		body = ""
+	}
 	return model.Message{
 		Kind:       model.MsgTool,
 		ToolName:   toolName,
 		ToolCallID: ev.ToolCallID,
 		ToolArgs:   content,
 		Display:    display,
-		Content:    content,
+		Content:    body,
 		Summary:    summary,
 		Pending:    true,
 	}
@@ -2071,6 +2082,13 @@ func (a App) resolveToolEvent(ev model.Event, fallback model.Message) model.Stat
 	copy(msgs, a.state.Messages)
 
 	if idx := pendingToolMessageIndex(msgs, ev.ToolCallID); idx >= 0 {
+		msgs[idx] = finalizeToolMessage(msgs[idx], ev)
+		next := a.state
+		next.Messages = msgs
+		return next
+	}
+
+	if idx := toolMessageIndex(msgs, ev.ToolCallID); idx >= 0 {
 		msgs[idx] = finalizeToolMessage(msgs[idx], ev)
 		next := a.state
 		next.Messages = msgs
@@ -2125,6 +2143,22 @@ func pendingToolMessageIndex(msgs []model.Message, toolCallID string) int {
 	return -1
 }
 
+func toolMessageIndex(msgs []model.Message, toolCallID string) int {
+	toolCallID = strings.TrimSpace(toolCallID)
+	if toolCallID == "" {
+		return -1
+	}
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Kind != model.MsgTool {
+			continue
+		}
+		if strings.TrimSpace(msgs[i].ToolCallID) == toolCallID {
+			return i
+		}
+	}
+	return -1
+}
+
 func pendingReplayToolMessageIndex(msgs []model.Message, ev model.Event) int {
 	if idx := pendingToolMessageIndex(msgs, ev.ToolCallID); idx >= 0 {
 		return idx
@@ -2152,8 +2186,19 @@ func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 		return model.Message{
 			Kind:       model.MsgTool,
 			ToolName:   valueOrString(pending.ToolName, "Shell"),
-			ToolCallID: pending.ToolCallID,
+			ToolCallID: valueOrString(pending.ToolCallID, ev.ToolCallID),
 			ToolArgs:   valueOrString(pending.ToolArgs, ev.Message),
+			Display:    model.DisplayExpanded,
+			Content:    ev.Message,
+			Summary:    ev.Summary,
+			Streaming:  true,
+		}
+	case model.CmdFinished:
+		return model.Message{
+			Kind:       model.MsgTool,
+			ToolName:   valueOrString(pending.ToolName, "Shell"),
+			ToolCallID: valueOrString(pending.ToolCallID, ev.ToolCallID),
+			ToolArgs:   valueOrString(pending.ToolArgs, pending.Content),
 			Display:    model.DisplayExpanded,
 			Content:    ev.Message,
 			Summary:    ev.Summary,
@@ -2162,7 +2207,7 @@ func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 		return model.Message{
 			Kind:       model.MsgTool,
 			ToolName:   pending.ToolName,
-			ToolCallID: pending.ToolCallID,
+			ToolCallID: valueOrString(pending.ToolCallID, ev.ToolCallID),
 			ToolArgs:   valueOrString(pending.ToolArgs, pending.Content),
 			Display:    model.DisplayExpanded,
 			Content:    ev.Message,
@@ -2172,7 +2217,7 @@ func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 		return model.Message{
 			Kind:       model.MsgTool,
 			ToolName:   pending.ToolName,
-			ToolCallID: pending.ToolCallID,
+			ToolCallID: valueOrString(pending.ToolCallID, ev.ToolCallID),
 			ToolArgs:   valueOrString(pending.ToolArgs, ev.Message),
 			Display:    model.DisplayCollapsed,
 			Content:    "",
@@ -2182,7 +2227,7 @@ func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 		return model.Message{
 			Kind:       model.MsgTool,
 			ToolName:   pending.ToolName,
-			ToolCallID: pending.ToolCallID,
+			ToolCallID: valueOrString(pending.ToolCallID, ev.ToolCallID),
 			ToolArgs:   valueOrString(pending.ToolArgs, ev.Message),
 			Display:    model.DisplayCollapsed,
 			Content:    ev.Message,
@@ -2196,7 +2241,7 @@ func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 		return model.Message{
 			Kind:       model.MsgTool,
 			ToolName:   toolName,
-			ToolCallID: pending.ToolCallID,
+			ToolCallID: valueOrString(pending.ToolCallID, ev.ToolCallID),
 			ToolArgs:   valueOrString(pending.ToolArgs, pending.Content),
 			Display:    model.DisplayWarning,
 			Content:    ev.Message,
@@ -2209,7 +2254,7 @@ func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 		return model.Message{
 			Kind:       model.MsgTool,
 			ToolName:   toolName,
-			ToolCallID: pending.ToolCallID,
+			ToolCallID: valueOrString(pending.ToolCallID, ev.ToolCallID),
 			ToolArgs:   valueOrString(pending.ToolArgs, pending.Content),
 			Display:    model.DisplayError,
 			Content:    ev.Message,

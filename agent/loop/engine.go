@@ -407,6 +407,7 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 	toolName := tc.Function.Name
 	startEv := NewEvent(EventToolCallStart, describeToolCall(toolName, tc.Function.Arguments))
 	startEv.ToolName = toolName
+	startEv.ToolCallID = tc.ID
 	ex.addEvent(startEv)
 
 	tool, ok := ex.engine.tools.Get(toolName)
@@ -446,7 +447,15 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 	}
 
 	// Execute
-	result, err := tool.Execute(ctx, tc.Function.Arguments)
+	var result *tools.Result
+	streamingTool, canStream := tool.(tools.StreamingTool)
+	if canStream {
+		result, err = streamingTool.ExecuteStream(ctx, tc.Function.Arguments, func(update tools.StreamEvent) {
+			ex.addStreamingToolEvent(toolName, tc.ID, update)
+		})
+	} else {
+		result, err = tool.Execute(ctx, tc.Function.Arguments)
+	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 			return context.Canceled
@@ -496,7 +505,7 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 		return err
 	}
 	ex.emitContextCompactionNotice(notice)
-	ex.addToolEvent(toolName, result)
+	ex.addToolEvent(toolName, tc.ID, result)
 	return nil
 }
 
@@ -506,17 +515,42 @@ var toolEventMap = map[string]string{
 	"glob":       EventToolGlob,
 	"edit":       EventToolEdit,
 	"write":      EventToolWrite,
-	"shell":      EventCmdStarted,
+	"shell":      EventCmdFinished,
 	"load_skill": EventToolSkill,
 }
 
-func (ex *executor) addToolEvent(toolName string, result *tools.Result) {
+func (ex *executor) addStreamingToolEvent(toolName, toolCallID string, update tools.StreamEvent) {
+	var eventType string
+	switch update.Type {
+	case tools.StreamEventStarted:
+		if toolName != "shell" {
+			return
+		}
+		eventType = EventCmdStarted
+	case tools.StreamEventOutput:
+		if toolName != "shell" {
+			return
+		}
+		eventType = EventCmdOutput
+	default:
+		return
+	}
+
+	ev := NewEvent(eventType, update.Message)
+	ev.ToolName = toolName
+	ev.ToolCallID = toolCallID
+	ev.Summary = update.Summary
+	ex.addEvent(ev)
+}
+
+func (ex *executor) addToolEvent(toolName, toolCallID string, result *tools.Result) {
 	eventType := EventToolStarted
 	if t, ok := toolEventMap[toolName]; ok {
 		eventType = t
 	}
 	ev := NewEvent(eventType, result.Content)
 	ev.ToolName = toolName
+	ev.ToolCallID = toolCallID
 	ev.Summary = result.Summary
 	ex.addEvent(ev)
 }
