@@ -156,6 +156,7 @@ type App struct {
 	userCh        chan<- string // sends user input to the engine bridge
 	lastInterrupt time.Time     // track last ctrl+c for double-press exit
 	mouseEnabled  bool
+	replayWait    *model.ReplayWaitData
 
 	// Train mode
 	trainView     model.TrainViewState
@@ -183,6 +184,13 @@ func New(ch <-chan model.Event, userCh chan<- string, version, workDir, repoURL,
 		userCh:     userCh,
 		bootActive: true,
 	}
+}
+
+// NewReplay creates a TUI instance that starts directly in chat view for playback.
+func NewReplay(ch <-chan model.Event, userCh chan<- string, version, workDir, repoURL, modelName string, ctxMax int) App {
+	app := New(ch, userCh, version, workDir, repoURL, modelName, ctxMax)
+	app.bootActive = false
+	return app
 }
 
 func (a App) waitForEvent() tea.Msg {
@@ -327,6 +335,7 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			default:
 			}
 		}
+		a.replayWait = nil
 		a.state = a.clearThinking()
 		a.input = a.input.Reset()
 		a.resizeActiveLayout()
@@ -707,9 +716,11 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// Reset stats for new task
 		a.state = a.state.ResetStats()
-		a.state = a.state.WithThinking(false)
+		a.replayWait = nil
+		a.state = a.clearThinking()
 		if !strings.HasPrefix(val, "/") {
 			a.state = a.state.WithMessage(model.Message{Kind: model.MsgUser, Content: val})
+			a.state = a.startWait(model.WaitModel)
 		}
 		a.input = a.input.PushHistory(val)
 		a.input = a.input.Reset()
@@ -782,8 +793,12 @@ func (a App) maybeDispatchQueuedInput() App {
 	next := a.queuedInputs[0]
 	a.queuedInputs = append([]string{}, a.queuedInputs[1:]...)
 	a.state = a.state.ResetStats()
-	a.state = a.state.WithThinking(false)
+	a.replayWait = nil
+	a.state = a.clearThinking()
 	a.state = a.state.WithMessage(model.Message{Kind: model.MsgUser, Content: next})
+	if !strings.HasPrefix(strings.TrimSpace(next), "/") {
+		a.state = a.startWait(model.WaitModel)
+	}
 	select {
 	case a.userCh <- next:
 	default:
@@ -813,13 +828,16 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		a.openBugDetail(ev.BugView)
 
 	case model.TaskDone:
-		a.state = a.state.WithThinking(false)
+		a.replayWait = nil
+		a.state = a.clearThinking()
 
 	case model.AgentThinking:
-		a.state = a.state.WithThinking(true)
+		a.replayWait = ev.ReplayWait
+		a.state = a.startWait(model.WaitModel)
 
 	case model.AgentReply:
-		a.state = a.state.WithThinking(false)
+		a.replayWait = nil
+		a.state = a.clearThinking()
 		a.input = a.input.ClearSlashMode()
 		content := ev.Message
 		if ev.Train != nil && ev.Train.IsDiff {
@@ -829,20 +847,27 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		}
 		a.state = a.finalizeAgentMessage(content)
 
+	case model.ContextNotice:
+		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: ev.Message})
+
 	case model.AgentReplyDelta:
-		a.state = a.state.WithThinking(false)
+		a.replayWait = nil
+		a.state = a.clearThinking()
 		a.state = a.appendToStreamingAgent(ev.Message)
 
 	case model.PermissionPrompt:
-		a.state = a.state.WithThinking(false)
+		a.replayWait = nil
+		a.state = a.clearThinking()
 		a.permissionPrompt = toPermissionPromptState(ev)
 
 	case model.PermissionsView:
-		a.state = a.state.WithThinking(false)
+		a.replayWait = nil
+		a.state = a.clearThinking()
 		a.permissionsView = toPermissionsViewState(ev)
 
 	case model.ToolCallStart:
-		a.state = a.state.WithThinking(false)
+		a.replayWait = ev.ReplayWait
+		a.state = a.startWait(model.WaitTool)
 		a.state = a.commitStreamingAgent()
 		a.state = a.state.WithMessage(a.pendingToolMessage(ev))
 
@@ -851,20 +876,31 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		stats.Commands++
 		a.state = a.state.WithStats(stats)
 		a.state = a.resolveToolEvent(ev, model.Message{
-			Kind:     model.MsgTool,
-			ToolName: "Shell",
-			ToolArgs: ev.Message,
-			Display:  model.DisplayExpanded,
-			Content:  ev.Message,
+			Kind:       model.MsgTool,
+			ToolName:   "Shell",
+			ToolCallID: ev.ToolCallID,
+			Display:    model.DisplayExpanded,
+			Streaming:  true,
 		})
 
 	case model.CmdOutput:
-		a.state = a.appendToLastTool(ev.Message)
+		a.state = a.appendToolOutput(ev)
 
 	case model.CmdFinished:
-		// output already in the tool block
+		a.replayWait = nil
+		a.state = a.clearThinking()
+		a.state = a.resolveToolEvent(ev, model.Message{
+			Kind:       model.MsgTool,
+			ToolName:   "Shell",
+			ToolCallID: ev.ToolCallID,
+			Display:    model.DisplayExpanded,
+			Content:    ev.Message,
+			Summary:    ev.Summary,
+		})
 
 	case model.ToolRead:
+		a.replayWait = nil
+		a.state = a.clearThinking()
 		stats := a.state.Stats
 		stats.FilesRead++
 		a.state = a.state.WithStats(stats)
@@ -874,6 +910,8 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		})
 
 	case model.ToolGrep:
+		a.replayWait = nil
+		a.state = a.clearThinking()
 		stats := a.state.Stats
 		stats.Searches++
 		a.state = a.state.WithStats(stats)
@@ -883,6 +921,8 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		})
 
 	case model.ToolGlob:
+		a.replayWait = nil
+		a.state = a.clearThinking()
 		stats := a.state.Stats
 		stats.Searches++
 		a.state = a.state.WithStats(stats)
@@ -892,6 +932,8 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		})
 
 	case model.ToolEdit:
+		a.replayWait = nil
+		a.state = a.clearThinking()
 		stats := a.state.Stats
 		stats.FilesEdited++
 		a.state = a.state.WithStats(stats)
@@ -901,6 +943,8 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		})
 
 	case model.ToolWrite:
+		a.replayWait = nil
+		a.state = a.clearThinking()
 		stats := a.state.Stats
 		stats.FilesEdited++
 		a.state = a.state.WithStats(stats)
@@ -910,6 +954,8 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		})
 
 	case model.ToolSkill:
+		a.replayWait = nil
+		a.state = a.clearThinking()
 		msg := model.Message{
 			Kind:     model.MsgTool,
 			ToolName: displayToolName(ev.ToolName),
@@ -923,7 +969,16 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 			a.state = a.state.WithMessage(msg)
 		}
 
+	case model.ToolWarning:
+		a.replayWait = nil
+		a.state = a.clearThinking()
+		a.state = a.resolveToolEvent(ev, model.Message{
+			Kind: model.MsgTool, ToolName: displayToolName(ev.ToolName), ToolArgs: ev.Message,
+			Display: model.DisplayWarning, Content: ev.Message,
+		})
+
 	case model.ToolError:
+		a.replayWait = nil
 		a.state = a.clearThinking()
 		stats := a.state.Stats
 		stats.Errors++
@@ -934,7 +989,8 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		})
 
 	case model.ToolReplay:
-		a.state = a.state.WithMessage(replayToolMessage(ev))
+		a.replayWait = nil
+		a.state = a.resolveReplayToolEvent(ev)
 
 	case model.AnalysisReady:
 		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: ev.Message})
@@ -946,6 +1002,8 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		// no-op for now
 
 	case model.ClearScreen:
+		a.replayWait = nil
+		a.state = a.state.ClearWait()
 		a.state.Messages = []model.Message{
 			{Kind: model.MsgAgent, Content: ev.Message},
 		}
@@ -1911,32 +1969,72 @@ func (a App) commitStreamingAgent() model.State {
 }
 
 func (a App) clearThinking() model.State {
-	return a.state.WithThinking(false)
+	return a.state.WithThinking(false).ClearWait()
 }
 
-func (a App) appendToLastTool(line string) model.State {
+func (a App) startWait(kind model.WaitKind) model.State {
+	next := a.state
+	if next.WaitKind != kind || next.WaitStartedAt.IsZero() {
+		next = next.WithWait(kind, time.Now())
+	}
+	return next.WithThinking(kind == model.WaitModel)
+}
+
+func (a App) thinkingStatusText() string {
+	text := "Thinking..."
+	if a.state.WaitKind != model.WaitModel || a.state.WaitStartedAt.IsZero() {
+		return text
+	}
+	return text + " " + model.FormatWaitDuration(a.currentWaitElapsed())
+}
+
+func (a App) currentWaitElapsed() time.Duration {
+	if a.state.WaitStartedAt.IsZero() {
+		return 0
+	}
+
+	elapsed := time.Since(a.state.WaitStartedAt)
+	if a.replayWait == nil ||
+		a.replayWait.OriginalDuration <= 0 ||
+		a.replayWait.SimulatedDuration <= 0 ||
+		a.replayWait.SimulatedDuration >= a.replayWait.OriginalDuration {
+		return elapsed
+	}
+
+	if elapsed >= a.replayWait.SimulatedDuration {
+		return a.replayWait.OriginalDuration
+	}
+
+	scaled := float64(elapsed) * float64(a.replayWait.OriginalDuration) / float64(a.replayWait.SimulatedDuration)
+	if scaled < 1 {
+		return time.Nanosecond
+	}
+	return time.Duration(scaled)
+}
+
+func (a App) appendToolOutput(ev model.Event) model.State {
 	msgs := make([]model.Message, len(a.state.Messages))
 	copy(msgs, a.state.Messages)
 
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Kind == model.MsgTool {
-			content := msgs[i].Content
-			if content == "" {
-				content = line
-			} else {
-				content += "\n" + line
+	idx := toolMessageIndex(msgs, ev.ToolCallID)
+	if idx < 0 {
+		for i := len(msgs) - 1; i >= 0; i-- {
+			if msgs[i].Kind == model.MsgTool {
+				idx = i
+				break
 			}
-			msgs[i] = model.Message{
-				Kind:     model.MsgTool,
-				ToolName: msgs[i].ToolName,
-				ToolArgs: msgs[i].ToolArgs,
-				Display:  msgs[i].Display,
-				Content:  content,
-				Summary:  msgs[i].Summary,
-				Pending:  false,
-			}
-			break
 		}
+	}
+	if idx >= 0 {
+		content := msgs[idx].Content
+		if content == "" {
+			content = ev.Message
+		} else {
+			content += "\n" + ev.Message
+		}
+		msgs[idx].Content = content
+		msgs[idx].Pending = false
+		msgs[idx].Streaming = true
 	}
 
 	next := a.state
@@ -1963,14 +2061,19 @@ func (a App) pendingToolMessage(ev model.Event) model.Message {
 	if ev.ToolName == "shell" && !strings.HasPrefix(strings.TrimSpace(content), "$ ") {
 		content = "$ " + content
 	}
+	body := content
+	if ev.ToolName == "shell" {
+		body = ""
+	}
 	return model.Message{
-		Kind:     model.MsgTool,
-		ToolName: toolName,
-		ToolArgs: content,
-		Display:  display,
-		Content:  content,
-		Summary:  summary,
-		Pending:  true,
+		Kind:       model.MsgTool,
+		ToolName:   toolName,
+		ToolCallID: ev.ToolCallID,
+		ToolArgs:   content,
+		Display:    display,
+		Content:    body,
+		Summary:    summary,
+		Pending:    true,
 	}
 }
 
@@ -1978,8 +2081,22 @@ func (a App) resolveToolEvent(ev model.Event, fallback model.Message) model.Stat
 	msgs := make([]model.Message, len(a.state.Messages))
 	copy(msgs, a.state.Messages)
 
+	if idx := pendingToolMessageIndex(msgs, ev.ToolCallID); idx >= 0 {
+		msgs[idx] = finalizeToolMessage(msgs[idx], ev)
+		next := a.state
+		next.Messages = msgs
+		return next
+	}
+
+	if idx := toolMessageIndex(msgs, ev.ToolCallID); idx >= 0 {
+		msgs[idx] = finalizeToolMessage(msgs[idx], ev)
+		next := a.state
+		next.Messages = msgs
+		return next
+	}
+
 	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Kind != model.MsgTool || !msgs[i].Pending {
+		if !isPendingToolMessage(msgs[i]) {
 			continue
 		}
 		msgs[i] = finalizeToolMessage(msgs[i], ev)
@@ -1994,43 +2111,140 @@ func (a App) resolveToolEvent(ev model.Event, fallback model.Message) model.Stat
 	return next
 }
 
+func (a App) resolveReplayToolEvent(ev model.Event) model.State {
+	msgs := make([]model.Message, len(a.state.Messages))
+	copy(msgs, a.state.Messages)
+
+	if idx := pendingReplayToolMessageIndex(msgs, ev); idx >= 0 {
+		msgs[idx] = finalizeToolReplayMessage(msgs[idx], ev)
+		next := a.state
+		next.Messages = msgs
+		return next
+	}
+
+	next := a.state
+	next.Messages = append(msgs, replayToolMessage(ev))
+	return next
+}
+
+func pendingToolMessageIndex(msgs []model.Message, toolCallID string) int {
+	toolCallID = strings.TrimSpace(toolCallID)
+	if toolCallID == "" {
+		return -1
+	}
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if !isPendingToolMessage(msgs[i]) {
+			continue
+		}
+		if strings.TrimSpace(msgs[i].ToolCallID) == toolCallID {
+			return i
+		}
+	}
+	return -1
+}
+
+func toolMessageIndex(msgs []model.Message, toolCallID string) int {
+	toolCallID = strings.TrimSpace(toolCallID)
+	if toolCallID == "" {
+		return -1
+	}
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Kind != model.MsgTool {
+			continue
+		}
+		if strings.TrimSpace(msgs[i].ToolCallID) == toolCallID {
+			return i
+		}
+	}
+	return -1
+}
+
+func pendingReplayToolMessageIndex(msgs []model.Message, ev model.Event) int {
+	if idx := pendingToolMessageIndex(msgs, ev.ToolCallID); idx >= 0 {
+		return idx
+	}
+
+	toolName := displayToolName(ev.ToolName)
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if !isPendingToolMessage(msgs[i]) {
+			continue
+		}
+		if strings.TrimSpace(msgs[i].ToolName) == toolName {
+			return i
+		}
+	}
+	return -1
+}
+
+func isPendingToolMessage(msg model.Message) bool {
+	return msg.Kind == model.MsgTool && msg.Pending
+}
+
 func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 	switch ev.Type {
 	case model.CmdStarted:
 		return model.Message{
-			Kind:     model.MsgTool,
-			ToolName: valueOrString(pending.ToolName, "Shell"),
-			ToolArgs: valueOrString(pending.ToolArgs, ev.Message),
-			Display:  model.DisplayExpanded,
-			Content:  ev.Message,
-			Summary:  ev.Summary,
+			Kind:       model.MsgTool,
+			ToolName:   valueOrString(pending.ToolName, "Shell"),
+			ToolCallID: valueOrString(pending.ToolCallID, ev.ToolCallID),
+			ToolArgs:   valueOrString(pending.ToolArgs, ev.Message),
+			Display:    model.DisplayExpanded,
+			Content:    ev.Message,
+			Summary:    ev.Summary,
+			Streaming:  true,
+		}
+	case model.CmdFinished:
+		return model.Message{
+			Kind:       model.MsgTool,
+			ToolName:   valueOrString(pending.ToolName, "Shell"),
+			ToolCallID: valueOrString(pending.ToolCallID, ev.ToolCallID),
+			ToolArgs:   valueOrString(pending.ToolArgs, pending.Content),
+			Display:    model.DisplayExpanded,
+			Content:    ev.Message,
+			Summary:    ev.Summary,
 		}
 	case model.ToolEdit, model.ToolWrite:
 		return model.Message{
-			Kind:     model.MsgTool,
-			ToolName: pending.ToolName,
-			ToolArgs: valueOrString(pending.ToolArgs, pending.Content),
-			Display:  model.DisplayExpanded,
-			Content:  ev.Message,
-			Summary:  ev.Summary,
+			Kind:       model.MsgTool,
+			ToolName:   pending.ToolName,
+			ToolCallID: valueOrString(pending.ToolCallID, ev.ToolCallID),
+			ToolArgs:   valueOrString(pending.ToolArgs, pending.Content),
+			Display:    model.DisplayExpanded,
+			Content:    ev.Message,
+			Summary:    ev.Summary,
 		}
 	case model.ToolRead:
 		return model.Message{
-			Kind:     model.MsgTool,
-			ToolName: pending.ToolName,
-			ToolArgs: valueOrString(pending.ToolArgs, ev.Message),
-			Display:  model.DisplayCollapsed,
-			Content:  "",
-			Summary:  firstNonEmpty(ev.Summary, pending.Summary),
+			Kind:       model.MsgTool,
+			ToolName:   pending.ToolName,
+			ToolCallID: valueOrString(pending.ToolCallID, ev.ToolCallID),
+			ToolArgs:   valueOrString(pending.ToolArgs, ev.Message),
+			Display:    model.DisplayCollapsed,
+			Content:    "",
+			Summary:    firstNonEmpty(ev.Summary, pending.Summary),
 		}
 	case model.ToolGrep, model.ToolGlob, model.ToolSkill:
 		return model.Message{
-			Kind:     model.MsgTool,
-			ToolName: pending.ToolName,
-			ToolArgs: valueOrString(pending.ToolArgs, ev.Message),
-			Display:  model.DisplayCollapsed,
-			Content:  ev.Message,
-			Summary:  firstNonEmpty(ev.Summary, pending.Summary),
+			Kind:       model.MsgTool,
+			ToolName:   pending.ToolName,
+			ToolCallID: valueOrString(pending.ToolCallID, ev.ToolCallID),
+			ToolArgs:   valueOrString(pending.ToolArgs, ev.Message),
+			Display:    model.DisplayCollapsed,
+			Content:    ev.Message,
+			Summary:    firstNonEmpty(ev.Summary, pending.Summary),
+		}
+	case model.ToolWarning:
+		toolName := pending.ToolName
+		if toolName == "" {
+			toolName = displayToolName(ev.ToolName)
+		}
+		return model.Message{
+			Kind:       model.MsgTool,
+			ToolName:   toolName,
+			ToolCallID: valueOrString(pending.ToolCallID, ev.ToolCallID),
+			ToolArgs:   valueOrString(pending.ToolArgs, pending.Content),
+			Display:    model.DisplayWarning,
+			Content:    ev.Message,
 		}
 	case model.ToolError:
 		toolName := pending.ToolName
@@ -2038,15 +2252,23 @@ func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 			toolName = displayToolName(ev.ToolName)
 		}
 		return model.Message{
-			Kind:     model.MsgTool,
-			ToolName: toolName,
-			ToolArgs: valueOrString(pending.ToolArgs, pending.Content),
-			Display:  model.DisplayError,
-			Content:  ev.Message,
+			Kind:       model.MsgTool,
+			ToolName:   toolName,
+			ToolCallID: valueOrString(pending.ToolCallID, ev.ToolCallID),
+			ToolArgs:   valueOrString(pending.ToolArgs, pending.Content),
+			Display:    model.DisplayError,
+			Content:    ev.Message,
 		}
 	default:
 		return pending
 	}
+}
+
+func finalizeToolReplayMessage(pending model.Message, ev model.Event) model.Message {
+	msg := replayToolMessage(ev)
+	msg.ToolArgs = valueOrString(pending.ToolArgs, pending.Content)
+	msg.ToolCallID = pending.ToolCallID
+	return msg
 }
 
 func displayToolName(name string) string {
@@ -2084,10 +2306,11 @@ func replayToolMessage(ev model.Event) model.Message {
 	}
 
 	return model.Message{
-		Kind:     model.MsgTool,
-		ToolName: displayToolName(ev.ToolName),
-		Display:  display,
-		Content:  content,
+		Kind:       model.MsgTool,
+		ToolName:   displayToolName(ev.ToolName),
+		ToolCallID: ev.ToolCallID,
+		Display:    display,
+		Content:    content,
 	}
 }
 
@@ -2424,7 +2647,8 @@ func (a *App) updateViewport() {
 	if width < 1 {
 		width = 1
 	}
-	content := panels.RenderMessages(a.viewportRenderState(), a.thinking.View(), width, a.trainView.Active)
+	a.thinking.SetText(a.thinkingStatusText())
+	content := panels.RenderMessages(a.viewportRenderState(), a.thinking.View(), a.thinking.FrameView(), width, a.trainView.Active)
 	// Pad content so it's bottom-anchored (like CC/Codex).
 	contentLines := strings.Count(content, "\n") + 1
 	viewHeight := a.viewport.Model.Height
@@ -2448,6 +2672,7 @@ func (a App) activeHUDHeight() int {
 
 func (a App) viewportRenderState() model.State {
 	s := a.state
+	s.WaitElapsed = a.currentWaitElapsed()
 	msgs := make([]model.Message, len(s.Messages))
 	copy(msgs, s.Messages)
 	for i := range msgs {

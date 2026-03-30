@@ -59,6 +59,11 @@ type shellParams struct {
 
 // Execute executes the shell tool.
 func (t *ShellTool) Execute(ctx context.Context, params json.RawMessage) (*tools.Result, error) {
+	return t.ExecuteStream(ctx, params, nil)
+}
+
+// ExecuteStream executes the shell tool and emits live command output updates.
+func (t *ShellTool) ExecuteStream(ctx context.Context, params json.RawMessage, emit func(tools.StreamEvent)) (*tools.Result, error) {
 	var p shellParams
 	if err := tools.ParseParams(params, &p); err != nil {
 		return tools.ErrorResult(err), nil
@@ -75,7 +80,23 @@ func (t *ShellTool) Execute(ctx context.Context, params json.RawMessage) (*tools
 		defer cancel()
 	}
 
-	result, err := t.runner.Run(ctx, command)
+	if emit != nil {
+		emit(tools.StreamEvent{Type: tools.StreamEventStarted})
+	}
+
+	result, err := t.runner.RunStream(ctx, command, func(chunk rshell.OutputChunk) {
+		if emit == nil {
+			return
+		}
+		line := chunk.Text
+		if chunk.Stream == rshell.StreamStderr {
+			line = "[stderr] " + line
+		}
+		emit(tools.StreamEvent{
+			Type:    tools.StreamEventOutput,
+			Message: line,
+		})
+	})
 	if err != nil {
 		return tools.ErrorResultf("execute command: %w", err), nil
 	}

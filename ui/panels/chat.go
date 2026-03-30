@@ -3,10 +3,11 @@ package panels
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/vigo999/mindspore-code/ui/model"
-	uirender "github.com/vigo999/mindspore-code/ui/render"
+	// uirender "github.com/vigo999/mindspore-code/ui/render"
 )
 
 var (
@@ -75,23 +76,30 @@ var (
 				Foreground(lipgloss.Color("240"))
 	toolSuccessDotStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("114"))
+	toolWarningDotStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("214"))
 	toolErrorDotStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("196"))
 	toolCallLineStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("252"))
+	toolPendingStatusStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("244")).
+				Italic(true)
 	toolResultPrefixStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("244"))
 	toolResultSummaryStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("250"))
 	toolResultDetailStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("245"))
+	toolResultWarningStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("214"))
 	toolResultErrorStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("203"))
 )
 
 // RenderMessages converts messages into styled text for the viewport.
 // compact uses single-line spacing (for the train agent box).
-func RenderMessages(state model.State, spinnerView string, width int, compact ...bool) string {
+func RenderMessages(state model.State, spinnerView, spinnerFrame string, width int, compact ...bool) string {
 	var parts []string
 	messages := state.Messages
 	if width < 12 {
@@ -105,7 +113,7 @@ func RenderMessages(state model.State, spinnerView string, width int, compact ..
 		case model.MsgAgent:
 			parts = append(parts, renderAgentMsg(m.Content, width))
 		case model.MsgTool:
-			parts = append(parts, renderTool(m, width))
+			parts = append(parts, renderTool(state, m, spinnerFrame, width))
 		}
 	}
 
@@ -121,9 +129,6 @@ func RenderMessages(state model.State, spinnerView string, width int, compact ..
 }
 
 func renderUserMsg(content string, width int) string {
-	if summary, ok := uirender.SummarizeLargePaste(content); ok {
-		content = summary
-	}
 	return renderPrefixedBlock(userStyle.Render(content), width, "  "+userStyle.Render(">")+" ", "    ")
 }
 
@@ -137,8 +142,8 @@ func renderThinking(thinkingView string, width int) string {
 	return renderPrefixedBlock(thinkingView, width, "  ", "  ")
 }
 
-func renderTool(m model.Message, width int) string {
-	call := renderToolCallLine(m)
+func renderTool(state model.State, m model.Message, spinnerFrame string, width int) string {
+	call := renderToolCallLine(state, m, spinnerFrame)
 	if m.Pending {
 		return renderPrefixedBlock(call, width, "  ", "  ")
 	}
@@ -159,17 +164,44 @@ func renderTool(m model.Message, width int) string {
 	return renderPrefixedBlock(strings.Join(lines, "\n"), width, "  ", "  ")
 }
 
-func renderToolCallLine(m model.Message) string {
+func renderToolCallLine(state model.State, m model.Message, spinnerFrame string) string {
 	dot := toolPendingDotStyle.Render("⏺")
+	suffix := ""
 	switch {
-	case m.Pending:
-		dot = toolPendingDotStyle.Render("⏺")
+	case m.Pending || m.Streaming:
+		if strings.TrimSpace(spinnerFrame) != "" && state.WaitKind == model.WaitTool {
+			dot = spinnerFrame
+		} else {
+			dot = toolPendingDotStyle.Render("⏺")
+		}
+		suffix = renderPendingToolStatus(state, m)
+	case m.Display == model.DisplayWarning:
+		dot = toolWarningDotStyle.Render("⏺")
 	case m.Display == model.DisplayError:
 		dot = toolErrorDotStyle.Render("⏺")
 	default:
 		dot = toolSuccessDotStyle.Render("⏺")
 	}
-	return toolCallLineStyle.Render(dot + " " + strings.TrimSpace(m.ToolName) + "(" + strings.TrimSpace(toolCallArgs(m)) + ")")
+	return toolCallLineStyle.Render(dot+" "+strings.TrimSpace(m.ToolName)+"("+strings.TrimSpace(toolCallArgs(m))+")") + suffix
+}
+
+func renderPendingToolStatus(state model.State, m model.Message) string {
+	status := strings.TrimSpace(m.Summary)
+	if status == "" {
+		if strings.EqualFold(strings.TrimSpace(m.ToolName), "Shell") {
+			status = "running command..."
+		} else {
+			status = "running..."
+		}
+	}
+	if state.WaitKind == model.WaitTool && !state.WaitStartedAt.IsZero() {
+		elapsed := state.WaitElapsed
+		if elapsed <= 0 {
+			elapsed = time.Since(state.WaitStartedAt)
+		}
+		status += " " + model.FormatWaitDuration(elapsed)
+	}
+	return " " + toolPendingStatusStyle.Render(status)
 }
 
 func toolCallArgs(m model.Message) string {
@@ -189,11 +221,16 @@ func toolResult(m model.Message) (string, []string) {
 	if summary == "" && len(lines) > 0 {
 		summary = lines[0]
 		lines = lines[1:]
+	} else if summary != "" && len(lines) > 0 && strings.TrimSpace(lines[0]) == summary {
+		lines = lines[1:]
 	}
 	return summary, lines
 }
 
 func renderToolSummary(m model.Message, line string) string {
+	if m.Display == model.DisplayWarning {
+		return toolResultWarningStyle.Render(line)
+	}
 	if m.Display == model.DisplayError {
 		return toolResultErrorStyle.Render(line)
 	}
@@ -201,6 +238,9 @@ func renderToolSummary(m model.Message, line string) string {
 }
 
 func renderToolDetail(m model.Message, line string) string {
+	if m.Display == model.DisplayWarning {
+		return toolResultWarningStyle.Render(line)
+	}
 	if m.Display == model.DisplayError {
 		return toolResultErrorStyle.Render(line)
 	}

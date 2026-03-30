@@ -1,6 +1,9 @@
 package model
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/vigo999/mindspore-code/internal/bugs"
 	issuepkg "github.com/vigo999/mindspore-code/internal/issues"
 )
@@ -28,25 +31,36 @@ const (
 	MsgTool
 )
 
+// WaitKind identifies the current wait state shown in the chat UI.
+type WaitKind int
+
+const (
+	WaitNone WaitKind = iota
+	WaitModel
+	WaitTool
+)
+
 // DisplayMode controls how a tool message is rendered.
 type DisplayMode int
 
 const (
 	DisplayExpanded  DisplayMode = iota // full output shown (Shell user-cmd, Edit, Write)
 	DisplayCollapsed                    // 1-line summary (Read, Grep, Glob, agent-internal Shell)
+	DisplayWarning                      // expanded + yellow highlight
 	DisplayError                        // expanded + red highlight
 )
 
 // Message is a single entry in the chat stream.
 type Message struct {
-	Kind      MessageKind
-	Content   string
-	ToolName  string
-	ToolArgs  string
-	Display   DisplayMode
-	Summary   string // shown when collapsed, e.g. "5 matches", "23 files"
-	Pending   bool
-	Streaming bool
+	Kind       MessageKind
+	Content    string
+	ToolName   string
+	ToolCallID string
+	ToolArgs   string
+	Display    DisplayMode
+	Summary    string // shown when collapsed, e.g. "5 matches", "23 files"
+	Pending    bool
+	Streaming  bool
 }
 
 // EventType identifies the kind of UI event.
@@ -64,6 +78,7 @@ const (
 	PermissionPrompt EventType = "PermissionPrompt"
 	PermissionsView  EventType = "PermissionsView"
 	AgentThinking    EventType = "AgentThinking"
+	ContextNotice    EventType = "ContextNotice"
 	UserInput        EventType = "UserInput"
 	ToolReplay       EventType = "ToolReplay"
 	TokenUpdate      EventType = "TokenUpdate"
@@ -73,6 +88,7 @@ const (
 	ToolEdit         EventType = "ToolEdit"
 	ToolWrite        EventType = "ToolWrite"
 	ToolSkill        EventType = "ToolSkill"
+	ToolWarning      EventType = "ToolWarning"
 	ToolError        EventType = "ToolError"
 	ClearScreen      EventType = "ClearScreen"
 	ModelUpdate      EventType = "ModelUpdate"
@@ -91,7 +107,9 @@ type Event struct {
 	Task        string
 	Message     string
 	ToolName    string
+	ToolCallID  string
 	Summary     string
+	ReplayWait  *ReplayWaitData
 	CtxUsed     int
 	CtxMax      int
 	TokensUsed  int
@@ -104,6 +122,12 @@ type Event struct {
 	IssueView   *IssueEventData // non-nil for issue view events only
 	Bug         *bugs.Bug       // reserved for lightweight bug payloads
 	Issue       *issuepkg.Issue // reserved for lightweight issue payloads
+}
+
+// ReplayWaitData lets replay fast-forward the UI timer while using shorter real delays.
+type ReplayWaitData struct {
+	OriginalDuration  time.Duration
+	SimulatedDuration time.Duration
 }
 
 // PermissionPromptData describes a structured permission prompt for interactive UI rendering.
@@ -149,9 +173,12 @@ type State struct {
 	RepoURL          string
 	Stats            TaskStats // current task statistics
 	IsThinking       bool      // whether AI is currently thinking
-	MouseEnabled     bool      // whether mouse mode is enabled (for scrolling)
-	IssueUser        string    // logged-in bug server user
-	SkillsNote       string    // skills repo status for hint bar
+	WaitKind         WaitKind
+	WaitStartedAt    time.Time
+	WaitElapsed      time.Duration
+	MouseEnabled     bool   // whether mouse mode is enabled (for scrolling)
+	IssueUser        string // logged-in bug server user
+	SkillsNote       string // skills repo status for hint bar
 }
 
 // NewState returns an initial empty state.
@@ -173,6 +200,7 @@ func NewState(version, workDir, repoURL, modelName string, ctxMax int) State {
 		RepoURL:      repoURL,
 		Stats:        TaskStats{},
 		IsThinking:   false,
+		WaitKind:     WaitNone,
 		MouseEnabled: true, // default to enabled for scroll wheel
 	}
 }
@@ -190,6 +218,8 @@ func (s State) WithTask(t TaskInfo) State {
 		RepoURL:          s.RepoURL,
 		Stats:            s.Stats,
 		IsThinking:       s.IsThinking,
+		WaitKind:         s.WaitKind,
+		WaitStartedAt:    s.WaitStartedAt,
 		MouseEnabled:     s.MouseEnabled,
 		IssueUser:        s.IssueUser,
 		SkillsNote:       s.SkillsNote,
@@ -209,6 +239,8 @@ func (s State) WithMessage(m Message) State {
 		RepoURL:          s.RepoURL,
 		Stats:            s.Stats,
 		IsThinking:       s.IsThinking,
+		WaitKind:         s.WaitKind,
+		WaitStartedAt:    s.WaitStartedAt,
 		MouseEnabled:     s.MouseEnabled,
 		IssueUser:        s.IssueUser,
 		SkillsNote:       s.SkillsNote,
@@ -228,6 +260,8 @@ func (s State) WithModel(m ModelInfo) State {
 		RepoURL:          s.RepoURL,
 		Stats:            s.Stats,
 		IsThinking:       s.IsThinking,
+		WaitKind:         s.WaitKind,
+		WaitStartedAt:    s.WaitStartedAt,
 		MouseEnabled:     s.MouseEnabled,
 		IssueUser:        s.IssueUser,
 		SkillsNote:       s.SkillsNote,
@@ -247,6 +281,8 @@ func (s State) WithStats(stats TaskStats) State {
 		RepoURL:          s.RepoURL,
 		Stats:            stats,
 		IsThinking:       s.IsThinking,
+		WaitKind:         s.WaitKind,
+		WaitStartedAt:    s.WaitStartedAt,
 		MouseEnabled:     s.MouseEnabled,
 		IssueUser:        s.IssueUser,
 		SkillsNote:       s.SkillsNote,
@@ -266,10 +302,38 @@ func (s State) WithThinking(thinking bool) State {
 		RepoURL:          s.RepoURL,
 		Stats:            s.Stats,
 		IsThinking:       thinking,
+		WaitKind:         s.WaitKind,
+		WaitStartedAt:    s.WaitStartedAt,
 		MouseEnabled:     s.MouseEnabled,
 		IssueUser:        s.IssueUser,
 		SkillsNote:       s.SkillsNote,
 	}
+}
+
+// WithWait returns a new State with updated wait metadata.
+func (s State) WithWait(kind WaitKind, startedAt time.Time) State {
+	return State{
+		Version:          s.Version,
+		Tasks:            s.Tasks,
+		ActiveTask:       s.ActiveTask,
+		Model:            s.Model,
+		Messages:         s.Messages,
+		ShowTaskSelector: s.ShowTaskSelector,
+		WorkDir:          s.WorkDir,
+		RepoURL:          s.RepoURL,
+		Stats:            s.Stats,
+		IsThinking:       s.IsThinking,
+		WaitKind:         kind,
+		WaitStartedAt:    startedAt,
+		MouseEnabled:     s.MouseEnabled,
+		IssueUser:        s.IssueUser,
+		SkillsNote:       s.SkillsNote,
+	}
+}
+
+// ClearWait returns a new State without an active wait.
+func (s State) ClearWait() State {
+	return s.WithWait(WaitNone, time.Time{})
 }
 
 // ResetStats returns a new State with reset stats.
@@ -285,6 +349,8 @@ func (s State) ResetStats() State {
 		RepoURL:          s.RepoURL,
 		Stats:            TaskStats{},
 		IsThinking:       s.IsThinking,
+		WaitKind:         s.WaitKind,
+		WaitStartedAt:    s.WaitStartedAt,
 		MouseEnabled:     s.MouseEnabled,
 		IssueUser:        s.IssueUser,
 		SkillsNote:       s.SkillsNote,
@@ -304,6 +370,8 @@ func (s State) WithIssueUser(user string) State {
 		RepoURL:          s.RepoURL,
 		Stats:            s.Stats,
 		IsThinking:       s.IsThinking,
+		WaitKind:         s.WaitKind,
+		WaitStartedAt:    s.WaitStartedAt,
 		MouseEnabled:     s.MouseEnabled,
 		IssueUser:        user,
 		SkillsNote:       s.SkillsNote,
@@ -323,8 +391,25 @@ func (s State) WithMouseEnabled(enabled bool) State {
 		RepoURL:          s.RepoURL,
 		Stats:            s.Stats,
 		IsThinking:       s.IsThinking,
+		WaitKind:         s.WaitKind,
+		WaitStartedAt:    s.WaitStartedAt,
 		MouseEnabled:     enabled,
 		IssueUser:        s.IssueUser,
 		SkillsNote:       s.SkillsNote,
 	}
+}
+
+// FormatWaitDuration renders elapsed wait time for the UI.
+func FormatWaitDuration(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	totalSeconds := int(d / time.Second)
+	hours := totalSeconds / 3600
+	minutes := (totalSeconds % 3600) / 60
+	seconds := totalSeconds % 60
+	if hours > 0 {
+		return fmt.Sprintf("%02d:%02d:%02d", hours, minutes, seconds)
+	}
+	return fmt.Sprintf("%02d:%02d", minutes, seconds)
 }

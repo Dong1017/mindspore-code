@@ -24,6 +24,26 @@ type Tool interface {
 	Execute(ctx context.Context, params json.RawMessage) (*Result, error)
 }
 
+// StreamEventType describes an incremental execution update from a streaming tool.
+type StreamEventType string
+
+const (
+	StreamEventStarted StreamEventType = "started"
+	StreamEventOutput  StreamEventType = "output"
+)
+
+// StreamEvent is an incremental execution update emitted while a tool runs.
+type StreamEvent struct {
+	Type    StreamEventType
+	Message string
+	Summary string
+}
+
+// StreamingTool is an optional extension for tools that can emit live updates.
+type StreamingTool interface {
+	ExecuteStream(ctx context.Context, params json.RawMessage, emit func(StreamEvent)) (*Result, error)
+}
+
 // Result is the result of a tool execution.
 type Result struct {
 	Content string // Main output content

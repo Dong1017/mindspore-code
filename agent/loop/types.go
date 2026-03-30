@@ -19,6 +19,7 @@ type Event struct {
 	Task       string
 	Message    string
 	ToolName   string
+	ToolCallID string
 	Summary    string
 	CtxUsed    int
 	CtxMax     int
@@ -54,19 +55,20 @@ const (
 	EventToolError     = "ToolError"
 
 	// UI compatible events
-	EventCmdStarted      = "CmdStarted"
-	EventCmdOutput       = "CmdOutput"
-	EventCmdFinished     = "CmdFinished"
-	EventAgentReply      = "AgentReply"
-	EventAgentReplyDelta = "AgentReplyDelta"
-	EventAgentThinking   = "AgentThinking"
-	EventTokenUpdate     = "TokenUpdate"
-	EventToolRead        = "ToolRead"
-	EventToolGrep        = "ToolGrep"
-	EventToolGlob        = "ToolGlob"
-	EventToolEdit        = "ToolEdit"
-	EventToolWrite       = "ToolWrite"
-	EventToolSkill       = "ToolSkill"
-	EventAnalysisReady   = "AnalysisReady"
-	EventDone            = "Done"
+	EventCmdStarted       = "CmdStarted"
+	EventCmdOutput        = "CmdOutput"
+	EventCmdFinished      = "CmdFinished"
+	EventAgentReply       = "AgentReply"
+	EventAgentReplyDelta  = "AgentReplyDelta"
+	EventAgentThinking    = "AgentThinking"
+	EventContextCompacted = "ContextCompacted"
+	EventTokenUpdate      = "TokenUpdate"
+	EventToolRead         = "ToolRead"
+	EventToolGrep         = "ToolGrep"
+	EventToolGlob         = "ToolGlob"
+	EventToolEdit         = "ToolEdit"
+	EventToolWrite        = "ToolWrite"
+	EventToolSkill        = "ToolSkill"
+	EventAnalysisReady    = "AnalysisReady"
+	EventDone             = "Done"
 )

@@ -27,6 +27,7 @@ const (
 	recordTypeSkill      = "skill_activation"
 	formatVersion        = 1
 	defaultSessionSubdir = ".mscode/sessions"
+	replayWaitCap        = 5 * time.Second
 )
 
 // Meta is the first JSONL record describing the session.
@@ -59,6 +60,12 @@ type Snapshot struct {
 	SystemPrompt string        `json:"system_prompt"`
 	UpdatedAt    time.Time     `json:"updated_at"`
 	Messages     []llm.Message `json:"messages,omitempty"`
+}
+
+// ReplayFrame is one UI replay event paired with its original timestamp.
+type ReplayFrame struct {
+	Timestamp time.Time
+	Event     model.Event
 }
 
 // Session owns trajectory persistence for one workspace conversation.
@@ -174,7 +181,20 @@ func LoadByID(workDir, sessionID string) (*Session, error) {
 
 	key := workDirKey(absWorkDir)
 	path := trajectoryPath(key, sessionID)
-	return loadFromPath(path)
+	return loadFromPath(path, true)
+}
+
+// LoadReplayPath loads a trajectory file directly for read-only replay.
+func LoadReplayPath(path string) (*Session, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, fmt.Errorf("trajectory path cannot be empty")
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("resolve trajectory path: %w", err)
+	}
+	return loadFromPath(absPath, false)
 }
 
 // AppendUserInput appends one user input record and syncs it immediately.
@@ -299,6 +319,20 @@ func (s *Session) AppendSkillActivation(skillName string) error {
 
 // ReplayEvents synthesizes UI replay events from persisted conversation records.
 func (s *Session) ReplayEvents() []model.Event {
+	frames := s.ReplayTimeline()
+	if len(frames) == 0 {
+		return nil
+	}
+
+	events := make([]model.Event, 0, len(frames))
+	for _, frame := range frames {
+		events = append(events, frame.Event)
+	}
+	return events
+}
+
+// ReplayTimeline synthesizes timestamped UI replay events from persisted conversation records.
+func (s *Session) ReplayTimeline() []ReplayFrame {
 	if s == nil {
 		return nil
 	}
@@ -306,25 +340,241 @@ func (s *Session) ReplayEvents() []model.Event {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	events := make([]model.Event, 0, len(s.records))
+	frames := make([]ReplayFrame, 0, len(s.records))
 	for _, record := range s.records {
-		switch record.Type {
-		case recordTypeUser:
-			events = append(events, model.Event{Type: model.UserInput, Message: record.Content})
-		case recordTypeAssistant:
-			events = append(events, model.Event{Type: model.AgentReply, Message: record.Content})
-		case recordTypeToolCall:
-			events = append(events, replayToolCallEvent(record))
-		case recordTypeToolResult:
-			if record.ToolName == "load_skill" {
+		ev, ok := replayEvent(record)
+		if !ok {
+			continue
+		}
+		frames = append(frames, ReplayFrame{
+			Timestamp: record.Timestamp,
+			Event:     ev,
+		})
+	}
+	return frames
+}
+
+// PlaybackTimeline synthesizes timestamped UI replay events for real-time playback.
+// It inserts AgentThinking between turns when the next visible event comes from LLM reasoning.
+func (s *Session) PlaybackTimeline() []ReplayFrame {
+	frames := s.ReplayTimeline()
+	if len(frames) < 2 {
+		return frames
+	}
+
+	playback := make([]ReplayFrame, 0, len(frames)*2)
+	for i, frame := range frames {
+		var previous *ReplayFrame
+		if i > 0 {
+			prev := frames[i-1]
+			previous = &prev
+			if shouldInsertThinking(prev, frame) {
+				playback = append(playback, ReplayFrame{
+					Timestamp: prev.Timestamp,
+					Event: model.Event{
+						Type: model.AgentThinking,
+					},
+				})
+			}
+		}
+		playback = append(playback, expandAssistantReplay(previous, frame)...)
+	}
+	playback = compressReplaySegments(playback, replayAssistantCompressionSegments(playback))
+	return compressReplaySegments(playback, replayToolCompressionSegments(playback))
+}
+
+type replayCompressionSegment struct {
+	start   int
+	end     int
+	waitEnd int
+}
+
+type toolReplayInterval struct {
+	start int
+	end   int
+}
+
+func compressReplaySegments(frames []ReplayFrame, segments []replayCompressionSegment) []ReplayFrame {
+	if len(frames) == 0 || len(segments) == 0 {
+		return frames
+	}
+
+	original := make([]ReplayFrame, len(frames))
+	copy(original, frames)
+
+	var saved time.Duration
+	segmentIdx := 0
+	for i := 0; i < len(frames); i++ {
+		frames[i].Timestamp = original[i].Timestamp.Add(-saved)
+
+		if segmentIdx >= len(segments) {
+			continue
+		}
+		segment := segments[segmentIdx]
+		if i != segment.start {
+			continue
+		}
+		segmentIdx++
+
+		originalDuration := original[segment.end].Timestamp.Sub(original[segment.start].Timestamp)
+		if originalDuration <= replayWaitCap {
+			continue
+		}
+
+		start := original[segment.start].Timestamp.Add(-saved)
+		for j := segment.start; j <= segment.end; j++ {
+			offset := original[j].Timestamp.Sub(original[segment.start].Timestamp)
+			frames[j].Timestamp = start.Add(scaleReplayDuration(offset, originalDuration, replayWaitCap))
+		}
+
+		waitOriginal := original[segment.waitEnd].Timestamp.Sub(original[segment.start].Timestamp)
+		waitSimulated := frames[segment.waitEnd].Timestamp.Sub(frames[segment.start].Timestamp)
+		if waitOriginal > waitSimulated && waitSimulated > 0 {
+			frames[segment.start].Event.ReplayWait = &model.ReplayWaitData{
+				OriginalDuration:  waitOriginal,
+				SimulatedDuration: waitSimulated,
+			}
+		}
+
+		saved += originalDuration - replayWaitCap
+		i = segment.end
+	}
+
+	return frames
+}
+
+func replayAssistantCompressionSegments(frames []ReplayFrame) []replayCompressionSegment {
+	segments := make([]replayCompressionSegment, 0)
+	for i := 0; i < len(frames); i++ {
+		if frames[i].Event.Type != model.AgentThinking || i+1 >= len(frames) {
+			continue
+		}
+		switch frames[i+1].Event.Type {
+		case model.ToolCallStart, model.AgentReply:
+			segments = append(segments, replayCompressionSegment{start: i, end: i + 1, waitEnd: i + 1})
+		case model.AgentReplyDelta:
+			end, ok := assistantReplayEnd(frames, i+1)
+			if !ok {
 				continue
 			}
-			events = append(events, replayToolResultEvent(record))
-		case recordTypeSkill:
-			events = append(events, replaySkillEvent(record.SkillName))
+			segments = append(segments, replayCompressionSegment{start: i, end: end, waitEnd: i + 1})
 		}
 	}
-	return events
+	return segments
+}
+
+func replayToolCompressionSegments(frames []ReplayFrame) []replayCompressionSegment {
+	intervals := replayToolIntervals(frames)
+	if len(intervals) == 0 {
+		return nil
+	}
+
+	segments := make([]replayCompressionSegment, 0, len(intervals))
+	current := replayCompressionSegment{
+		start:   intervals[0].start,
+		end:     intervals[0].end,
+		waitEnd: intervals[0].end,
+	}
+	for _, interval := range intervals[1:] {
+		if !frames[interval.start].Timestamp.After(frames[current.end].Timestamp) {
+			if frames[interval.end].Timestamp.After(frames[current.end].Timestamp) {
+				current.end = interval.end
+				current.waitEnd = interval.end
+			}
+			continue
+		}
+		segments = append(segments, current)
+		current = replayCompressionSegment{
+			start:   interval.start,
+			end:     interval.end,
+			waitEnd: interval.end,
+		}
+	}
+	segments = append(segments, current)
+	return segments
+}
+
+func replayToolIntervals(frames []ReplayFrame) []toolReplayInterval {
+	var intervals []toolReplayInterval
+	pendingByID := make(map[string]int)
+	pendingByTool := make(map[string][]int)
+	var pendingLoadSkill []int
+
+	for i, frame := range frames {
+		switch frame.Event.Type {
+		case model.ToolCallStart:
+			toolName := strings.TrimSpace(frame.Event.ToolName)
+			if toolName == "load_skill" {
+				pendingLoadSkill = append(pendingLoadSkill, i)
+				continue
+			}
+			if toolCallID := strings.TrimSpace(frame.Event.ToolCallID); toolCallID != "" {
+				pendingByID[toolCallID] = i
+				continue
+			}
+			pendingByTool[toolName] = append(pendingByTool[toolName], i)
+		case model.ToolReplay:
+			if start, ok := replayToolIntervalStart(frame.Event, pendingByID, pendingByTool); ok {
+				intervals = append(intervals, toolReplayInterval{start: start, end: i})
+			}
+		case model.ToolSkill:
+			if len(pendingLoadSkill) == 0 {
+				continue
+			}
+			intervals = append(intervals, toolReplayInterval{start: pendingLoadSkill[0], end: i})
+			pendingLoadSkill = pendingLoadSkill[1:]
+		}
+	}
+
+	return intervals
+}
+
+func replayToolIntervalStart(ev model.Event, pendingByID map[string]int, pendingByTool map[string][]int) (int, bool) {
+	if toolCallID := strings.TrimSpace(ev.ToolCallID); toolCallID != "" {
+		start, ok := pendingByID[toolCallID]
+		if !ok {
+			return 0, false
+		}
+		delete(pendingByID, toolCallID)
+		return start, true
+	}
+
+	toolName := strings.TrimSpace(ev.ToolName)
+	queue := pendingByTool[toolName]
+	if len(queue) == 0 {
+		return 0, false
+	}
+	start := queue[0]
+	pendingByTool[toolName] = queue[1:]
+	return start, true
+}
+
+func assistantReplayEnd(frames []ReplayFrame, start int) (int, bool) {
+	for i := start; i < len(frames); i++ {
+		switch frames[i].Event.Type {
+		case model.AgentReplyDelta:
+			continue
+		case model.AgentReply:
+			return i, true
+		default:
+			return 0, false
+		}
+	}
+	return 0, false
+}
+
+func scaleReplayDuration(offset, originalTotal, simulatedTotal time.Duration) time.Duration {
+	if offset <= 0 || originalTotal <= 0 || simulatedTotal <= 0 {
+		return 0
+	}
+	if offset >= originalTotal {
+		return simulatedTotal
+	}
+	scaled := float64(offset) * float64(simulatedTotal) / float64(originalTotal)
+	if scaled < 1 {
+		return time.Nanosecond
+	}
+	return time.Duration(scaled)
 }
 
 // RestoreContext returns the system prompt and reconstructed non-system messages.
@@ -450,7 +700,7 @@ func (s *Session) Close() error {
 	return nil
 }
 
-func loadFromPath(path string) (*Session, error) {
+func loadFromPath(path string, appendOnly bool) (*Session, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -514,15 +764,9 @@ func loadFromPath(path string) (*Session, error) {
 		return nil, fmt.Errorf("invalid trajectory: missing meta record")
 	}
 
-	appender, enc, err := openAppender(path, true)
-	if err != nil {
-		return nil, err
-	}
-
 	snapPath := snapshotPath(path)
 	snapshot, err := loadSnapshot(snapPath)
 	if err != nil {
-		_ = appender.Close()
 		return nil, err
 	}
 	if snapshot.SessionID == "" {
@@ -534,16 +778,25 @@ func loadFromPath(path string) (*Session, error) {
 		}
 	}
 
-	return &Session{
+	sessionState := &Session{
 		meta:         meta,
 		records:      records,
 		snapshot:     snapshot,
 		path:         path,
 		snapshotPath: snapPath,
-		persisted:    true,
-		file:         appender,
-		enc:          enc,
-	}, nil
+	}
+	if !appendOnly {
+		return sessionState, nil
+	}
+
+	appender, enc, err := openAppender(path, true)
+	if err != nil {
+		return nil, err
+	}
+	sessionState.persisted = true
+	sessionState.file = appender
+	sessionState.enc = enc
+	return sessionState, nil
 }
 
 func openAppender(path string, appendOnly bool) (*os.File, *json.Encoder, error) {
@@ -780,17 +1033,19 @@ func skillSummary(skillName string) string {
 
 func replayToolCallEvent(record MessageRecord) model.Event {
 	return model.Event{
-		Type:     model.ToolCallStart,
-		ToolName: record.ToolName,
-		Message:  describeToolCall(record.ToolName, record.Arguments),
+		Type:       model.ToolCallStart,
+		ToolName:   record.ToolName,
+		ToolCallID: record.ToolCallID,
+		Message:    describeToolCall(record.ToolName, record.Arguments),
 	}
 }
 
 func replayToolResultEvent(record MessageRecord) model.Event {
 	return model.Event{
-		Type:     model.ToolReplay,
-		ToolName: record.ToolName,
-		Message:  record.Content,
+		Type:       model.ToolReplay,
+		ToolName:   record.ToolName,
+		ToolCallID: record.ToolCallID,
+		Message:    record.Content,
 	}
 }
 
@@ -801,4 +1056,128 @@ func replaySkillEvent(skillName string) model.Event {
 		Message:  skillName,
 		Summary:  skillSummary(skillName),
 	}
+}
+
+func replayEvent(record MessageRecord) (model.Event, bool) {
+	switch record.Type {
+	case recordTypeUser:
+		return model.Event{Type: model.UserInput, Message: record.Content}, true
+	case recordTypeAssistant:
+		return model.Event{Type: model.AgentReply, Message: record.Content}, true
+	case recordTypeToolCall:
+		return replayToolCallEvent(record), true
+	case recordTypeToolResult:
+		if record.ToolName == "load_skill" {
+			return model.Event{}, false
+		}
+		return replayToolResultEvent(record), true
+	case recordTypeSkill:
+		return replaySkillEvent(record.SkillName), true
+	default:
+		return model.Event{}, false
+	}
+}
+
+func shouldInsertThinking(previous, next ReplayFrame) bool {
+	if !next.Timestamp.After(previous.Timestamp) {
+		return false
+	}
+
+	switch previous.Event.Type {
+	case model.UserInput, model.ToolReplay, model.ToolSkill:
+	default:
+		return false
+	}
+
+	switch next.Event.Type {
+	case model.AgentReply, model.ToolCallStart:
+		return true
+	default:
+		return false
+	}
+}
+
+func expandAssistantReplay(previous *ReplayFrame, current ReplayFrame) []ReplayFrame {
+	if previous == nil || current.Event.Type != model.AgentReply || !current.Timestamp.After(previous.Timestamp) {
+		return []ReplayFrame{current}
+	}
+
+	deltas := splitReplayAssistantDeltas(current.Event.Message, current.Timestamp.Sub(previous.Timestamp))
+	if len(deltas) == 0 {
+		return []ReplayFrame{current}
+	}
+
+	expanded := make([]ReplayFrame, 0, len(deltas)+1)
+	totalDelay := current.Timestamp.Sub(previous.Timestamp)
+	step := totalDelay / time.Duration(len(deltas)+1)
+	if step <= 0 {
+		return []ReplayFrame{current}
+	}
+	for i, delta := range deltas {
+		expanded = append(expanded, ReplayFrame{
+			Timestamp: previous.Timestamp.Add(step * time.Duration(i+1)),
+			Event: model.Event{
+				Type:    model.AgentReplyDelta,
+				Message: delta,
+			},
+		})
+	}
+	expanded = append(expanded, current)
+	return expanded
+}
+
+func splitReplayAssistantDeltas(message string, totalDelay time.Duration) []string {
+	runes := []rune(message)
+	if len(runes) == 0 || totalDelay <= 0 {
+		return nil
+	}
+
+	chunkCount := int(totalDelay / (150 * time.Millisecond))
+	if chunkCount < 1 {
+		chunkCount = 1
+	}
+
+	maxByLength := (len(runes) + 7) / 8
+	if maxByLength < 1 {
+		maxByLength = 1
+	}
+	if chunkCount > maxByLength {
+		chunkCount = maxByLength
+	}
+
+	if len(runes) > 1 && totalDelay > 200*time.Millisecond && chunkCount < 2 {
+		chunkCount = 2
+	}
+	if chunkCount > 12 {
+		chunkCount = 12
+	}
+	if chunkCount > len(runes) {
+		chunkCount = len(runes)
+	}
+
+	return splitReplayRunesEvenly(runes, chunkCount)
+}
+
+func splitReplayRunesEvenly(runes []rune, chunkCount int) []string {
+	if len(runes) == 0 || chunkCount <= 0 {
+		return nil
+	}
+	if chunkCount > len(runes) {
+		chunkCount = len(runes)
+	}
+
+	base := len(runes) / chunkCount
+	extra := len(runes) % chunkCount
+	chunks := make([]string, 0, chunkCount)
+	start := 0
+	for i := 0; i < chunkCount; i++ {
+		size := base
+		if i < extra {
+			size++
+		}
+		end := start + size
+		chunks = append(chunks, string(runes[start:end]))
+		start = end
+	}
+	return chunks
 }

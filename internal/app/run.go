@@ -5,12 +5,15 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"math"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/vigo999/mindspore-code/agent/loop"
+	"github.com/vigo999/mindspore-code/agent/session"
 	"github.com/vigo999/mindspore-code/integrations/llm"
 	"github.com/vigo999/mindspore-code/internal/version"
 	"github.com/vigo999/mindspore-code/ui"
@@ -20,6 +23,21 @@ import (
 const provideAPIKeyFirstMsg = "LLM unavailable: provide api key first, or /login and switch to free model."
 const interruptActiveTaskToken = "__interrupt_active_task__"
 const internalPermissionsActionPrefix = "\x00permissions:"
+
+var waitReplayDelay = func(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
 
 // Run parses CLI args, wires dependencies, and starts the application.
 func Run(args []string) error {
@@ -61,6 +79,9 @@ func (a *Application) run() error {
 func (a *Application) runReal() error {
 	userCh := make(chan string, 8)
 	tui := ui.New(a.EventCh, userCh, Version, a.WorkDir, a.RepoURL, a.Config.Model.Model, a.Config.Context.Window)
+	if a.replayOnly {
+		tui = ui.NewReplay(a.EventCh, userCh, Version, a.WorkDir, a.RepoURL, a.Config.Model.Model, a.Config.Context.Window)
+	}
 	p := tea.NewProgram(tui, tuiProgramOptions()...)
 
 	// Emit saved login so the topbar shows the user immediately.
@@ -70,7 +91,7 @@ func (a *Application) runReal() error {
 
 	go a.replayHistory()
 	go a.inputLoop(userCh)
-	if a.permissionSettingsIssue != nil {
+	if a.permissionSettingsIssue != nil && !a.replayOnly {
 		a.emitPermissionSettingsPrompt("")
 	}
 
@@ -105,7 +126,17 @@ func (a *Application) processInput(input string) {
 	}
 
 	if trimmed == bootReadyToken {
+		if a.replayOnly {
+			return
+		}
 		a.startDeferredStartup()
+		return
+	}
+
+	if a.replayOnly {
+		if trimmed == interruptActiveTaskToken {
+			a.interruptReplay()
+		}
 		return
 	}
 
@@ -205,6 +236,13 @@ func (a *Application) runTask(description string) {
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "deadline") {
 			errMsg = fmt.Sprintf("%s\n\nTip: The request timed out. Try:\n  1. Run /compact to reduce context size\n  2. Start a new conversation with /clear\n  3. Increase timeout in config (model.timeout_sec)", errMsg)
+			emit(model.Event{
+				Type:     model.ToolWarning,
+				ToolName: "Engine",
+				Message:  errMsg,
+			})
+			persistSnapshot()
+			return
 		}
 		emit(model.Event{
 			Type:     model.ToolError,
@@ -268,6 +306,10 @@ func (a *Application) interruptActiveTasks() bool {
 }
 
 func (a *Application) replayHistory() {
+	if len(a.replayTimeline) > 0 {
+		a.replayHistoryTimeline()
+		return
+	}
 	for _, ev := range a.replayBacklog {
 		a.EventCh <- ev
 	}
@@ -275,6 +317,109 @@ func (a *Application) replayHistory() {
 		return
 	}
 	a.emitTokenUsageSnapshot()
+}
+
+func (a *Application) replayHistoryTimeline() {
+	if a == nil {
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	a.setReplayCancel(cancel)
+	defer a.clearReplayCancel()
+
+	var previousFrame *session.ReplayFrame
+	for i, frame := range a.replayTimeline {
+		if i > 0 {
+			delay := a.replayDelayBetween(previousFrame, frame)
+			if delay > 0 {
+				if err := waitReplayDelay(ctx, a.scaledReplayDelay(delay)); err != nil {
+					return
+				}
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case a.EventCh <- frame.Event:
+		}
+		current := frame
+		previousFrame = &current
+	}
+
+	if len(a.replayTimeline) == 0 || a.ctxManager == nil {
+		return
+	}
+	a.emitTokenUsageSnapshot()
+}
+
+func (a *Application) scaledReplayDelay(delay time.Duration) time.Duration {
+	if delay <= 0 {
+		return 0
+	}
+	speed := replaySpeedOrDefault(a.replaySpeed)
+	scaled := float64(delay) / speed
+	if scaled < 1 {
+		return time.Nanosecond
+	}
+	return time.Duration(math.Round(scaled))
+}
+
+func (a *Application) replayDelayBetween(previous *session.ReplayFrame, current session.ReplayFrame) time.Duration {
+	if previous == nil {
+		return 0
+	}
+	if shouldSkipReplayDelay(previous.Event.Type, current.Event.Type) {
+		return 0
+	}
+	return current.Timestamp.Sub(previous.Timestamp)
+}
+
+func shouldSkipReplayDelay(previousType, currentType model.EventType) bool {
+	if currentType != model.UserInput {
+		return false
+	}
+	switch previousType {
+	case model.AgentReply, model.AgentReplyDelta:
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *Application) setReplayCancel(cancel context.CancelFunc) {
+	if a == nil {
+		return
+	}
+	a.taskMu.Lock()
+	defer a.taskMu.Unlock()
+	a.replayCancel = cancel
+}
+
+func (a *Application) clearReplayCancel() {
+	if a == nil {
+		return
+	}
+	a.taskMu.Lock()
+	defer a.taskMu.Unlock()
+	a.replayCancel = nil
+}
+
+func (a *Application) interruptReplay() bool {
+	if a == nil {
+		return false
+	}
+
+	a.taskMu.Lock()
+	cancel := a.replayCancel
+	a.taskMu.Unlock()
+	if cancel == nil {
+		return false
+	}
+
+	cancel()
+	return true
 }
 
 func (a *Application) emitTokenUsageSnapshot() {
@@ -320,7 +465,7 @@ func (a *Application) activateSessionPersistence() error {
 }
 
 func (a *Application) exitResumeHint() string {
-	if a == nil || a.session == nil || !a.session.HasPersistedDialogue() {
+	if a == nil || a.replayOnly || a.session == nil || !a.session.HasPersistedDialogue() {
 		return ""
 	}
 
@@ -372,6 +517,23 @@ func (a *Application) emitToolError(toolName, format string, args ...any) {
 }
 
 func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
+	if len(args) > 0 && args[0] == "replay" {
+		fs := flag.NewFlagSet("mindspore-code replay", flag.ContinueOnError)
+		fs.SetOutput(os.Stderr)
+		if err := fs.Parse(args[1:]); err != nil {
+			return BootstrapConfig{}, err
+		}
+		target, speed, err := parseReplayTargetAndSpeed(fs.Args())
+		if err != nil {
+			return BootstrapConfig{}, err
+		}
+		return BootstrapConfig{
+			Replay:          true,
+			ReplaySessionID: target,
+			ReplaySpeed:     speed,
+		}, nil
+	}
+
 	if len(args) > 0 && args[0] == "resume" {
 		fs := flag.NewFlagSet("mscode resume", flag.ContinueOnError)
 		fs.SetOutput(os.Stderr)
@@ -417,22 +579,61 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 	}, nil
 }
 
+func parseReplayTargetAndSpeed(args []string) (string, float64, error) {
+	usageErr := func() error {
+		return fmt.Errorf("usage: mindspore-code replay [sess_xxx|trajectory.json|trajectory.jsonl] [speed]")
+	}
+
+	switch len(args) {
+	case 0:
+		return "", 1, nil
+	case 1:
+		if speed, ok := parseReplaySpeed(args[0]); ok {
+			return "", speed, nil
+		}
+		return args[0], 1, nil
+	case 2:
+		speed, ok := parseReplaySpeed(args[1])
+		if !ok {
+			return "", 0, usageErr()
+		}
+		return args[0], speed, nil
+	default:
+		return "", 0, usageErr()
+	}
+}
+
+func parseReplaySpeed(raw string) (float64, bool) {
+	raw = strings.TrimSpace(strings.TrimSuffix(strings.ToLower(raw), "x"))
+	if raw == "" {
+		return 0, false
+	}
+	speed, err := strconv.ParseFloat(raw, 64)
+	if err != nil || speed <= 0 {
+		return 0, false
+	}
+	return speed, true
+}
+
 var loopEventTypeMap = map[string]model.EventType{
-	"ToolCallStart":   model.ToolCallStart,
-	"AgentReply":      model.AgentReply,
-	"AgentReplyDelta": model.AgentReplyDelta,
-	"AgentThinking":   model.AgentThinking,
-	"ToolRead":        model.ToolRead,
-	"ToolGrep":        model.ToolGrep,
-	"ToolGlob":        model.ToolGlob,
-	"ToolEdit":        model.ToolEdit,
-	"ToolWrite":       model.ToolWrite,
-	"ToolSkill":       model.ToolSkill,
-	"ToolError":       model.ToolError,
-	"CmdStarted":      model.CmdStarted,
-	"AnalysisReady":   model.AnalysisReady,
-	"TokenUpdate":     model.TokenUpdate,
-	"TaskFailed":      model.ToolError,
+	"ToolCallStart":    model.ToolCallStart,
+	"AgentReply":       model.AgentReply,
+	"AgentReplyDelta":  model.AgentReplyDelta,
+	"AgentThinking":    model.AgentThinking,
+	"ContextCompacted": model.ContextNotice,
+	"ToolRead":         model.ToolRead,
+	"ToolGrep":         model.ToolGrep,
+	"ToolGlob":         model.ToolGlob,
+	"ToolEdit":         model.ToolEdit,
+	"ToolWrite":        model.ToolWrite,
+	"ToolSkill":        model.ToolSkill,
+	"ToolError":        model.ToolError,
+	"CmdStarted":       model.CmdStarted,
+	"CmdOutput":        model.CmdOutput,
+	"CmdFinished":      model.CmdFinished,
+	"AnalysisReady":    model.AnalysisReady,
+	"TokenUpdate":      model.TokenUpdate,
+	"TaskFailed":       model.ToolError,
 }
 
 // convertLoopEvent maps loop.Event -> UI model.Event.
@@ -455,6 +656,7 @@ func convertLoopEvent(ev loop.Event) *model.Event {
 		Type:       uiType,
 		Message:    ev.Message,
 		ToolName:   ev.ToolName,
+		ToolCallID: ev.ToolCallID,
 		Summary:    ev.Summary,
 		CtxUsed:    ev.CtxUsed,
 		CtxMax:     ev.CtxMax,
