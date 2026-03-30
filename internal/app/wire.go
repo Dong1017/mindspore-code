@@ -82,6 +82,8 @@ type Application struct {
 	// Model preset runtime override state.
 	activeModelPresetID string
 	modelBeforePreset   *configs.ModelConfig
+	needsSetupPopup     bool
+	savedModelToken     string
 
 	// Train mode state
 	trainMode       bool
@@ -151,6 +153,34 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 			provider = nil
 		} else {
 			return nil, fmt.Errorf("init provider: %w", err)
+		}
+	}
+
+	// If LLM is not ready (missing API key), try detecting saved model config.
+	var needsSetupPopup bool
+	var activePresetID string
+	var savedModelToken string
+	if !llmReady {
+		mode, appCfg := detectModelMode()
+		switch mode {
+		case modelModeMSCODEProvided:
+			savedModelToken = appCfg.ModelToken
+			if preset, ok := resolveBuiltinModelPreset(appCfg.ModelPresetID); ok {
+				config.Model.URL = preset.BaseURL
+				config.Model.Provider = preset.Provider
+				config.Model.Model = preset.Model
+				config.Model.Key = appCfg.ModelToken
+				configs.RefreshModelTokenDefaults(config, previousModel)
+				provider, err = initProvider(config.Model, llm.ResolveOptions{PreferConfigAPIKey: true})
+				if err == nil {
+					llmReady = true
+					activePresetID = preset.ID
+				}
+			}
+		case modelModeOwnEnv:
+			// Env vars were applied but init still failed for another reason.
+		default:
+			needsSetupPopup = true
 		}
 	}
 
@@ -275,6 +305,9 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		llmReady:                llmReady,
 		skillLoader:             skillLoader,
 		skillsHomeDir:           strings.TrimSpace(homeDir),
+		activeModelPresetID:     activePresetID,
+		needsSetupPopup:         needsSetupPopup,
+		savedModelToken:         savedModelToken,
 	}
 
 	// Auto-login from saved credentials.
@@ -475,6 +508,64 @@ func newEngineConfig(cfg *configs.Config, systemPrompt string) loop.EngineConfig
 		Temperature:    requestTemperaturePtr(cfg.Request.Temperature),
 		TimeoutPerTurn: time.Duration(cfg.Model.TimeoutSec) * time.Second,
 		SystemPrompt:   systemPrompt,
+	}
+}
+
+// detectModelMode checks whether model config is already available.
+// Returns the mode string and the loaded appConfig (if any).
+// Mode is modelModeOwnEnv if env vars are complete, modelModeMSCODEProvided
+// if a saved token exists, or "" if neither is configured.
+func detectModelMode() (string, *appConfig) {
+	provider := strings.TrimSpace(os.Getenv("MSCODE_PROVIDER"))
+	apiKey := strings.TrimSpace(os.Getenv("MSCODE_API_KEY"))
+	modelName := strings.TrimSpace(os.Getenv("MSCODE_MODEL"))
+	if provider != "" && apiKey != "" && modelName != "" {
+		return modelModeOwnEnv, nil
+	}
+
+	cfg, err := loadAppConfig()
+	if err != nil {
+		return "", nil
+	}
+	if cfg.ModelMode == modelModeMSCODEProvided &&
+		strings.TrimSpace(cfg.ModelPresetID) != "" &&
+		strings.TrimSpace(cfg.ModelToken) != "" {
+		return modelModeMSCODEProvided, cfg
+	}
+	return "", nil
+}
+
+func (a *Application) emitModelSetupPopup(canEscape bool) {
+	presetOptions := []model.SelectionOption{}
+	for _, preset := range listBuiltinModelPresets() {
+		presetOptions = append(presetOptions, model.SelectionOption{
+			ID:       preset.ID,
+			Label:    preset.Label,
+			Disabled: preset.ComingSoon,
+		})
+	}
+
+	currentMode := ""
+	currentPreset := ""
+	if a.activeModelPresetID != "" {
+		currentMode = modelModeMSCODEProvided
+		currentPreset = a.activeModelPresetID
+	} else if a.llmReady {
+		currentMode = modelModeOwn
+	}
+
+	popup := &model.SetupPopup{
+		Screen:        model.SetupScreenModeSelect,
+		PresetOptions: presetOptions,
+		CanEscape:     canEscape,
+		CurrentMode:   currentMode,
+		CurrentPreset: currentPreset,
+		TokenValue:    a.savedModelToken,
+	}
+
+	a.EventCh <- model.Event{
+		Type:       model.ModelSetupOpen,
+		SetupPopup: popup,
 	}
 }
 

@@ -33,6 +33,7 @@ type builtinModelPreset struct {
 	Model      string
 	Aliases    []string
 	Credential modelCredentialSpec
+	ComingSoon bool
 }
 
 var builtinModelPresets = []builtinModelPreset{
@@ -47,6 +48,24 @@ var builtinModelPresets = []builtinModelPreset{
 			Strategy: credentialStrategyMSCODEServer,
 			Path:     "/model-presets/kimi-k2.5-free/credential",
 		},
+	},
+	{
+		ID:         "glm-4.7",
+		Label:      "glm-4.7 (coming soon)",
+		Model:      "glm-4.7",
+		ComingSoon: true,
+	},
+	{
+		ID:         "deepseek-v4",
+		Label:      "deepseek-v4 (coming soon)",
+		Model:      "deepseek-v4",
+		ComingSoon: true,
+	},
+	{
+		ID:         "minimax-m2.7",
+		Label:      "minimax-m2.7 (coming soon)",
+		Model:      "minimax-m2.7",
+		ComingSoon: true,
 	},
 }
 
@@ -63,6 +82,9 @@ func resolveBuiltinModelPreset(input string) (builtinModelPreset, bool) {
 	}
 
 	for _, preset := range builtinModelPresets {
+		if preset.ComingSoon {
+			continue
+		}
 		if strings.EqualFold(needle, preset.ID) || strings.EqualFold(needle, preset.Label) {
 			return preset, true
 		}

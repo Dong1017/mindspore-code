@@ -92,7 +92,10 @@ const (
 	ToolError        EventType = "ToolError"
 	ClearScreen      EventType = "ClearScreen"
 	ModelUpdate      EventType = "ModelUpdate"
-	ModelPickerOpen  EventType = "ModelPickerOpen"
+	ModelPickerOpen      EventType = "ModelPickerOpen"
+	ModelSetupOpen       EventType = "ModelSetupOpen"
+	ModelSetupClose      EventType = "ModelSetupClose"
+	ModelSetupTokenError EventType = "ModelSetupTokenError"
 	MouseModeToggle  EventType = "MouseModeToggle"
 	IssueUserUpdate  EventType = "IssueUserUpdate"
 	SkillsNoteUpdate EventType = "SkillsNoteUpdate"
@@ -117,7 +120,8 @@ type Event struct {
 	Project     *ProjectStatusView
 	Permission  *PermissionPromptData
 	Permissions *PermissionsViewData
-	Popup       *SelectionPopup // non-nil for popup events only
+	Popup      *SelectionPopup // non-nil for popup events only
+	SetupPopup *SetupPopup    // non-nil for model setup popup events
 	BugView     *BugEventData   // non-nil for bug view events only
 	IssueView   *IssueEventData // non-nil for issue view events only
 	Bug         *bugs.Bug       // reserved for lightweight bug payloads

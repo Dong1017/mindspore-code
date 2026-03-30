@@ -38,6 +38,7 @@ const (
 	interruptQueuedTrainToken       = "__interrupt_queued_train__"
 	interruptActiveTaskToken        = "__interrupt_active_task__"
 	internalPermissionsActionPrefix = "\x00permissions:"
+	modelSetupToken                 = "__model_setup"
 )
 
 var (
@@ -171,6 +172,7 @@ type App struct {
 	permissionsView  *permissionsViewState
 	toolsExpanded    bool
 	modelPicker      *model.SelectionPopup
+	setupPopup       *model.SetupPopup
 }
 
 // New creates a new App driven by the given event channel.
@@ -614,6 +616,90 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Multi-step model setup popup navigation
+	if a.setupPopup != nil {
+		switch a.setupPopup.Screen {
+		case model.SetupScreenModeSelect:
+			switch msg.String() {
+			case "up", "left":
+				a.setupPopup.MoveModeSelection(-1)
+				return a, nil
+			case "down", "right":
+				a.setupPopup.MoveModeSelection(1)
+				return a, nil
+			case "enter":
+				if a.setupPopup.ModeSelected == 0 {
+					a.setupPopup.Screen = model.SetupScreenPresetPicker
+				} else {
+					a.setupPopup.Screen = model.SetupScreenEnvInfo
+				}
+				return a, nil
+			case "esc":
+				if a.setupPopup.CanEscape {
+					a.setupPopup = nil
+				}
+				return a, nil
+			}
+		case model.SetupScreenPresetPicker:
+			switch msg.String() {
+			case "up", "left":
+				a.setupPopup.MovePresetSelection(-1)
+				return a, nil
+			case "down", "right":
+				a.setupPopup.MovePresetSelection(1)
+				return a, nil
+			case "enter":
+				opt := a.setupPopup.PresetOptions[a.setupPopup.PresetSelected]
+				if !opt.Disabled {
+					a.setupPopup.SelectedPreset = opt
+					a.setupPopup.Screen = model.SetupScreenTokenInput
+					a.setupPopup.TokenError = ""
+				}
+				return a, nil
+			case "esc":
+				a.setupPopup.Screen = model.SetupScreenModeSelect
+				return a, nil
+			}
+		case model.SetupScreenTokenInput:
+			switch msg.String() {
+			case "enter":
+				if a.userCh != nil && strings.TrimSpace(a.setupPopup.TokenValue) != "" {
+					cmd := fmt.Sprintf("%s %s %s", modelSetupToken,
+						a.setupPopup.SelectedPreset.ID,
+						strings.TrimSpace(a.setupPopup.TokenValue))
+					select {
+					case a.userCh <- cmd:
+					default:
+					}
+				}
+				return a, nil
+			case "esc":
+				a.setupPopup.Screen = model.SetupScreenPresetPicker
+				return a, nil
+			case "backspace":
+				runes := []rune(a.setupPopup.TokenValue)
+				if len(runes) > 0 {
+					a.setupPopup.TokenValue = string(runes[:len(runes)-1])
+				}
+				return a, nil
+			default:
+				if msg.Type == tea.KeyRunes {
+					a.setupPopup.TokenValue += string(msg.Runes)
+				} else if msg.Type == tea.KeySpace {
+					// Don't add spaces to tokens
+				}
+				return a, nil
+			}
+		case model.SetupScreenEnvInfo:
+			if msg.String() == "esc" {
+				a.setupPopup.Screen = model.SetupScreenModeSelect
+				return a, nil
+			}
+			return a, nil
+		}
+		return a, nil
+	}
+
 	// Selection popup navigation
 	if a.modelPicker != nil || (a.trainView.Active && a.trainView.SelectionPopup != nil) {
 		p := a.trainView.SelectionPopup
@@ -1021,6 +1107,21 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 			cp := *ev.Popup
 			cp.Options = append([]model.SelectionOption(nil), ev.Popup.Options...)
 			a.modelPicker = &cp
+		}
+
+	case model.ModelSetupOpen:
+		if ev.SetupPopup != nil {
+			cp := *ev.SetupPopup
+			cp.PresetOptions = append([]model.SelectionOption(nil), ev.SetupPopup.PresetOptions...)
+			a.setupPopup = &cp
+		}
+
+	case model.ModelSetupClose:
+		a.setupPopup = nil
+
+	case model.ModelSetupTokenError:
+		if a.setupPopup != nil {
+			a.setupPopup.TokenError = ev.Message
 		}
 
 	case model.IssueUserUpdate:
@@ -2765,6 +2866,9 @@ func (a App) View() string {
 	}
 	if a.modelPicker != nil {
 		layout = overlayPopup(layout, panels.RenderSelectionPopup(a.modelPicker), a.width, a.height)
+	}
+	if a.setupPopup != nil {
+		layout = overlayPopup(layout, panels.RenderSetupPopup(a.setupPopup), a.width, a.height)
 	}
 
 	return trimViewHeight(layout, a.height)

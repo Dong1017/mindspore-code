@@ -60,7 +60,7 @@ func (a *Application) cmdLogin(args []string) {
 		}
 		return
 	}
-	serverURL := strings.TrimRight(a.Config.Issues.ServerURL, "/")
+	serverURL := strings.TrimRight(a.Config.Server.URL, "/")
 	if serverURL == "" {
 		a.EventCh <- model.Event{
 			Type:    model.AgentReply,

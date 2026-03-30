@@ -95,7 +95,7 @@ func ApplyEnvOverrides(cfg *Config) {
 
 	// Issues server
 	if v := strings.TrimSpace(os.Getenv("MSCODE_SERVER_URL")); v != "" {
-		cfg.Issues.ServerURL = v
+		cfg.Server.URL = v
 	}
 
 	// Memory settings

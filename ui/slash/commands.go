@@ -142,8 +142,8 @@ func Parse(input string) (string, []string) {
 func (r *Registry) registerDefaults() {
 	r.Register(Command{
 		Name:        "/model",
-		Description: "Show or switch model",
-		Usage:       "/model [preset-id|openai-completion:model|model]",
+		Description: "Open model setup or switch model",
+		Usage:       "/model [preset-id|provider:model|model]",
 	})
 
 	r.Register(Command{

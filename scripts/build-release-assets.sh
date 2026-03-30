@@ -36,6 +36,7 @@ PLATFORMS=(
   "windows/amd64"
 )
 
+[ -f "${SCRIPT_DIR}/mirror.conf" ] && source "${SCRIPT_DIR}/mirror.conf"
 MIRROR_ROOT="${MSCODE_MIRROR_ROOT:-/opt/downloads/mscode/releases}"
 MIRROR_BASE_URL="${MSCODE_MIRROR_BASE_URL:-http://47.115.175.134/mscode/releases}"
 TARGET_DIR="${MIRROR_ROOT}/${VERSION}"

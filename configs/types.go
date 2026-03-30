@@ -16,16 +16,16 @@ type Config struct {
 	Context       ContextConfig                `yaml:"context"`
 	Memory        MemoryConfig                 `yaml:"memory"`
 	Execution     ExecutionConfig              `yaml:"execution"`
-	Issues        IssuesConfig                 `yaml:"issues"`
+	Server        RemoteConfig                 `yaml:"server"`
 }
 
-// IssuesConfig holds the client-side bug/issue server connection config.
-type IssuesConfig struct {
-	ServerURL string `yaml:"server_url,omitempty"`
+// RemoteConfig holds the client-side server connection config.
+type RemoteConfig struct {
+	URL       string `yaml:"url,omitempty"`
 	TokenPath string `yaml:"token_path,omitempty"`
 }
 
-const DefaultIssuesServerURL = ""
+const DefaultServerURL = "http://47.115.175.134:443"
 const DefaultRequestMaxIterations = 100
 
 func (c *Config) normalize() {
@@ -149,8 +149,8 @@ func DefaultConfig() *Config {
 		Request: RequestConfig{
 			MaxIterations: &defaultMaxIterations,
 		},
-		Issues: IssuesConfig{
-			ServerURL: DefaultIssuesServerURL,
+		Server: RemoteConfig{
+			URL: DefaultServerURL,
 		},
 		Execution: ExecutionConfig{
 			Mode:           "local",

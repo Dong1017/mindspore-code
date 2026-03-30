@@ -231,9 +231,49 @@ type SelectionPopup struct {
 }
 
 type SelectionOption struct {
-	ID    string
-	Label string
-	Desc  string
+	ID       string
+	Label    string
+	Desc     string
+	Disabled bool // grayed out, not selectable (e.g. coming soon)
+}
+
+// SetupScreen identifies which screen of the model setup popup is shown.
+type SetupScreen int
+
+const (
+	SetupScreenModeSelect   SetupScreen = iota // "mscode-provided" vs "your own model"
+	SetupScreenPresetPicker                     // pick from preset list
+	SetupScreenTokenInput                       // enter token for selected preset
+	SetupScreenEnvInfo                          // show env var examples
+)
+
+// SetupPopup holds the full state of the multi-step model setup popup.
+type SetupPopup struct {
+	Screen         SetupScreen
+	ModeSelected   int    // 0 = mscode-provided, 1 = your own model
+	PresetOptions  []SelectionOption
+	PresetSelected int
+	SelectedPreset SelectionOption // set when user picks a preset
+	TokenValue     string
+	TokenError     string // inline error message
+	CurrentMode    string // "mscode-provided", "own", or "" — for (current) badge
+	CurrentPreset  string // preset ID currently active — for (current) badge
+	CanEscape      bool   // false on first boot (no config to fall back to)
+}
+
+// MoveModeSelection moves the mode cursor by delta, wrapping around 2 options.
+func (p *SetupPopup) MoveModeSelection(delta int) {
+	p.ModeSelected = (p.ModeSelected + delta%2 + 2) % 2
+}
+
+// MovePresetSelection moves the preset cursor by delta, wrapping around all options.
+// Disabled options are visually navigable but cannot be confirmed with enter.
+func (p *SetupPopup) MovePresetSelection(delta int) {
+	n := len(p.PresetOptions)
+	if n == 0 {
+		return
+	}
+	p.PresetSelected = (p.PresetSelected + delta%n + n) % n
 }
 
 type TrainMetricsView struct {

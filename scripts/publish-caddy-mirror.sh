@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+[ -f "${SCRIPT_DIR}/mirror.conf" ] && source "${SCRIPT_DIR}/mirror.conf"
+
 VERSION="${1:-}"
 
 if [ -z "${VERSION}" ]; then

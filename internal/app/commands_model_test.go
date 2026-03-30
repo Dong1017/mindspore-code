@@ -85,20 +85,20 @@ func TestCmdModel_InvalidPrefixNoMutation(t *testing.T) {
 	}
 }
 
-func TestCmdModel_NoArgsShowsBuiltinPresetCandidate(t *testing.T) {
+func TestCmdModel_NoArgsShowsSetupPopup(t *testing.T) {
 	app := newModelCommandTestApp()
 
 	app.cmdModel(nil)
 
-	ev := drainUntilEventType(t, app, model.ModelPickerOpen)
-	if ev.Popup == nil {
-		t.Fatal("ModelPickerOpen popup = nil, want popup")
+	ev := drainUntilEventType(t, app, model.ModelSetupOpen)
+	if ev.SetupPopup == nil {
+		t.Fatal("ModelSetupOpen popup = nil, want SetupPopup")
 	}
-	if !strings.Contains(ev.Popup.Title, "Model Selection") {
-		t.Fatalf("popup title = %q, want Model Selection header", ev.Popup.Title)
+	if !ev.SetupPopup.CanEscape {
+		t.Fatal("expected CanEscape=true from /model command")
 	}
-	if len(ev.Popup.Options) == 0 || ev.Popup.Options[0].ID != "kimi-k2.5-free" {
-		t.Fatalf("popup options = %#v, want kimi preset option", ev.Popup.Options)
+	if len(ev.SetupPopup.PresetOptions) == 0 || ev.SetupPopup.PresetOptions[0].ID != "kimi-k2.5-free" {
+		t.Fatalf("preset options = %#v, want kimi preset option", ev.SetupPopup.PresetOptions)
 	}
 }
 
@@ -196,7 +196,7 @@ func TestCmdModel_BuiltinPresetUsesServerCredentialAndRestoresOnSwitchBack(t *te
 func newModelCommandTestApp() *Application {
 	cfg := configs.DefaultConfig()
 	cfg.Model.Key = "test-key"
-	cfg.Issues.ServerURL = "https://issues.example"
+	cfg.Server.URL = "https://issues.example"
 	return &Application{
 		EventCh: make(chan model.Event, 16),
 		Config:  cfg,

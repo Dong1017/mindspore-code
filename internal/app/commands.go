@@ -4,11 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/vigo999/mindspore-code/integrations/llm"
+	"github.com/vigo999/mindspore-code/internal/bugs"
+	issuepkg "github.com/vigo999/mindspore-code/internal/issues"
+	projectpkg "github.com/vigo999/mindspore-code/internal/project"
 	"github.com/vigo999/mindspore-code/permission"
 	"github.com/vigo999/mindspore-code/ui/model"
 )
@@ -99,7 +104,7 @@ func (a *Application) handleCommand(input string) {
 
 func (a *Application) cmdModel(args []string) {
 	if len(args) == 0 {
-		a.openModelPicker()
+		a.emitModelSetupPopup(true)
 		return
 	}
 
@@ -129,25 +134,21 @@ func (a *Application) cmdModel(args []string) {
 	a.switchModel("", modelArg)
 }
 
-func (a *Application) openModelPicker() {
-	popup := &model.SelectionPopup{
-		Title:    "Model Selection",
-		ActionID: "model_picker",
+// applyPreset applies a preset with the given API key. It saves the current
+// model config for later restoration, sets the provider, and updates the
+// active preset ID. Returns an error if SetProvider fails.
+func (a *Application) applyPreset(preset builtinModelPreset, apiKey string) error {
+	if a.modelBeforePreset == nil {
+		a.modelBeforePreset = copyModelConfig(a.Config.Model)
 	}
-	for _, preset := range listBuiltinModelPresets() {
-		popup.Options = append(popup.Options, model.SelectionOption{
-			ID:    preset.ID,
-			Label: preset.Label,
-			Desc:  fmt.Sprintf("%s · %s", preset.Provider, preset.Model),
-		})
-		if strings.EqualFold(strings.TrimSpace(a.activeModelPresetID), preset.ID) {
-			popup.Selected = len(popup.Options) - 1
-		}
+	previous := a.Config.Model
+	a.Config.Model.URL = preset.BaseURL
+	if err := a.SetProvider(preset.Provider, preset.Model, apiKey); err != nil {
+		a.Config.Model = previous
+		return err
 	}
-	a.EventCh <- model.Event{
-		Type:  model.ModelPickerOpen,
-		Popup: popup,
-	}
+	a.activeModelPresetID = preset.ID
+	return nil
 }
 
 func (a *Application) switchToBuiltinModelPreset(preset builtinModelPreset) {
@@ -166,15 +167,7 @@ func (a *Application) switchToBuiltinModelPreset(preset builtinModelPreset) {
 		return
 	}
 
-	if a.modelBeforePreset == nil {
-		a.modelBeforePreset = copyModelConfig(a.Config.Model)
-	}
-
-	previous := a.Config.Model
-	a.Config.Model.URL = preset.BaseURL
-	err = a.SetProvider(preset.Provider, preset.Model, apiKey)
-	if err != nil {
-		a.Config.Model = previous
+	if err := a.applyPreset(preset, apiKey); err != nil {
 		a.EventCh <- model.Event{
 			Type:     model.ToolError,
 			ToolName: "model",
@@ -182,7 +175,6 @@ func (a *Application) switchToBuiltinModelPreset(preset builtinModelPreset) {
 		}
 		return
 	}
-	a.activeModelPresetID = preset.ID
 
 	a.EventCh <- model.Event{
 		Type:    model.ModelUpdate,
@@ -228,6 +220,145 @@ func (a *Application) switchModel(providerName, modelName string) {
 		Type:    model.AgentReply,
 		Message: fmt.Sprintf("Model switched to: %s", a.Config.Model.Model),
 	}
+}
+
+func (a *Application) cmdModelSetup(args []string) {
+	if len(args) < 2 {
+		a.EventCh <- model.Event{
+			Type:     model.ToolError,
+			ToolName: "model",
+			Message:  "model setup requires preset ID and token",
+		}
+		return
+	}
+	presetID := args[0]
+	token := strings.TrimSpace(args[1])
+
+	preset, ok := resolveBuiltinModelPreset(presetID)
+	if !ok {
+		a.EventCh <- model.Event{
+			Type:     model.ToolError,
+			ToolName: "model",
+			Message:  fmt.Sprintf("unknown preset: %s", presetID),
+		}
+		return
+	}
+
+	serverURL := strings.TrimRight(a.Config.Server.URL, "/")
+	if serverURL == "" {
+		a.EventCh <- model.Event{
+			Type:    model.ModelSetupTokenError,
+			Message: "server URL not set. export MSCODE_SERVER_URL first.",
+		}
+		return
+	}
+
+	a.EventCh <- model.Event{Type: model.AgentThinking}
+
+	// Step 1: Verify token and get user info (same as /login).
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	userName, userRole, err := a.verifyUserToken(ctx, serverURL, token)
+	if err != nil {
+		a.EventCh <- model.Event{
+			Type:    model.ModelSetupTokenError,
+			Message: fmt.Sprintf("Login failed: %v", err),
+		}
+		return
+	}
+
+	// Step 2: Save credentials (so issue/bug services work too).
+	cred := &credentials{
+		ServerURL: serverURL,
+		Token:     token,
+		User:      userName,
+		Role:      userRole,
+	}
+	if err := saveCredentials(cred); err != nil {
+		a.emitToolError("config", "login ok but failed to save credentials: %v", err)
+	}
+	a.bugService = bugs.NewService(bugs.NewRemoteStore(serverURL, token))
+	a.issueService = issuepkg.NewService(issuepkg.NewRemoteStore(serverURL, token))
+	a.projectService = projectpkg.NewService(projectpkg.NewRemoteStore(serverURL, token))
+	a.issueUser = userName
+	a.issueRole = userRole
+
+	// Step 3: Fetch LLM API key from server for the preset.
+	apiKey, err := a.resolveModelPresetAPIKey(ctx, preset)
+	if err != nil {
+		a.EventCh <- model.Event{
+			Type:    model.ModelSetupTokenError,
+			Message: fmt.Sprintf("Failed to fetch model credential: %v", err),
+		}
+		return
+	}
+
+	// Step 4: Apply preset with fetched API key.
+	if err := a.applyPreset(preset, apiKey); err != nil {
+		a.EventCh <- model.Event{
+			Type:     model.ToolError,
+			ToolName: "model",
+			Message:  fmt.Sprintf("Failed to apply preset: %v", err),
+		}
+		a.EventCh <- model.Event{
+			Type:    model.ModelSetupTokenError,
+			Message: fmt.Sprintf("Failed: %v", err),
+		}
+		return
+	}
+
+	// Step 5: Save model mode to config.json (token is in credentials.json).
+	if err := saveAppConfig(&appConfig{
+		ModelMode:     modelModeMSCODEProvided,
+		ModelPresetID: preset.ID,
+		ModelToken:    token,
+	}); err != nil {
+		a.emitToolError("config", "model applied but failed to save config: %v", err)
+	}
+
+	// Step 6: Emit UI updates.
+	a.EventCh <- model.Event{Type: model.IssueUserUpdate, Message: userName}
+	a.EventCh <- model.Event{
+		Type:    model.ModelUpdate,
+		Message: a.Config.Model.Model,
+		CtxMax:  a.Config.Context.Window,
+	}
+	a.EventCh <- model.Event{Type: model.ModelSetupClose}
+	a.EventCh <- model.Event{
+		Type:    model.AgentReply,
+		Message: fmt.Sprintf("Logged in as %s. Model configured: %s", userName, preset.Label),
+	}
+}
+
+// verifyUserToken verifies a user token against the mscode server.
+func (a *Application) verifyUserToken(ctx context.Context, serverURL, token string) (user, role string, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serverURL+"/me", nil)
+	if err != nil {
+		return "", "", fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", fmt.Errorf("cannot reach server: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("%s", body)
+	}
+
+	var me struct {
+		User string `json:"user"`
+		Role string `json:"role"`
+	}
+	if err := json.Unmarshal(body, &me); err != nil {
+		return "", "", fmt.Errorf("invalid response: %w", err)
+	}
+	return me.User, me.Role, nil
 }
 
 func (a *Application) cmdExit() {
@@ -726,7 +857,7 @@ func (a *Application) cmdHelp() {
   /bugs [status]          List bugs (optional status filter: open, doing)
   /claim <id>             Claim a bug as your lead
   /dock                   Show bug dashboard (open count, ready, recent)
-  /model [preset-id|model-name]  Show candidates or switch model
+  /model [preset-id|model-name]  Open model setup or switch model
   /test                   Test API connectivity
   /permissions            Open permissions view
   /yolo                   Toggle auto-approve mode
@@ -736,12 +867,10 @@ func (a *Application) cmdHelp() {
   /help                   Show this help message
 
 Model Commands:
-  /model                  Show current configuration and preset candidates
-  /model kimi-k2.5-free   Switch to built-in free preset
-  /model gpt-4o           Switch to gpt-4o
-  /model openai-completion:gpt-4o
-  /model openai-responses:gpt-4o
-  /model anthropic:claude-3-5-sonnet
+  /model                  Open model setup (mscode-provided or your own)
+  /model kimi-k2.5-free   Switch to built-in preset directly
+  /model gpt-4o           Switch model (keeps current provider)
+  /model openai-completion:gpt-4o  Switch provider and model
 
 Permission Commands:
   /permissions            Open permissions view

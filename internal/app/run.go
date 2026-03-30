@@ -94,6 +94,9 @@ func (a *Application) runReal() error {
 	if a.permissionSettingsIssue != nil && !a.replayOnly {
 		a.emitPermissionSettingsPrompt("")
 	}
+	if a.needsSetupPopup {
+		a.emitModelSetupPopup(false) // canEscape=false on first boot
+	}
 
 	_, err := p.Run()
 	close(userCh)
@@ -156,6 +159,12 @@ func (a *Application) processInput(input string) {
 	}
 
 	if a.permissionUI != nil && a.permissionUI.HandleInput(trimmed) {
+		return
+	}
+
+	if strings.HasPrefix(trimmed, modelSetupToken+" ") {
+		parts := strings.Fields(trimmed)
+		a.cmdModelSetup(parts[1:])
 		return
 	}
 
