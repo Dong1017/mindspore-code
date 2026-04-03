@@ -1077,7 +1077,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		} else if ev.Train != nil && ev.Train.ActionSource != "" {
 			content = agentMsg(evSource(ev.Train, ""), ev.Message, false)
 		}
-		a.state = a.finalizeAgentMessage(content)
+		a.state = a.finalizeAgentMessage(model.Message{Kind: model.MsgAgent, Content: content, RawANSI: ev.RawANSI})
 
 	case model.ContextNotice:
 		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: ev.Message, Display: model.DisplayNotice})
@@ -1357,7 +1357,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		if r := a.trainView.RunByID(rid); r != nil {
 			r.CurrentIssue = nil
 		}
-		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainSuccessStyle.Render(agentMsg(evSource(ev.Train, ""), ev.Message, true))})
+		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainSuccessStyle.Render(agentMsg(evSource(ev.Train, ""), ev.Message, true)), RawANSI: true})
 
 	case model.TrainStarted:
 		a.handleTrainStarted(ev)
@@ -1400,7 +1400,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 			}
 		}
 		if ev.Message != "" {
-			a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainErrorStyle.Render(agentMsg(evSource(ev.Train, "observer"), ev.Message, false))})
+			a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainErrorStyle.Render(agentMsg(evSource(ev.Train, "observer"), ev.Message, false)), RawANSI: true})
 		}
 
 	case model.TrainLogLine:
@@ -1419,14 +1419,14 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		if run := a.trainView.RunByID(runID); run != nil {
 			run.StatusMessage = ev.Message
 		}
-		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainErrorStyle.Render(agentMsg(evSource(ev.Train, "observer"), ev.Message, false))})
+		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainErrorStyle.Render(agentMsg(evSource(ev.Train, "observer"), ev.Message, false)), RawANSI: true})
 
 	case model.TrainError:
 		a.trainView.SetRunPhase(trainEventRunID(ev.Train), model.TrainPhaseFailed)
 		if run := a.ensureTrainRun(ev.Train); run != nil {
 			run.ErrorMessage = ev.Message
 		}
-		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainErrorStyle.Render(agentMsg(evSource(ev.Train, "observer"), ev.Message, false))})
+		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainErrorStyle.Render(agentMsg(evSource(ev.Train, "observer"), ev.Message, false)), RawANSI: true})
 
 	// ── Phase 2 events ──────────────────────────────────────
 
@@ -1466,7 +1466,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		if ev.Train != nil && a.trainView.Compare != nil {
 			a.trainView.Compare.Status = "mismatch"
 		}
-		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainErrorStyle.Render(agentMsg(evSource(ev.Train, "observer"), ev.Message, false))})
+		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainErrorStyle.Render(agentMsg(evSource(ev.Train, "observer"), ev.Message, false)), RawANSI: true})
 
 	case model.TrainAnalysisStarted:
 		a.trainView.SetStage(model.StageAnalyzing)
@@ -1484,7 +1484,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 					run.StatusMessage = "Fixing..."
 				}
 				a.trainView.SetStage(model.StageSetup)
-				a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainWorkingStyle.Render(agentMsg("setup-helper", "fixing ssh connectivity...", false))})
+				a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainWorkingStyle.Render(agentMsg("setup-helper", "fixing ssh connectivity...", false)), RawANSI: true})
 				break
 			}
 			if valueOr(ev.Train.ActionID, "") == "install-missing-libs" {
@@ -1492,7 +1492,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 					run.StatusMessage = "Installing..."
 				}
 				a.trainView.SetStage(model.StageSetup)
-				a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainWorkingStyle.Render(agentMsg("setup-helper", "installing missing library...", false))})
+				a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainWorkingStyle.Render(agentMsg("setup-helper", "installing missing library...", false)), RawANSI: true})
 				break
 			}
 			a.trainView.SetAgentActions(trainEventRunID(ev.Train), []model.AgentAction{
@@ -1505,7 +1505,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 				},
 			})
 			if ev.Message != "" {
-				a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainWorkingStyle.Render(agentMsg(evSource(ev.Train, ""), ev.Message, false))})
+				a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainWorkingStyle.Render(agentMsg(evSource(ev.Train, ""), ev.Message, false)), RawANSI: true})
 			}
 			if mapIssueKind(ev.Train.IssueType) == model.IssueBootstrap {
 				a.trainView.SetStage(model.StageSetup)
@@ -1549,7 +1549,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		a.trainView.SetStage(model.StageReady)
 		a.trainView.SetRunPhase(rid, model.TrainPhaseReady)
 		if ev.Message != "" {
-			a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainSuccessStyle.Render(agentMsg(evSource(ev.Train, ""), ev.Message, true))})
+			a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainSuccessStyle.Render(agentMsg(evSource(ev.Train, ""), ev.Message, true)), RawANSI: true})
 		}
 
 	case model.TrainActionApplied:
@@ -1567,7 +1567,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 			}
 			// Show download/install progress in agent panel.
 			if actionID == "install-missing-libs" && ev.Message != "" {
-				a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainWorkingStyle.Render(agentMsg(evSource(ev.Train, "setup-helper"), ev.Message, false))})
+				a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainWorkingStyle.Render(agentMsg(evSource(ev.Train, "setup-helper"), ev.Message, false)), RawANSI: true})
 			}
 		} else {
 			rid := trainEventRunID(ev.Train)
@@ -1578,7 +1578,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 			}
 			a.trainView.SetStage(model.StageFixing)
 			if ev.Message != "" {
-				a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainWorkingStyle.Render(agentMsg(evSource(ev.Train, ""), ev.Message, false))})
+				a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainWorkingStyle.Render(agentMsg(evSource(ev.Train, ""), ev.Message, false)), RawANSI: true})
 			}
 		}
 
@@ -1602,7 +1602,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 			a.trainView.Compare.Drift = ev.Train.Drift
 			a.trainView.Compare.Status = "verified"
 		}
-		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainSuccessStyle.Render(agentMsg(evSource(ev.Train, ""), ev.Message, true))})
+		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainSuccessStyle.Render(agentMsg(evSource(ev.Train, ""), ev.Message, true)), RawANSI: true})
 
 	case model.Done:
 		return a, tea.Quit
@@ -1813,11 +1813,11 @@ func (a *App) handleTrainSetup(ev model.Event) {
 	}
 	if run.StatusMessage == "Fixing..." && ev.Train.Check == "ssh" && ev.Train.Status == "passed" {
 		run.StatusMessage = ""
-		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainSuccessStyle.Render(agentMsg("setup-agent", "ssh connectivity repaired", true))})
+		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainSuccessStyle.Render(agentMsg("setup-agent", "ssh connectivity repaired", true)), RawANSI: true})
 	}
 	if run.StatusMessage == "Installing..." && ev.Train.Check == "libs" && ev.Train.Status == "passed" {
 		run.StatusMessage = ""
-		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainSuccessStyle.Render(agentMsg("setup-agent", "missing library installed successfully", true))})
+		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainSuccessStyle.Render(agentMsg("setup-agent", "missing library installed successfully", true)), RawANSI: true})
 	}
 	// Skip checklist update for post-repair failures — the original probe result
 	// is re-emitted after auto-resolve returns, but we don't want the UI
@@ -1843,7 +1843,7 @@ func (a *App) handleTrainSetup(ev model.Event) {
 		default:
 			content = trainWorkingStyle.Render(content)
 		}
-		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: content})
+		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: content, RawANSI: true})
 	}
 }
 
@@ -1884,7 +1884,7 @@ func (a *App) handleTrainConnect(ev model.Event) {
 		default:
 			content = trainWorkingStyle.Render(content)
 		}
-		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: content})
+		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: content, RawANSI: true})
 	}
 }
 
@@ -2195,13 +2195,14 @@ func (a App) appendToStreamingAgent(delta string) model.State {
 	return next
 }
 
-func (a App) finalizeAgentMessage(content string) model.State {
+func (a App) finalizeAgentMessage(msg model.Message) model.State {
 	msgs := make([]model.Message, len(a.state.Messages))
 	copy(msgs, a.state.Messages)
 
 	for i := len(msgs) - 1; i >= 0; i-- {
 		if msgs[i].Kind == model.MsgAgent && msgs[i].Streaming {
-			msgs[i].Content = content
+			msgs[i].Content = msg.Content
+			msgs[i].RawANSI = msg.RawANSI
 			msgs[i].Streaming = false
 			next := a.state
 			next.Messages = msgs
@@ -2210,7 +2211,7 @@ func (a App) finalizeAgentMessage(content string) model.State {
 	}
 
 	next := a.state
-	next.Messages = append(msgs, model.Message{Kind: model.MsgAgent, Content: content})
+	next.Messages = append(msgs, msg)
 	return next
 }
 
