@@ -1,3 +1,5 @@
+English | [中文](README_zh.md)
+
 # MindSpore CLI
 
 Agent CLI for **AI infra and model training workflows**.
