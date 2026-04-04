@@ -224,9 +224,6 @@ MindSpore CLI 尤其适用于：
 
 - [架构](docs/arch.md)
 - [贡献者指南](docs/agent-contributor-guide.md)
-- [特性规划](docs/features-backlog.md)
-- [使用场景](docs/use-cases.md)
-- [路线图](docs/roadmap.md)
 
 ---
 

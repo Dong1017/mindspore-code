@@ -224,9 +224,6 @@ See [docs/use-cases.md](docs/use-cases.md) for a lifecycle-oriented view.
 
 - [Architecture](docs/arch.md)
 - [Contributor Guide](docs/agent-contributor-guide.md)
-- [Feature Backlog](docs/features-backlog.md)
-- [Use Cases](docs/use-cases.md)
-- [Roadmap](docs/roadmap.md)
 
 ---
 
