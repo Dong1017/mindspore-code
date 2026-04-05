@@ -179,11 +179,7 @@ mscli
 ### 9.1 Install from script
 
 ```bash
-# GitHub
 curl -fsSL https://raw.githubusercontent.com/mindspore-lab/mindspore-cli/main/scripts/install.sh | bash
-
-# GitCode (中国用户)
-curl -fsSL https://gitcode.com/mindspore-lab/mindspore-cli/raw/main/scripts/install.sh | bash
 ```
 
 ### 9.2 Build from source

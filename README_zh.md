@@ -179,12 +179,10 @@ mscli
 ### 9.1 脚本安装
 
 ```bash
-# GitCode（推荐）
-curl -fsSL https://gitcode.com/mindspore-lab/mindspore-cli/raw/main/scripts/install.sh | bash
-
-# GitHub
 curl -fsSL https://raw.githubusercontent.com/mindspore-lab/mindspore-cli/main/scripts/install.sh | bash
 ```
+
+脚本会自动探测最快的下载源（国内镜像 → GitCode → GitHub）。
 
 ### 9.2 从源码构建
 
