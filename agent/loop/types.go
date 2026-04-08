@@ -50,9 +50,10 @@ const (
 	EventToolCallStart = "ToolCallStart"
 
 	// Tool events
-	EventToolStarted   = "ToolStarted"
-	EventToolCompleted = "ToolCompleted"
-	EventToolError     = "ToolError"
+	EventToolStarted     = "ToolStarted"
+	EventToolCompleted   = "ToolCompleted"
+	EventToolError       = "ToolError"
+	EventToolInterrupted = "ToolInterrupted"
 
 	// UI compatible events
 	EventCmdStarted       = "CmdStarted"

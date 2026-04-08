@@ -350,6 +350,133 @@ func TestShellStreamingPreviewUsesFixedEightLineTailAndStatusOnCommandLine(t *te
 	}
 }
 
+func TestShellInterruptedResolvesStreamingToolAndStopsRunningState(t *testing.T) {
+	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.ToolCallStart,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-interrupt",
+		Message:    "go test ./ui",
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.CmdStarted,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-interrupt",
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.CmdOutput,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-interrupt",
+		Message:    "partial output",
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.ToolInterrupted,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-interrupt",
+		Message:    "partial output",
+		Summary:    "interrupted",
+	})
+	app = next.(App)
+
+	if got, want := app.state.WaitKind, model.WaitNone; got != want {
+		t.Fatalf("wait kind = %v, want %v", got, want)
+	}
+	if app.state.Messages[0].Pending {
+		t.Fatal("expected interrupted shell message to clear pending flag")
+	}
+	if app.state.Messages[0].Streaming {
+		t.Fatal("expected interrupted shell message to clear streaming flag")
+	}
+	if got, want := app.state.Messages[0].Display, model.DisplayWarning; got != want {
+		t.Fatalf("display = %v, want %v", got, want)
+	}
+	if got, want := app.state.Messages[0].Summary, "interrupted"; got != want {
+		t.Fatalf("summary = %q, want %q", got, want)
+	}
+	if got, want := app.state.Messages[0].Content, "partial output"; got != want {
+		t.Fatalf("content = %q, want %q", got, want)
+	}
+
+	view := testANSIPattern.ReplaceAllString(app.View(), "")
+	if strings.Contains(view, "running command...") {
+		t.Fatalf("expected interrupted view to stop showing running status, got:\n%s", view)
+	}
+}
+
+func TestShellInterruptedAfterLargeOutputKeepsRecentWindow(t *testing.T) {
+	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.ToolCallStart,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-large-interrupt",
+		Message:    "go test ./ui",
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.CmdStarted,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-large-interrupt",
+	})
+	app = next.(App)
+
+	lines := make([]string, 12000)
+	for i := range lines {
+		lines[i] = "line-" + strconv.Itoa(i+1)
+	}
+	largeOutput := strings.Join(lines, "\n")
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.CmdOutput,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-large-interrupt",
+		Message:    largeOutput,
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.ToolInterrupted,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-large-interrupt",
+		Message:    "line-11999\nline-12000",
+		Summary:    "interrupted",
+	})
+	app = next.(App)
+
+	got := app.state.Messages[0].Content
+	if !strings.Contains(got, "line-12000") {
+		t.Fatalf("expected interrupted content to keep latest output, got suffix:\n%s", got)
+	}
+	if strings.Contains(got, "line-1\n") || strings.HasPrefix(got, "line-1") {
+		t.Fatalf("expected interrupted content to drop oldest output once truncated, got prefix:\n%s", got)
+	}
+	if !strings.Contains(got, "[output truncated]") {
+		t.Fatalf("expected interrupted content to indicate truncation, got:\n%s", got)
+	}
+	if app.state.Messages[0].Streaming {
+		t.Fatal("expected interrupted shell message to stop streaming after large output")
+	}
+	if app.state.Messages[0].Pending {
+		t.Fatal("expected interrupted shell message to stop pending after large output")
+	}
+}
+
 func TestRenderShellActivePreviewDoesNotPadToEightLinesBeforeOutputArrives(t *testing.T) {
 	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
 	app.bootActive = false

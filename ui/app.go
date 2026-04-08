@@ -36,6 +36,8 @@ const (
 	defaultPreviewHeadLines         = 5
 	defaultPreviewTailLines         = 0
 	collapsedPreviewMaxLines        = 3
+	maxStreamingToolContentBytes    = 64 * 1024
+	uiOutputTruncatedMarker         = "[output truncated]"
 	bootReadyToken                  = "__boot_ready__"
 	historyReplayReadyToken         = "__history_replay_ready__"
 	maxToolLines                    = 120
@@ -1246,6 +1248,18 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 			Display: model.DisplayWarning, Content: ev.Message,
 		})
 
+	case model.ToolInterrupted:
+		a.replayWait = nil
+		a.state = a.clearThinking()
+		a.state = a.resolveToolEvent(ev, model.Message{
+			Kind:       model.MsgTool,
+			ToolName:   displayToolName(ev.ToolName),
+			ToolCallID: ev.ToolCallID,
+			Display:    model.DisplayWarning,
+			Content:    ev.Message,
+			Summary:    ev.Summary,
+		})
+
 	case model.ToolError:
 		a.replayWait = nil
 		a.state = a.clearThinking()
@@ -2324,13 +2338,7 @@ func (a App) appendToolOutput(ev model.Event) model.State {
 		}
 	}
 	if idx >= 0 {
-		content := msgs[idx].Content
-		if content == "" {
-			content = ev.Message
-		} else {
-			content += "\n" + ev.Message
-		}
-		msgs[idx].Content = content
+		msgs[idx].Content = appendStreamingToolWindow(msgs[idx].Content, ev.Message, maxStreamingToolContentBytes)
 		msgs[idx].Pending = false
 		msgs[idx].Streaming = true
 	}
@@ -2338,6 +2346,49 @@ func (a App) appendToolOutput(ev model.Event) model.State {
 	next := a.state
 	next.Messages = msgs
 	return next
+}
+
+func appendStreamingToolWindow(content, chunk string, maxBytes int) string {
+	content = strings.TrimPrefix(content, uiOutputTruncatedMarker+"\n")
+	content = strings.TrimPrefix(content, uiOutputTruncatedMarker)
+
+	window, truncated := appendOutputWindow(content, chunk, maxBytes)
+	if !truncated {
+		return window
+	}
+	if strings.TrimSpace(window) == "" {
+		return uiOutputTruncatedMarker
+	}
+	return uiOutputTruncatedMarker + "\n" + window
+}
+
+func appendOutputWindow(content, chunk string, maxBytes int) (string, bool) {
+	if maxBytes <= 0 {
+		return "", strings.TrimSpace(content) != "" || strings.TrimSpace(chunk) != ""
+	}
+
+	switch {
+	case content == "":
+		content = chunk
+	case chunk != "":
+		content += "\n" + chunk
+	}
+
+	if len(content) <= maxBytes {
+		return content, false
+	}
+
+	start := len(content) - maxBytes
+	window := content[start:]
+	if start > 0 {
+		if idx := strings.IndexByte(window, '\n'); idx >= 0 && idx < len(window)-1 {
+			window = window[idx+1:]
+		}
+	}
+	if window == "" {
+		window = content[len(content)-maxBytes:]
+	}
+	return window, true
 }
 
 func (a App) pendingToolMessage(ev model.Event) model.Message {
@@ -2542,6 +2593,27 @@ func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 			ToolArgs:   valueOrString(pending.ToolArgs, pending.Content),
 			Display:    model.DisplayWarning,
 			Content:    ev.Message,
+		}
+	case model.ToolInterrupted:
+		toolName := pending.ToolName
+		if toolName == "" {
+			toolName = displayToolName(ev.ToolName)
+		}
+		content := strings.TrimSpace(pending.Content)
+		if content == "" {
+			content = strings.TrimSpace(ev.Message)
+		}
+		if content == "" {
+			content = "interrupted by user"
+		}
+		return model.Message{
+			Kind:       model.MsgTool,
+			ToolName:   toolName,
+			ToolCallID: valueOrString(pending.ToolCallID, ev.ToolCallID),
+			ToolArgs:   valueOrString(pending.ToolArgs, pending.Content),
+			Display:    model.DisplayWarning,
+			Content:    content,
+			Summary:    firstNonEmpty(ev.Summary, "interrupted"),
 		}
 	case model.ToolError:
 		toolName := pending.ToolName

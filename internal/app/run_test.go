@@ -279,3 +279,27 @@ func TestConvertLoopEvent_PreservesToolCallID(t *testing.T) {
 		t.Fatalf("convertLoopEvent ToolCallID = %q, want %q", got.ToolCallID, ev.ToolCallID)
 	}
 }
+
+func TestConvertLoopEvent_MapsToolInterrupted(t *testing.T) {
+	ev := loop.Event{
+		Type:       loop.EventToolInterrupted,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-1",
+		Message:    "partial output",
+		Summary:    "interrupted",
+	}
+
+	got := convertLoopEvent(ev)
+	if got == nil {
+		t.Fatal("convertLoopEvent(ToolInterrupted) = nil, want non-nil")
+	}
+	if got.Type != model.ToolInterrupted {
+		t.Fatalf("convertLoopEvent type = %v, want %v", got.Type, model.ToolInterrupted)
+	}
+	if got.ToolCallID != ev.ToolCallID {
+		t.Fatalf("convertLoopEvent ToolCallID = %q, want %q", got.ToolCallID, ev.ToolCallID)
+	}
+	if got.Summary != ev.Summary {
+		t.Fatalf("convertLoopEvent summary = %q, want %q", got.Summary, ev.Summary)
+	}
+}

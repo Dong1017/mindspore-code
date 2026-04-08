@@ -692,6 +692,7 @@ var loopEventTypeMap = map[string]model.EventType{
 	"ToolWrite":        model.ToolWrite,
 	"ToolSkill":        model.ToolSkill,
 	"ToolError":        model.ToolError,
+	"ToolInterrupted":  model.ToolInterrupted,
 	"CmdStarted":       model.CmdStarted,
 	"CmdOutput":        model.CmdOutput,
 	"CmdFinished":      model.CmdFinished,
