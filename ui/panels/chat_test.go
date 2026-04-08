@@ -58,6 +58,38 @@ func TestRenderMessages_ToolSuccessShowsSummaryAndDetails(t *testing.T) {
 	}
 }
 
+func TestRenderMessages_ToolBlocksAlignWithAgentMessages(t *testing.T) {
+	state := model.State{
+		Messages: []model.Message{
+			{
+				Kind:    model.MsgAgent,
+				Content: "agent reply",
+			},
+			{
+				Kind:     model.MsgTool,
+				ToolName: "Bash",
+				ToolArgs: "$ which uv",
+				Display:  model.DisplayCollapsed,
+				Content:  "completed\n/Users/townwish/.local/bin/uv",
+			},
+		},
+	}
+
+	view := testANSIPattern.ReplaceAllString(RenderMessages(state, "", "", 80), "")
+	lines := strings.Split(view, "\n")
+	if len(lines) < 3 {
+		t.Fatalf("expected multiline render, got:\n%s", view)
+	}
+	if !strings.HasPrefix(lines[0], "• ") {
+		t.Fatalf("expected agent line to start at message column, got %q", lines[0])
+	}
+	for _, line := range lines {
+		if strings.Contains(line, "✓ Bash($ which uv)") && strings.HasPrefix(line, "  ") {
+			t.Fatalf("expected tool block to align with agent messages, got %q", line)
+		}
+	}
+}
+
 func TestRenderMessages_ToolFailureShowsErrorSummaryAndDetails(t *testing.T) {
 	state := model.State{
 		Messages: []model.Message{

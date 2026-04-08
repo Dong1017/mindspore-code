@@ -223,7 +223,7 @@ func (a App) renderShellActivePreview(msg model.Message, available int) string {
 		return ""
 	}
 
-	header := "  " + panels.RenderToolCallHeader("Bash", strings.TrimSpace(msg.ToolArgs)) +
+	header := panels.RenderToolCallHeader("Bash", strings.TrimSpace(msg.ToolArgs)) +
 		" " + metaStyle.Render(a.shellActiveStatusText())
 	if available == 1 {
 		return header
@@ -266,8 +266,8 @@ func (a App) printMessage(msg model.Message) tea.Cmd {
 	if strings.TrimSpace(rendered) == "" {
 		return nil
 	}
-	// Add blank line before agent messages to separate logical groups.
-	if msg.Kind == model.MsgAgent {
+	// Add blank line before block messages to separate logical groups.
+	if msg.Kind == model.MsgAgent || msg.Kind == model.MsgTool {
 		return tea.Sequence(tea.Println(""), tea.Println(rendered))
 	}
 	return tea.Println(rendered)

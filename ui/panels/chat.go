@@ -131,11 +131,11 @@ func renderThinking(thinkingView string, width int) string {
 func renderTool(state model.State, m model.Message, spinnerFrame string, width int) string {
 	call := renderToolCallLine(state, m, spinnerFrame)
 	if m.Pending {
-		return "  " + call
+		return call
 	}
 	summary, details := toolResult(m)
 	if summary == "" && len(details) == 0 {
-		return "  " + call
+		return call
 	}
 	// Tool call is indented under agent message; result lines indent further.
 	bodyWidth := width - 7
@@ -143,15 +143,15 @@ func renderTool(state model.State, m model.Message, spinnerFrame string, width i
 		bodyWidth = 1
 	}
 	wrapStyle := lipgloss.NewStyle().Width(bodyWidth)
-	lines := []string{"  " + call}
+	lines := []string{call}
 	if summary != "" {
-		lines = append(lines, "    "+toolResultPrefixStyle.Render("⎿")+"  "+renderToolSummary(m, summary))
+		lines = append(lines, "  "+toolResultPrefixStyle.Render("⎿")+"  "+renderToolSummary(m, summary))
 	}
 	for _, line := range details {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		lines = append(lines, "       "+wrapStyle.Render(renderToolDetail(m, line)))
+		lines = append(lines, "     "+wrapStyle.Render(renderToolDetail(m, line)))
 	}
 	return strings.Join(lines, "\n")
 }
