@@ -8,6 +8,42 @@ import (
 	"github.com/vigo999/mindspore-code/ui/model"
 )
 
+func TestRenderMessages_AgentMarkdownDoesNotLeaveBulletOnOwnLine(t *testing.T) {
+	state := model.State{
+		Messages: []model.Message{{
+			Kind:    model.MsgAgent,
+			Content: "## Summary\n\nTraining is now running successfully.",
+		}},
+	}
+
+	view := RenderMessages(state, "", "", 80, true)
+	plain := ansiPattern.ReplaceAllString(view, "")
+	lines := strings.Split(plain, "\n")
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "•" {
+			t.Fatalf("expected bullet to stay attached to content, got:\n%s", plain)
+		}
+	}
+	if first := strings.TrimSpace(lines[0]); !strings.HasPrefix(first, "• ") {
+		t.Fatalf("expected first rendered line to start with bullet prefix, got %q in:\n%s", first, plain)
+	}
+}
+
+func TestRenderMarkdown_PreservesMarkdownBlocks(t *testing.T) {
+	got := RenderMarkdown("## Summary\n\n- one\n- two\n\n**done**", 60)
+	plain := ansiPattern.ReplaceAllString(got, "")
+
+	if !strings.Contains(plain, "## Summary") {
+		t.Fatalf("expected heading to survive markdown render, got:\n%s", plain)
+	}
+	if !strings.Contains(plain, "• one") || !strings.Contains(plain, "• two") {
+		t.Fatalf("expected list items to render as a list, got:\n%s", plain)
+	}
+	if !strings.Contains(strings.ToLower(plain), "done") {
+		t.Fatalf("expected emphasis content to render, got:\n%s", plain)
+	}
+}
+
 func TestRenderMessages_ToolPendingShowsOneCallLine(t *testing.T) {
 	state := model.State{
 		Messages: []model.Message{

@@ -12,28 +12,28 @@ import (
 
 // Style vars are populated by InitStyles() in styles.go.
 var (
-	userStyle             lipgloss.Style
-	userBlockStyle        lipgloss.Style
-	agentStyle            lipgloss.Style
-	thinkingStyle         lipgloss.Style
-	toolBorderStyle       lipgloss.Style
-	toolHeaderStyle       lipgloss.Style
-	toolContentStyle      lipgloss.Style
-	collapsedIconStyle    lipgloss.Style
-	collapsedNameStyle    lipgloss.Style
-	collapsedTitleStyle   lipgloss.Style
-	collapsedSummaryStyle lipgloss.Style
-	errorBorderStyle      lipgloss.Style
-	errorHeaderStyle      lipgloss.Style
-	errorContentStyle     lipgloss.Style
-	diffAddStyle          lipgloss.Style
-	diffRemoveStyle       lipgloss.Style
-	diffNeutralStyle      lipgloss.Style
-	toolPendingDotStyle   lipgloss.Style
-	toolSuccessDotStyle   lipgloss.Style
-	toolWarningDotStyle   lipgloss.Style
-	toolErrorDotStyle     lipgloss.Style
-	toolCallLineStyle     lipgloss.Style
+	userStyle              lipgloss.Style
+	userBlockStyle         lipgloss.Style
+	agentStyle             lipgloss.Style
+	thinkingStyle          lipgloss.Style
+	toolBorderStyle        lipgloss.Style
+	toolHeaderStyle        lipgloss.Style
+	toolContentStyle       lipgloss.Style
+	collapsedIconStyle     lipgloss.Style
+	collapsedNameStyle     lipgloss.Style
+	collapsedTitleStyle    lipgloss.Style
+	collapsedSummaryStyle  lipgloss.Style
+	errorBorderStyle       lipgloss.Style
+	errorHeaderStyle       lipgloss.Style
+	errorContentStyle      lipgloss.Style
+	diffAddStyle           lipgloss.Style
+	diffRemoveStyle        lipgloss.Style
+	diffNeutralStyle       lipgloss.Style
+	toolPendingDotStyle    lipgloss.Style
+	toolSuccessDotStyle    lipgloss.Style
+	toolWarningDotStyle    lipgloss.Style
+	toolErrorDotStyle      lipgloss.Style
+	toolCallLineStyle      lipgloss.Style
 	toolPendingStatusStyle lipgloss.Style
 	toolResultPrefixStyle  lipgloss.Style
 	toolResultSummaryStyle lipgloss.Style
@@ -108,13 +108,15 @@ func renderAgentMsg(msg model.Message, width int) string {
 		bodyWidth = 1
 	}
 	rendered := RenderMarkdown(msg.Content, bodyWidth)
-	lines := strings.Split(rendered, "\n")
+	lines := strings.Split(strings.TrimRight(rendered, "\n"), "\n")
+	firstVisible := true
 	for i, line := range lines {
-		if i == 0 {
-			lines[i] = bulletPrefix + line
-		} else {
-			lines[i] = blankPrefix + line
+		prefix := blankPrefix
+		if firstVisible && strings.TrimSpace(stripANSI(line)) != "" {
+			prefix = bulletPrefix
+			firstVisible = false
 		}
+		lines[i] = prefix + line
 	}
 	return strings.Join(lines, "\n")
 }

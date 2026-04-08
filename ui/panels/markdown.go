@@ -1,6 +1,7 @@
 package panels
 
 import (
+	"regexp"
 	"strings"
 	"sync"
 
@@ -13,6 +14,7 @@ const maxTextWidth = 120
 var (
 	mdRendererMu sync.Mutex
 	mdRenderer   *glamour.TermRenderer
+	ansiRE       = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 )
 
 // markdownStyle returns a custom glamour StyleConfig based on the dark theme
@@ -159,33 +161,6 @@ func markdownStyle() ansi.StyleConfig {
 	return s
 }
 
-// prepareForGlamour adds markdown hard-break markers (two trailing spaces)
-// to non-blank lines outside fenced code blocks, so that glamour's
-// paragraph renderer preserves the original line structure instead of
-// collapsing consecutive lines into re-flowed paragraphs.
-func prepareForGlamour(content string) string {
-	lines := strings.Split(content, "\n")
-	inFence := false
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
-			inFence = !inFence
-			continue
-		}
-		if inFence {
-			continue
-		}
-		if trimmed == "" {
-			continue
-		}
-		if strings.HasSuffix(line, "  ") {
-			continue
-		}
-		lines[i] = line + "  "
-	}
-	return strings.Join(lines, "\n")
-}
-
 // RenderMarkdown converts markdown text to styled ANSI terminal output.
 // The result is word-wrapped to the given width. Falls back to raw content
 // on any rendering error.
@@ -197,12 +172,8 @@ func RenderMarkdown(content string, width int) string {
 		width = 10
 	}
 
-	// Pre-process: add hard breaks so glamour preserves line structure
-	// instead of collapsing consecutive lines into re-flowed paragraphs.
-	prepared := prepareForGlamour(content)
-
 	r := getRenderer(width)
-	out, err := r.Render(prepared)
+	out, err := r.Render(content)
 	if err != nil {
 		return content
 	}
@@ -239,6 +210,7 @@ func getRenderer(width int) *glamour.TermRenderer {
 	return mdRenderer
 }
 
+func stripANSI(s string) string  { return ansiRE.ReplaceAllString(s, "") }
 func boolPtr(b bool) *bool       { return &b }
-func stringPtr(s string) *string  { return &s }
+func stringPtr(s string) *string { return &s }
 func uintPtr(u uint) *uint       { return &u }
