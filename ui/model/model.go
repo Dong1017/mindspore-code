@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mindspore-lab/mindspore-cli/internal/bugs"
 	issuepkg "github.com/mindspore-lab/mindspore-cli/internal/issues"
 )
 
@@ -129,9 +128,7 @@ type Event struct {
 	Permissions *PermissionsViewData
 	Popup       *SelectionPopup // non-nil for popup events only
 	SetupPopup  *SetupPopup     // non-nil for model setup popup events
-	BugView     *BugEventData   // non-nil for bug view events only
 	IssueView   *IssueEventData // non-nil for issue view events only
-	Bug         *bugs.Bug       // reserved for lightweight bug payloads
 	Issue       *issuepkg.Issue // reserved for lightweight issue payloads
 }
 

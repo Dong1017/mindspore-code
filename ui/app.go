@@ -198,7 +198,6 @@ type App struct {
 	// Train mode
 	trainView     model.TrainViewState
 	trainFocus    model.TrainPanelID
-	bugView       model.BugViewState
 	issueView     model.IssueViewState
 	bootActive    bool
 	bootHighlight int
@@ -517,10 +516,6 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return a, a.syncModalAltScreen()
-	}
-
-	if a.bugView.Active() {
-		return a.handleBugKey(msg)
 	}
 
 	if a.permissionPrompt != nil {
@@ -1091,12 +1086,6 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.IssueDetailOpen:
 		a.openIssueDetail(ev.IssueView)
-
-	case model.BugIndexOpen:
-		a.openBugIndex(ev.BugView)
-
-	case model.BugDetailOpen:
-		a.openBugDetail(ev.BugView)
 
 	case model.TaskDone:
 		a.replayWait = nil
@@ -3265,9 +3254,6 @@ func (a App) View() string {
 	}
 	if a.issueView.Active() {
 		return a.renderIssueView()
-	}
-	if a.bugView.Active() {
-		return a.renderBugView()
 	}
 	if !a.modalAltScreen {
 		return a.renderMainView()
