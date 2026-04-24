@@ -1452,6 +1452,10 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		if a.cmdOutputLines != nil {
 			*a.cmdOutputLines = 0
 		}
+		if ev.InputPrefill != "" {
+			a.input.Model.SetValue(ev.InputPrefill)
+			a.resizeActiveLayout()
+		}
 		if strings.TrimSpace(ev.Summary) != "" {
 			a.state = a.state.WithMessage(model.Message{
 				Kind:    model.MsgAgent,

@@ -53,6 +53,12 @@ func TestCmdResumeOpensSessionPicker(t *testing.T) {
 	if got, want := ev.SessionPicker.Items[0].FirstUserInput, "fix the replay command"; got != want {
 		t.Fatalf("picker first user input = %q, want %q", got, want)
 	}
+	if got, want := ev.SessionPicker.Items[0].LastUserInput, "fix the replay command"; got != want {
+		t.Fatalf("picker last user input = %q, want %q", got, want)
+	}
+	if got, want := ev.SessionPicker.Items[0].TurnCount, 1; got != want {
+		t.Fatalf("picker turn count = %d, want %d", got, want)
+	}
 }
 
 func TestCmdResumeSwitchesConversationAndShowsReturnHint(t *testing.T) {

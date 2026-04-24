@@ -128,6 +128,12 @@ func TestCmdRewindOpensCheckpointPicker(t *testing.T) {
 	if got, want := ev.RewindPicker.Items[0].Preview, "third request"; got != want {
 		t.Fatalf("latest rewind preview = %q, want %q", got, want)
 	}
+	if got, want := ev.RewindPicker.Items[0].LastUserInput, "second request"; got != want {
+		t.Fatalf("latest rewind last user input = %q, want %q", got, want)
+	}
+	if got, want := ev.RewindPicker.Items[0].TurnCount, 2; got != want {
+		t.Fatalf("latest rewind turn count = %d, want %d", got, want)
+	}
 }
 
 func TestCmdRewindApplyForksConversationBeforeCheckpoint(t *testing.T) {
@@ -161,6 +167,9 @@ func TestCmdRewindApplyForksConversationBeforeCheckpoint(t *testing.T) {
 	ev := drainUntilClearScreen(t, app)
 	if got, want := ev.Message, "Conversation rewound."; got != want {
 		t.Fatalf("clear message = %q, want %q", got, want)
+	}
+	if got, want := ev.InputPrefill, "third request"; got != want {
+		t.Fatalf("clear input prefill = %q, want %q", got, want)
 	}
 	if !strings.Contains(ev.Summary, oldSessionID) {
 		t.Fatalf("clear summary = %q, want old session hint", ev.Summary)
@@ -235,6 +244,9 @@ func TestCmdRewindApplyRestoresTrackedFiles(t *testing.T) {
 	ev := drainUntilClearScreen(t, app)
 	if got, want := ev.Message, "Code and conversation rewound."; got != want {
 		t.Fatalf("clear message = %q, want %q", got, want)
+	}
+	if got, want := ev.InputPrefill, "third request"; got != want {
+		t.Fatalf("clear input prefill = %q, want %q", got, want)
 	}
 	if got, err := os.ReadFile(fixture.trackedPath); err != nil {
 		t.Fatalf("read restored tracked file: %v", err)

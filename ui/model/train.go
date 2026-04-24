@@ -297,6 +297,8 @@ type RewindCheckpointItem struct {
 	MessageID      string
 	Timestamp      time.Time
 	Preview        string
+	LastUserInput  string
+	TurnCount      int
 	HasCodeRestore bool
 }
 
@@ -305,6 +307,8 @@ type SessionPickerItem struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	FirstUserInput string
+	LastUserInput  string
+	TurnCount      int
 }
 
 // MoveModeSelection moves the mode cursor by delta, wrapping around 2 options.

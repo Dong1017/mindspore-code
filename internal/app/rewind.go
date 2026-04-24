@@ -14,14 +14,6 @@ func (a *Application) cmdRewind(args []string) {
 	a.openRewindPicker()
 }
 
-func (a *Application) cmdCheckpoint(args []string) {
-	if len(args) != 0 {
-		a.emitToolError("session", "usage: /checkpoint")
-		return
-	}
-	a.openRewindPicker()
-}
-
 func (a *Application) openRewindPicker() {
 	if a == nil || a.EventCh == nil {
 		return
@@ -34,6 +26,8 @@ func (a *Application) openRewindPicker() {
 				MessageID:      checkpoint.MessageID,
 				Timestamp:      checkpoint.Timestamp,
 				Preview:        checkpoint.Preview,
+				LastUserInput:  checkpoint.LastUserInput,
+				TurnCount:      checkpoint.TurnCount,
 				HasCodeRestore: checkpoint.HasCodeRestore,
 			})
 		}
@@ -82,6 +76,11 @@ func (a *Application) applyRewind(messageID string, restoreCode bool) {
 
 	oldSession := a.session
 	oldSessionID := strings.TrimSpace(oldSession.ID())
+	selectedInput, err := oldSession.CheckpointUserInput(messageID)
+	if err != nil {
+		a.emitToolError("session", "Failed to load rewind prompt: %v", err)
+		return
+	}
 	if err := oldSession.Activate(); err != nil {
 		a.emitToolError("session", "Failed to preserve the current conversation: %v", err)
 		return
@@ -130,9 +129,10 @@ func (a *Application) applyRewind(messageID string, restoreCode bool) {
 		message = "Code and conversation rewound."
 	}
 	a.EventCh <- model.Event{
-		Type:    model.ClearScreen,
-		Message: message,
-		Summary: inlineResumeHintForSession(oldSessionID),
+		Type:         model.ClearScreen,
+		Message:      message,
+		Summary:      inlineResumeHintForSession(oldSessionID),
+		InputPrefill: selectedInput,
 	}
 	a.startReplayHistory()
 }

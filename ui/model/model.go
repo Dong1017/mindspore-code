@@ -137,6 +137,7 @@ type Event struct {
 	RewindPicker  *RewindPicker
 	IssueView     *IssueEventData // non-nil for issue view events only
 	Issue         *issuepkg.Issue // reserved for lightweight issue payloads
+	InputPrefill  string
 }
 
 // ReplayWaitData lets replay fast-forward the UI timer while using shorter real delays.

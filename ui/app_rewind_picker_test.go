@@ -25,6 +25,8 @@ func TestRewindPickerOpenConfirmConversationRestore(t *testing.T) {
 					MessageID:      "msg_000003",
 					Timestamp:      time.Date(2026, time.April, 8, 12, 0, 0, 0, time.UTC),
 					Preview:        "revert the last change",
+					LastUserInput:  "stabilize formatting",
+					TurnCount:      4,
 					HasCodeRestore: false,
 				},
 			},
@@ -38,7 +40,7 @@ func TestRewindPickerOpenConfirmConversationRestore(t *testing.T) {
 	if !app.modalAltScreen {
 		t.Fatal("expected rewind picker to enable alt-screen")
 	}
-	if view := app.View(); !strings.Contains(view, "Rewind Session") || !strings.Contains(view, "revert the last change") {
+	if view := app.View(); !strings.Contains(view, "Rewind Session") || !strings.Contains(view, "revert the last change") || !strings.Contains(view, "stabilize formatting") || !strings.Contains(view, "4 turns before here") {
 		t.Fatalf("expected rewind picker view, got:\n%s", view)
 	}
 
@@ -83,6 +85,8 @@ func TestRewindPickerConfirmCodeRestore(t *testing.T) {
 					MessageID:      "msg_000004",
 					Timestamp:      time.Date(2026, time.April, 8, 13, 0, 0, 0, time.UTC),
 					Preview:        "restore workspace",
+					LastUserInput:  "seed workspace state",
+					TurnCount:      2,
 					HasCodeRestore: true,
 				},
 			},

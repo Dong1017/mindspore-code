@@ -387,6 +387,15 @@ func TestCheckpointsRestoreConversationStateFromBeforeUserTurn(t *testing.T) {
 	if got, want := checkpoints[0].Preview, "second request"; got != want {
 		t.Fatalf("latest checkpoint preview = %q, want %q", got, want)
 	}
+	if got, want := checkpoints[0].LastUserInput, "first request"; got != want {
+		t.Fatalf("latest checkpoint last user input = %q, want %q", got, want)
+	}
+	if got, want := checkpoints[0].TurnCount, 1; got != want {
+		t.Fatalf("latest checkpoint turn count = %d, want %d", got, want)
+	}
+	if got, want := checkpoints[1].TurnCount, 0; got != want {
+		t.Fatalf("first checkpoint turn count = %d, want %d", got, want)
+	}
 
 	systemPrompt, messages, usage, err := loaded.RestoreCheckpointContext(checkpoints[0].MessageID)
 	if err != nil {
@@ -841,11 +850,23 @@ func TestListForWorkDirReturnsRecentDialogueSummaries(t *testing.T) {
 	if got, want := summaries[0].FirstUserInput, "second prompt"; got != want {
 		t.Fatalf("latest first user input = %q, want %q", got, want)
 	}
+	if got, want := summaries[0].LastUserInput, "second prompt"; got != want {
+		t.Fatalf("latest last user input = %q, want %q", got, want)
+	}
+	if got, want := summaries[0].TurnCount, 1; got != want {
+		t.Fatalf("latest turn count = %d, want %d", got, want)
+	}
 	if got, want := summaries[1].SessionID, first.ID(); got != want {
 		t.Fatalf("older session id = %q, want %q", got, want)
 	}
 	if got, want := summaries[1].FirstUserInput, "first prompt line"; got != want {
 		t.Fatalf("older first user input = %q, want %q", got, want)
+	}
+	if got, want := summaries[1].LastUserInput, "first prompt line"; got != want {
+		t.Fatalf("older last user input = %q, want %q", got, want)
+	}
+	if got, want := summaries[1].TurnCount, 1; got != want {
+		t.Fatalf("older turn count = %d, want %d", got, want)
 	}
 }
 

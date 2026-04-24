@@ -74,7 +74,7 @@ func renderSessionPickerBody(picker *model.SessionPicker, width, height int) []s
 		return []string{sessionPickerEmptyStyle.Width(width).Render(msg)}
 	}
 
-	const linesPerItem = 5
+	const linesPerItem = 7
 	visibleCount := height / linesPerItem
 	if visibleCount < 1 {
 		visibleCount = 1
@@ -136,7 +136,9 @@ func renderSessionPickerItem(item model.SessionPickerItem, selected bool, width 
 		marker + idStyle.Render(item.ID),
 		"  " + metaStyle.Render("Created: "+item.CreatedAt.Format("2006-01-02 15:04:05")),
 		"  " + metaStyle.Render("Updated: "+item.UpdatedAt.Format("2006-01-02 15:04:05")),
-		"  " + previewStyle.Render(truncateSessionPickerText(item.FirstUserInput, previewWidth)),
+		"  " + previewStyle.Render("First: "+truncateSessionPickerText(item.FirstUserInput, maxInt(0, previewWidth-7))),
+		"  " + previewStyle.Render("Last: "+truncateSessionPickerText(sessionPickerLastUserText(item.LastUserInput), maxInt(0, previewWidth-6))),
+		"  " + metaStyle.Render(sessionPickerTurnCountText(item.TurnCount)),
 		"",
 	}
 }
@@ -167,4 +169,19 @@ func truncateSessionPickerText(text string, width int) string {
 		runes = runes[:len(runes)-1]
 	}
 	return string(runes) + "..."
+}
+
+func sessionPickerLastUserText(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "(conversation starts here)"
+	}
+	return text
+}
+
+func sessionPickerTurnCountText(turnCount int) string {
+	if turnCount == 1 {
+		return "1 turn"
+	}
+	return fmt.Sprintf("%d turns", turnCount)
 }

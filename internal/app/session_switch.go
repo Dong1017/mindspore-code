@@ -84,6 +84,8 @@ func (a *Application) openSessionPicker(mode model.SessionPickerMode, replaySpee
 			CreatedAt:      summary.CreatedAt,
 			UpdatedAt:      summary.UpdatedAt,
 			FirstUserInput: summary.FirstUserInput,
+			LastUserInput:  summary.LastUserInput,
+			TurnCount:      summary.TurnCount,
 		})
 	}
 

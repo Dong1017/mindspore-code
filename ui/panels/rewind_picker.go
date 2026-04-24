@@ -60,7 +60,7 @@ func renderRewindListBody(picker *model.RewindPicker, width, height int) []strin
 		return []string{sessionPickerEmptyStyle.Width(width).Render(msg)}
 	}
 
-	const linesPerItem = 4
+	const linesPerItem = 5
 	visibleCount := height / linesPerItem
 	if visibleCount < 1 {
 		visibleCount = 1
@@ -112,7 +112,8 @@ func renderRewindListItem(item model.RewindCheckpointItem, selected bool, width 
 	return []string{
 		marker + titleStyle.Render(item.Timestamp.Format("2006-01-02 15:04:05")),
 		"  " + previewStyle.Render(truncateSessionPickerText(item.Preview, width)),
-		"  " + metaStyle.Render(restoreMode),
+		"  " + previewStyle.Render("Keep last: "+truncateSessionPickerText(sessionPickerLastUserText(item.LastUserInput), maxInt(0, width-13))),
+		"  " + metaStyle.Render(sessionPickerTurnCountText(item.TurnCount)+" before here · "+restoreMode),
 		"",
 	}
 }
@@ -139,6 +140,8 @@ func renderRewindConfirmBody(picker *model.RewindPicker, width, _ int) []string 
 		sessionPickerNormalStyle.Render("Restore to before this message:"),
 		sessionPickerPreviewStyle.Render(truncateSessionPickerText(item.Preview, width)),
 		sessionPickerMetaStyle.Render(item.Timestamp.Format("2006-01-02 15:04:05")),
+		sessionPickerMetaStyle.Render(sessionPickerTurnCountText(item.TurnCount) + " will remain"),
+		sessionPickerMetaStyle.Render("Last kept prompt: " + truncateSessionPickerText(sessionPickerLastUserText(item.LastUserInput), maxInt(0, width-18))),
 		"",
 		(optionMarker(selectedConversation) + conversationStyle.Render("restore conversation")),
 	}

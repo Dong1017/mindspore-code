@@ -55,6 +55,8 @@ type CheckpointSummary struct {
 	MessageID      string
 	Timestamp      time.Time
 	Preview        string
+	LastUserInput  string
+	TurnCount      int
 	HasCodeRestore bool
 }
 
@@ -416,6 +418,29 @@ func (s *Session) ListCheckpoints() []CheckpointSummary {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	type checkpointState struct {
+		lastUserInput string
+		turnCount     int
+	}
+	states := make(map[string]checkpointState, len(s.checkpointOrder))
+	lastUserInput := ""
+	turnCount := 0
+	for _, entry := range s.log {
+		switch entry.kind {
+		case recordTypeCheckpoint:
+			messageID := strings.TrimSpace(entry.checkpoint.MessageID)
+			if messageID != "" {
+				states[messageID] = checkpointState{
+					lastUserInput: lastUserInput,
+					turnCount:     turnCount,
+				}
+			}
+		case recordTypeUser:
+			turnCount++
+			lastUserInput = sessionPreview(entry.message.Content)
+		}
+	}
+
 	summaries := make([]CheckpointSummary, 0, len(s.checkpointOrder))
 	for i := len(s.checkpointOrder) - 1; i >= 0; i-- {
 		messageID := s.checkpointOrder[i]
@@ -423,14 +448,42 @@ func (s *Session) ListCheckpoints() []CheckpointSummary {
 		if !ok {
 			continue
 		}
+		state := states[messageID]
 		summaries = append(summaries, CheckpointSummary{
 			MessageID:      record.MessageID,
 			Timestamp:      record.Timestamp,
 			Preview:        record.Preview,
+			LastUserInput:  state.lastUserInput,
+			TurnCount:      state.turnCount,
 			HasCodeRestore: len(record.Files) > 0,
 		})
 	}
 	return summaries
+}
+
+// CheckpointUserInput returns the full user prompt associated with a checkpoint message id.
+func (s *Session) CheckpointUserInput(messageID string) (string, error) {
+	if s == nil {
+		return "", fmt.Errorf("session is nil")
+	}
+
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return "", fmt.Errorf("checkpoint message id cannot be empty")
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, entry := range s.log {
+		if entry.kind != recordTypeUser {
+			continue
+		}
+		if strings.TrimSpace(entry.message.MessageID) == messageID {
+			return entry.message.Content, nil
+		}
+	}
+	return "", fmt.Errorf("checkpoint user message %q not found", messageID)
 }
 
 func normalizeCheckpointPath(path string) string {

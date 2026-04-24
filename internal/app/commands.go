@@ -39,8 +39,6 @@ func (a *Application) handleCommand(input string) {
 		a.cmdClear()
 	case "/rewind":
 		a.cmdRewind(args)
-	case "/checkpoint":
-		a.cmdCheckpoint(args)
 	case "/resume":
 		a.cmdResume(args)
 	case "/replay":

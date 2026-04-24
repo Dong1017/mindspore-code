@@ -91,6 +91,8 @@ type Summary struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	FirstUserInput string
+	LastUserInput  string
+	TurnCount      int
 	HasDialogue    bool
 }
 
@@ -865,11 +867,15 @@ func (s *Session) summary() Summary {
 	}
 
 	firstUserInput := ""
+	lastUserInput := ""
+	turnCount := 0
 	hasDialogue := false
 	for _, record := range s.records {
 		switch record.Type {
 		case recordTypeUser:
 			hasDialogue = true
+			turnCount++
+			lastUserInput = sessionPreview(record.Content)
 			if firstUserInput == "" {
 				firstUserInput = sessionPreview(record.Content)
 			}
@@ -886,6 +892,8 @@ func (s *Session) summary() Summary {
 		CreatedAt:      s.meta.CreatedAt,
 		UpdatedAt:      updatedAt,
 		FirstUserInput: firstUserInput,
+		LastUserInput:  lastUserInput,
+		TurnCount:      turnCount,
 		HasDialogue:    hasDialogue,
 	}
 }

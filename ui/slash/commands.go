@@ -184,12 +184,6 @@ func (r *Registry) registerDefaults() {
 	})
 
 	r.Register(Command{
-		Name:        "/checkpoint",
-		Description: "Open the rewind checkpoint picker",
-		Usage:       "/checkpoint",
-	})
-
-	r.Register(Command{
 		Name:        "/resume",
 		Description: "Resume a saved session",
 		Usage:       "/resume [sess_xxx]",

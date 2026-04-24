@@ -27,12 +27,16 @@ func TestSessionPickerOpenAndSelectResume(t *testing.T) {
 					CreatedAt:      time.Date(2026, time.April, 8, 9, 0, 0, 0, time.UTC),
 					UpdatedAt:      time.Date(2026, time.April, 8, 9, 30, 0, 0, time.UTC),
 					FirstUserInput: "first session",
+					LastUserInput:  "first session latest",
+					TurnCount:      1,
 				},
 				{
 					ID:             "sess_2",
 					CreatedAt:      time.Date(2026, time.April, 8, 10, 0, 0, 0, time.UTC),
 					UpdatedAt:      time.Date(2026, time.April, 8, 10, 30, 0, 0, time.UTC),
 					FirstUserInput: "second session",
+					LastUserInput:  "second session latest",
+					TurnCount:      3,
 				},
 			},
 		},
@@ -45,7 +49,7 @@ func TestSessionPickerOpenAndSelectResume(t *testing.T) {
 	if !app.modalAltScreen {
 		t.Fatal("expected session picker to enable alt-screen")
 	}
-	if view := app.View(); !strings.Contains(view, "Resume Session") || !strings.Contains(view, "first session") {
+	if view := app.View(); !strings.Contains(view, "Resume Session") || !strings.Contains(view, "first session") || !strings.Contains(view, "second session latest") || !strings.Contains(view, "3 turns") {
 		t.Fatalf("expected session picker view, got:\n%s", view)
 	}
 
@@ -89,6 +93,8 @@ func TestSessionPickerReplaySelectionIncludesSpeed(t *testing.T) {
 				CreatedAt:      time.Date(2026, time.April, 8, 11, 0, 0, 0, time.UTC),
 				UpdatedAt:      time.Date(2026, time.April, 8, 11, 30, 0, 0, time.UTC),
 				FirstUserInput: "replay session",
+				LastUserInput:  "replay session latest",
+				TurnCount:      2,
 			}},
 		},
 	})
@@ -167,6 +173,8 @@ func TestSessionPickerEnterReleasesStartupBannerSuppression(t *testing.T) {
 			CreatedAt:      time.Date(2026, time.April, 8, 9, 0, 0, 0, time.UTC),
 			UpdatedAt:      time.Date(2026, time.April, 8, 9, 30, 0, 0, time.UTC),
 			FirstUserInput: "first session",
+			LastUserInput:  "first session latest",
+			TurnCount:      1,
 		}},
 	}
 	app.modalAltScreen = true
