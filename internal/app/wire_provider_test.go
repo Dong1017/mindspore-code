@@ -213,7 +213,7 @@ func TestWireCleansExpiredSessionsOnStartup(t *testing.T) {
 
 	staleDir := filepath.Dir(stale.Path())
 	staleTime := time.Now().Add(-48 * time.Hour)
-	for _, path := range []string{staleDir, stale.Path(), filepath.Join(staleDir, "snapshot.json")} {
+	for _, path := range []string{staleDir, stale.Path()} {
 		if err := os.Chtimes(path, staleTime, staleTime); err != nil {
 			t.Fatalf("Chtimes(%s) err = %v", path, err)
 		}

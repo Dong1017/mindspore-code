@@ -278,6 +278,28 @@ type SessionPicker struct {
 	EmptyMessage string
 }
 
+type RewindRestoreMode string
+
+const (
+	RewindRestoreConversation     RewindRestoreMode = "conversation"
+	RewindRestoreCodeConversation RewindRestoreMode = "code"
+)
+
+type RewindPicker struct {
+	Items           []RewindCheckpointItem
+	Selected        int
+	Confirming      bool
+	ConfirmSelected int
+	EmptyMessage    string
+}
+
+type RewindCheckpointItem struct {
+	MessageID      string
+	Timestamp      time.Time
+	Preview        string
+	HasCodeRestore bool
+}
+
 type SessionPickerItem struct {
 	ID             string
 	CreatedAt      time.Time
@@ -307,6 +329,40 @@ func (p *SessionPicker) MoveSelection(delta int) {
 		return
 	}
 	p.Selected = (p.Selected + delta%n + n) % n
+}
+
+func (p *RewindPicker) MoveSelection(delta int) {
+	n := len(p.Items)
+	if n == 0 {
+		return
+	}
+	p.Selected = (p.Selected + delta%n + n) % n
+}
+
+func (p *RewindPicker) SelectedItem() *RewindCheckpointItem {
+	if p == nil || len(p.Items) == 0 || p.Selected < 0 || p.Selected >= len(p.Items) {
+		return nil
+	}
+	return &p.Items[p.Selected]
+}
+
+func (p *RewindPicker) MoveConfirmSelection(delta int) {
+	if p == nil {
+		return
+	}
+	item := p.SelectedItem()
+	if item == nil || !item.HasCodeRestore {
+		p.ConfirmSelected = 0
+		return
+	}
+	p.ConfirmSelected = (p.ConfirmSelected + delta%2 + 2) % 2
+}
+
+func (p *RewindPicker) ConfirmMode() RewindRestoreMode {
+	if p == nil || p.ConfirmSelected == 0 {
+		return RewindRestoreConversation
+	}
+	return RewindRestoreCodeConversation
 }
 
 type TrainMetricsView struct {

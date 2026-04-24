@@ -158,7 +158,7 @@ func TestRunTaskPersistsSessionAfterLiveLLMReply(t *testing.T) {
 		session:    runtimeSession,
 		ctxManager: ctxManager,
 	}
-	engine.SetTrajectoryRecorder(newTrajectoryRecorder(runtimeSession, ctxManager, app.noteLiveLLMActivity))
+	engine.SetTrajectoryRecorder(newTrajectoryRecorder(runtimeSession, ctxManager, workDir, app.noteLiveLLMActivity))
 
 	app.runTask("hello")
 
@@ -166,8 +166,8 @@ func TestRunTaskPersistsSessionAfterLiveLLMReply(t *testing.T) {
 		t.Fatalf("expected trajectory after live llm reply, got %v", err)
 	}
 	snapshotPath := filepath.Join(filepath.Dir(runtimeSession.Path()), "snapshot.json")
-	if _, err := os.Stat(snapshotPath); err != nil {
-		t.Fatalf("expected snapshot after live llm reply, got %v", err)
+	if _, err := os.Stat(snapshotPath); !os.IsNotExist(err) {
+		t.Fatalf("expected no snapshot sidecar after live llm reply, got %v", err)
 	}
 
 	trajectory, err := os.ReadFile(runtimeSession.Path())

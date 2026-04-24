@@ -17,18 +17,20 @@ import (
 )
 
 const (
-	trajectoryFilename   = "trajectory.jsonl"
-	snapshotFilename     = "snapshot.json"
-	recordTypeMeta       = "session_meta"
-	recordTypeUser       = "user"
-	recordTypeAssistant  = "assistant"
-	recordTypeToolCall   = "tool_call"
-	recordTypeToolResult = "tool_result"
-	recordTypeSkill      = "skill_activation"
-	recordTypeCompact    = "context_compact"
-	formatVersion        = 1
-	defaultSessionSubdir = ".mscli/sessions"
-	replayWaitCap        = 5 * time.Second
+	trajectoryFilename    = "trajectory.jsonl"
+	snapshotFilename      = "snapshot.json"
+	recordTypeMeta        = "session_meta"
+	recordTypeUser        = "user"
+	recordTypeAssistant   = "assistant"
+	recordTypeToolCall    = "tool_call"
+	recordTypeToolResult  = "tool_result"
+	recordTypeSkill       = "skill_activation"
+	recordTypeCompact     = "context_compact"
+	recordTypeResumeState = "resume_state"
+	recordTypeCheckpoint  = "checkpoint"
+	formatVersion         = 2
+	defaultSessionSubdir  = ".mscli/sessions"
+	replayWaitCap         = 5 * time.Second
 )
 
 // Meta is the first JSONL record describing the session.
@@ -47,6 +49,7 @@ type Meta struct {
 type MessageRecord struct {
 	Type         string          `json:"type"`
 	Timestamp    time.Time       `json:"timestamp"`
+	MessageID    string          `json:"message_id,omitempty"`
 	Content      string          `json:"content,omitempty"`
 	ToolName     string          `json:"tool_name,omitempty"`
 	Arguments    json.RawMessage `json:"arguments,omitempty"`
@@ -93,15 +96,24 @@ type Summary struct {
 
 // Session owns trajectory persistence for one workspace conversation.
 type Session struct {
-	mu           sync.RWMutex
-	meta         Meta
-	records      []MessageRecord
-	snapshot     Snapshot
-	path         string
-	snapshotPath string
-	persisted    bool
-	file         *os.File
-	enc          *json.Encoder
+	mu                        sync.RWMutex
+	meta                      Meta
+	records                   []MessageRecord
+	log                       []trajectoryEntry
+	resumeStates              []ResumeStateRecord
+	checkpoints               map[string]CheckpointRecord
+	checkpointOrder           []string
+	activeCheckpointMessageID string
+	snapshot                  Snapshot
+	path                      string
+	snapshotPath              string
+	persisted                 bool
+	file                      *os.File
+	enc                       *json.Encoder
+	nextResumeStateSeq        int
+	nextMessageSeq            int
+	nextBackupSeq             int
+	bootstrapResumeState      bool
 }
 
 // Create allocates a new session under ~/.mscli/sessions.
@@ -130,7 +142,11 @@ func Create(workDir, systemPrompt string) (*Session, error) {
 			CreatedAt:    now,
 			UpdatedAt:    now,
 		},
-		records: make([]MessageRecord, 0),
+		records:         make([]MessageRecord, 0),
+		log:             make([]trajectoryEntry, 0, 8),
+		resumeStates:    make([]ResumeStateRecord, 0, 4),
+		checkpoints:     make(map[string]CheckpointRecord),
+		checkpointOrder: make([]string, 0, 4),
 		snapshot: Snapshot{
 			SessionID:    id,
 			WorkDir:      absWorkDir,
@@ -140,6 +156,12 @@ func Create(workDir, systemPrompt string) (*Session, error) {
 		path:         path,
 		snapshotPath: snapshotPath(path),
 	}
+	s.applyTrajectoryEntryLocked(makeTrajectoryEntry(ResumeStateRecord{
+		Type:         recordTypeResumeState,
+		Sequence:     1,
+		UpdatedAt:    now,
+		SystemPrompt: systemPrompt,
+	}))
 	return s, nil
 }
 
@@ -311,17 +333,30 @@ func (s *Session) AppendUserInput(content string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if err := s.ensureResumeStateBootstrapLocked(); err != nil {
+		return err
+	}
+
+	now := time.Now()
+	messageID := s.nextMessageIDLocked()
+	checkpoint := CheckpointRecord{
+		Type:           recordTypeCheckpoint,
+		Timestamp:      now,
+		MessageID:      messageID,
+		Preview:        sessionPreview(content),
+		ResumeStateSeq: s.latestResumeStateSeqLocked(),
+	}
+	if err := s.appendTrajectoryEntryLocked(checkpoint); err != nil {
+		return err
+	}
+
 	record := MessageRecord{
 		Type:      recordTypeUser,
-		Timestamp: time.Now(),
+		Timestamp: now,
+		MessageID: messageID,
 		Content:   content,
 	}
-	s.records = append(s.records, record)
-	s.meta.UpdatedAt = record.Timestamp
-	if !s.persisted {
-		return nil
-	}
-	return s.writeRecordLocked(record)
+	return s.appendTrajectoryEntryLocked(record)
 }
 
 // AppendAssistant appends one assistant reply line and syncs it immediately.
@@ -341,12 +376,7 @@ func (s *Session) AppendAssistant(content string) error {
 		Timestamp: time.Now(),
 		Content:   content,
 	}
-	s.records = append(s.records, record)
-	s.meta.UpdatedAt = record.Timestamp
-	if !s.persisted {
-		return nil
-	}
-	return s.writeRecordLocked(record)
+	return s.appendTrajectoryEntryLocked(record)
 }
 
 // AppendToolCall appends one tool call record and syncs it immediately.
@@ -365,12 +395,7 @@ func (s *Session) AppendToolCall(tc llm.ToolCall) error {
 		Arguments:  append([]byte(nil), tc.Function.Arguments...),
 		ToolCallID: tc.ID,
 	}
-	s.records = append(s.records, record)
-	s.meta.UpdatedAt = record.Timestamp
-	if !s.persisted {
-		return nil
-	}
-	return s.writeRecordLocked(record)
+	return s.appendTrajectoryEntryLocked(record)
 }
 
 // AppendToolResult appends one tool result record and syncs it immediately.
@@ -389,12 +414,7 @@ func (s *Session) AppendToolResult(toolCallID, toolName, content string) error {
 		ToolName:   toolName,
 		ToolCallID: toolCallID,
 	}
-	s.records = append(s.records, record)
-	s.meta.UpdatedAt = record.Timestamp
-	if !s.persisted {
-		return nil
-	}
-	return s.writeRecordLocked(record)
+	return s.appendTrajectoryEntryLocked(record)
 }
 
 // AppendSkillActivation appends one skill activation record and syncs it immediately.
@@ -414,12 +434,7 @@ func (s *Session) AppendSkillActivation(skillName string) error {
 		Timestamp: time.Now(),
 		SkillName: strings.TrimSpace(skillName),
 	}
-	s.records = append(s.records, record)
-	s.meta.UpdatedAt = record.Timestamp
-	if !s.persisted {
-		return nil
-	}
-	return s.writeRecordLocked(record)
+	return s.appendTrajectoryEntryLocked(record)
 }
 
 // AppendContextCompaction appends one context compaction notice and syncs it immediately.
@@ -445,12 +460,7 @@ func (s *Session) AppendContextCompaction(trigger string, beforeTokens, afterTok
 		BeforeTokens: beforeTokens,
 		AfterTokens:  afterTokens,
 	}
-	s.records = append(s.records, record)
-	s.meta.UpdatedAt = record.Timestamp
-	if !s.persisted {
-		return nil
-	}
-	return s.writeRecordLocked(record)
+	return s.appendTrajectoryEntryLocked(record)
 }
 
 // ReplayEvents synthesizes UI replay events from persisted conversation records.
@@ -796,15 +806,11 @@ func (s *Session) Activate() error {
 		s.cleanupActivationFailureLocked()
 		return err
 	}
-	for _, record := range s.records {
-		if err := s.writeRecordLocked(record); err != nil {
+	for _, entry := range s.log {
+		if err := s.writeRecordLocked(entry.record()); err != nil {
 			s.cleanupActivationFailureLocked()
 			return err
 		}
-	}
-	if err := s.writeSnapshotLocked(); err != nil {
-		s.cleanupActivationFailureLocked()
-		return err
 	}
 	s.persisted = true
 	return nil
@@ -849,13 +855,7 @@ func (s *Session) summary() Summary {
 	defer s.mu.RUnlock()
 
 	updatedAt := s.meta.UpdatedAt
-	if s.snapshot.UpdatedAt.After(updatedAt) {
-		updatedAt = s.snapshot.UpdatedAt
-	}
 	if info, err := os.Stat(s.path); err == nil && info.ModTime().After(updatedAt) {
-		updatedAt = info.ModTime()
-	}
-	if info, err := os.Stat(s.snapshotPath); err == nil && info.ModTime().After(updatedAt) {
 		updatedAt = info.ModTime()
 	}
 
@@ -935,9 +935,10 @@ func loadFromPath(path string, appendOnly bool) (*Session, error) {
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 
 	var (
-		meta    Meta
-		records []MessageRecord
-		line    int
+		meta      Meta
+		entries   []trajectoryEntry
+		line      int
+		hasResume bool
 	)
 	for scanner.Scan() {
 		line++
@@ -966,7 +967,22 @@ func loadFromPath(path string, appendOnly bool) (*Session, error) {
 				_ = file.Close()
 				return nil, fmt.Errorf("decode message record: %w", err)
 			}
-			records = append(records, record)
+			entries = append(entries, makeTrajectoryEntry(record))
+		case recordTypeResumeState:
+			var record ResumeStateRecord
+			if err := json.Unmarshal(data, &record); err != nil {
+				_ = file.Close()
+				return nil, fmt.Errorf("decode resume state record: %w", err)
+			}
+			hasResume = true
+			entries = append(entries, makeTrajectoryEntry(record))
+		case recordTypeCheckpoint:
+			var record CheckpointRecord
+			if err := json.Unmarshal(data, &record); err != nil {
+				_ = file.Close()
+				return nil, fmt.Errorf("decode checkpoint record: %w", err)
+			}
+			entries = append(entries, makeTrajectoryEntry(record))
 		default:
 			_ = file.Close()
 			return nil, fmt.Errorf("unknown trajectory record type %q on line %d", envelope.Type, line)
@@ -987,25 +1003,43 @@ func loadFromPath(path string, appendOnly bool) (*Session, error) {
 	}
 
 	snapPath := snapshotPath(path)
-	snapshot, err := loadSnapshot(snapPath)
-	if err != nil {
-		return nil, err
+	sessionState := &Session{
+		meta:            meta,
+		records:         make([]MessageRecord, 0, len(entries)),
+		log:             make([]trajectoryEntry, 0, len(entries)),
+		resumeStates:    make([]ResumeStateRecord, 0, len(entries)),
+		checkpoints:     make(map[string]CheckpointRecord),
+		checkpointOrder: make([]string, 0, len(entries)),
+		path:            path,
+		snapshotPath:    snapPath,
 	}
-	if snapshot.SessionID == "" {
-		snapshot = Snapshot{
+	for _, entry := range entries {
+		sessionState.applyTrajectoryEntryLocked(entry)
+	}
+	if !hasResume {
+		snapshot, err := loadSnapshot(snapPath)
+		if err != nil {
+			return nil, err
+		}
+		if snapshot.SessionID == "" {
+			snapshot = Snapshot{
+				SessionID:    meta.SessionID,
+				WorkDir:      meta.WorkDir,
+				SystemPrompt: meta.SystemPrompt,
+				UpdatedAt:    meta.UpdatedAt,
+			}
+		}
+		sessionState.snapshot = snapshot
+		sessionState.meta.SystemPrompt = snapshot.SystemPrompt
+		sessionState.bootstrapResumeState = appendOnly
+	}
+	if sessionState.snapshot.SessionID == "" {
+		sessionState.snapshot = Snapshot{
 			SessionID:    meta.SessionID,
 			WorkDir:      meta.WorkDir,
 			SystemPrompt: meta.SystemPrompt,
 			UpdatedAt:    meta.UpdatedAt,
 		}
-	}
-
-	sessionState := &Session{
-		meta:         meta,
-		records:      records,
-		snapshot:     snapshot,
-		path:         path,
-		snapshotPath: snapPath,
 	}
 	if !appendOnly {
 		return sessionState, nil
@@ -1056,12 +1090,12 @@ func (s *Session) writeRecordLocked(record any) error {
 	return nil
 }
 
-// SaveSnapshot overwrites snapshot.json with the current restorable context.
+// SaveSnapshot appends a restorable context snapshot into trajectory.jsonl.
 func (s *Session) SaveSnapshot(systemPrompt string, messages []llm.Message) error {
 	return s.SaveSnapshotWithUsage(systemPrompt, messages, nil)
 }
 
-// SaveSnapshotWithUsage overwrites snapshot.json with the current restorable context and usage snapshot.
+// SaveSnapshotWithUsage appends a restorable context snapshot into trajectory.jsonl.
 func (s *Session) SaveSnapshotWithUsage(systemPrompt string, messages []llm.Message, usage *UsageSnapshot) error {
 	if s == nil {
 		return fmt.Errorf("session is nil")
@@ -1073,13 +1107,16 @@ func (s *Session) SaveSnapshotWithUsage(systemPrompt string, messages []llm.Mess
 	s.meta.SystemPrompt = systemPrompt
 	s.snapshot.SystemPrompt = systemPrompt
 	s.snapshot.UpdatedAt = time.Now()
-	s.snapshot.Messages = make([]llm.Message, len(messages))
-	copy(s.snapshot.Messages, messages)
+	s.snapshot.Messages = cloneMessages(messages)
 	s.snapshot.ProviderUsage = cloneUsageSnapshot(usage)
-	if !s.persisted {
-		return nil
-	}
-	return s.writeSnapshotLocked()
+	return s.appendTrajectoryEntryLocked(ResumeStateRecord{
+		Type:          recordTypeResumeState,
+		Sequence:      s.nextResumeStateSeq + 1,
+		UpdatedAt:     s.snapshot.UpdatedAt,
+		SystemPrompt:  systemPrompt,
+		Messages:      cloneMessages(messages),
+		ProviderUsage: cloneUsageSnapshot(usage),
+	})
 }
 
 func cloneUsageSnapshot(usage *UsageSnapshot) *UsageSnapshot {
@@ -1100,19 +1137,7 @@ func (s *Session) cleanupActivationFailureLocked() {
 	}
 	s.file = nil
 	s.enc = nil
-	_ = os.Remove(s.path)
-	_ = os.Remove(s.snapshotPath)
-}
-
-func (s *Session) writeSnapshotLocked() error {
-	data, err := json.MarshalIndent(s.snapshot, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal snapshot: %w", err)
-	}
-	if err := os.WriteFile(s.snapshotPath, data, 0600); err != nil {
-		return fmt.Errorf("write snapshot: %w", err)
-	}
-	return nil
+	_ = os.RemoveAll(filepath.Dir(s.path))
 }
 
 func loadSnapshot(path string) (Snapshot, error) {

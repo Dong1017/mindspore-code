@@ -37,10 +37,16 @@ func (a *Application) handleCommand(input string) {
 		a.cmdCtx()
 	case "/clear":
 		a.cmdClear()
+	case "/rewind":
+		a.cmdRewind(args)
+	case "/checkpoint":
+		a.cmdCheckpoint(args)
 	case "/resume":
 		a.cmdResume(args)
 	case "/replay":
 		a.cmdReplay(args)
+	case "/__rewind":
+		a.cmdRewindApply(args)
 	case "/permissions":
 		a.cmdPermissions(nil)
 	case "/yolo":

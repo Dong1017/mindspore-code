@@ -1,0 +1,112 @@
+package ui
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mindspore-lab/mindspore-cli/ui/model"
+)
+
+func TestRewindPickerOpenConfirmConversationRestore(t *testing.T) {
+	userCh := make(chan string, 1)
+	app := New(nil, userCh, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	app = next.(App)
+
+	next, cmd := app.handleEvent(model.Event{
+		Type: model.RewindPickerOpen,
+		RewindPicker: &model.RewindPicker{
+			Items: []model.RewindCheckpointItem{
+				{
+					MessageID:      "msg_000003",
+					Timestamp:      time.Date(2026, time.April, 8, 12, 0, 0, 0, time.UTC),
+					Preview:        "revert the last change",
+					HasCodeRestore: false,
+				},
+			},
+		},
+	})
+	app = next.(App)
+
+	if cmd == nil {
+		t.Fatal("expected rewind picker to request alt-screen")
+	}
+	if !app.modalAltScreen {
+		t.Fatal("expected rewind picker to enable alt-screen")
+	}
+	if view := app.View(); !strings.Contains(view, "Rewind Session") || !strings.Contains(view, "revert the last change") {
+		t.Fatalf("expected rewind picker view, got:\n%s", view)
+	}
+
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	app = next.(App)
+	if app.rewindPicker == nil || !app.rewindPicker.Confirming {
+		t.Fatal("expected rewind picker to enter confirmation mode")
+	}
+
+	next, cmd = app.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	app = next.(App)
+	if cmd == nil {
+		t.Fatal("expected rewind picker confirm to exit alt-screen")
+	}
+	if app.rewindPicker != nil {
+		t.Fatal("expected rewind picker to close after confirmation")
+	}
+
+	select {
+	case got := <-userCh:
+		if got != "/__rewind msg_000003 conversation" {
+			t.Fatalf("selection command = %q, want %q", got, "/__rewind msg_000003 conversation")
+		}
+	default:
+		t.Fatal("expected rewind picker to submit conversation rewind command")
+	}
+}
+
+func TestRewindPickerConfirmCodeRestore(t *testing.T) {
+	userCh := make(chan string, 1)
+	app := New(nil, userCh, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type: model.RewindPickerOpen,
+		RewindPicker: &model.RewindPicker{
+			Items: []model.RewindCheckpointItem{
+				{
+					MessageID:      "msg_000004",
+					Timestamp:      time.Date(2026, time.April, 8, 13, 0, 0, 0, time.UTC),
+					Preview:        "restore workspace",
+					HasCodeRestore: true,
+				},
+			},
+		},
+	})
+	app = next.(App)
+
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	app = next.(App)
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyDown})
+	app = next.(App)
+	if app.rewindPicker == nil || app.rewindPicker.ConfirmMode() != model.RewindRestoreCodeConversation {
+		t.Fatal("expected rewind picker to switch to code restore option")
+	}
+
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	app = next.(App)
+
+	select {
+	case got := <-userCh:
+		if got != "/__rewind msg_000004 code" {
+			t.Fatalf("selection command = %q, want %q", got, "/__rewind msg_000004 code")
+		}
+	default:
+		t.Fatal("expected rewind picker to submit code restore command")
+	}
+}

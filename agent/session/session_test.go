@@ -73,8 +73,8 @@ func TestCreateDefersDiskWritesUntilActivate(t *testing.T) {
 	if _, err := os.Stat(s.Path()); err != nil {
 		t.Fatalf("expected trajectory after activate: %v", err)
 	}
-	if _, err := os.Stat(snapshotPath(s.Path())); err != nil {
-		t.Fatalf("expected snapshot after activate: %v", err)
+	if _, err := os.Stat(snapshotPath(s.Path())); !os.IsNotExist(err) {
+		t.Fatalf("expected no snapshot sidecar after activate, got err=%v", err)
 	}
 
 	loaded, err := LoadByID(workDir, s.ID())
@@ -131,6 +131,315 @@ func TestCreateDefersDiskWritesUntilActivate(t *testing.T) {
 	replay := loaded.ReplayEvents()
 	if len(replay) != 3 {
 		t.Fatalf("replay event count = %d, want 3", len(replay))
+	}
+}
+
+func TestLoadByIDFallsBackToLegacySnapshotSidecar(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	workDir := t.TempDir()
+	s, err := Create(workDir, "system prompt")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.AppendUserInput("legacy user"); err != nil {
+		t.Fatalf("append user input: %v", err)
+	}
+	if err := s.AppendAssistant("legacy assistant"); err != nil {
+		t.Fatalf("append assistant: %v", err)
+	}
+	if err := s.Activate(); err != nil {
+		t.Fatalf("activate session: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("close session: %v", err)
+	}
+
+	data, err := os.ReadFile(s.Path())
+	if err != nil {
+		t.Fatalf("read trajectory: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("legacy trajectory lines = %d, want at least 2", len(lines))
+	}
+	if err := os.WriteFile(s.Path(), []byte(strings.Join([]string{lines[0], lines[len(lines)-1]}, "\n")+"\n"), 0o600); err != nil {
+		t.Fatalf("rewrite legacy trajectory: %v", err)
+	}
+
+	legacySnapshot := Snapshot{
+		SessionID:    s.ID(),
+		WorkDir:      workDir,
+		SystemPrompt: "legacy prompt",
+		UpdatedAt:    time.Now(),
+		Messages: []llm.Message{
+			llm.NewUserMessage("legacy user"),
+			llm.NewAssistantMessage("legacy assistant"),
+		},
+		ProviderUsage: &UsageSnapshot{
+			Provider:   "anthropic",
+			TokenScope: "total",
+			Tokens:     42,
+		},
+	}
+	snapshotData, err := json.MarshalIndent(legacySnapshot, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal legacy snapshot: %v", err)
+	}
+	if err := os.WriteFile(snapshotPath(s.Path()), snapshotData, 0o600); err != nil {
+		t.Fatalf("write legacy snapshot: %v", err)
+	}
+
+	loaded, err := LoadByID(workDir, s.ID())
+	if err != nil {
+		t.Fatalf("load legacy session: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = loaded.Close()
+	})
+
+	systemPrompt, messages := loaded.RestoreContext()
+	if got, want := systemPrompt, "legacy prompt"; got != want {
+		t.Fatalf("restored legacy system prompt = %q, want %q", got, want)
+	}
+	if got, want := len(messages), 2; got != want {
+		t.Fatalf("restored legacy message count = %d, want %d", got, want)
+	}
+	if usage := loaded.UsageSnapshot(); usage == nil || usage.Tokens != 42 {
+		t.Fatalf("legacy usage snapshot = %#v, want 42 tokens", usage)
+	}
+}
+
+func TestCheckpointsRestoreConversationStateFromBeforeUserTurn(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	workDir := t.TempDir()
+	s, err := Create(workDir, "system prompt")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.Activate(); err != nil {
+		t.Fatalf("activate session: %v", err)
+	}
+	if err := s.AppendUserInput("first request"); err != nil {
+		t.Fatalf("append first user input: %v", err)
+	}
+	if err := s.AppendAssistant("first reply"); err != nil {
+		t.Fatalf("append first assistant reply: %v", err)
+	}
+	if err := s.SaveSnapshot("system prompt", []llm.Message{
+		llm.NewUserMessage("first request"),
+		llm.NewAssistantMessage("first reply"),
+	}); err != nil {
+		t.Fatalf("save first snapshot: %v", err)
+	}
+	if err := s.AppendUserInput("second request"); err != nil {
+		t.Fatalf("append second user input: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("close session: %v", err)
+	}
+
+	loaded, err := LoadByID(workDir, s.ID())
+	if err != nil {
+		t.Fatalf("load session: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = loaded.Close()
+	})
+
+	checkpoints := loaded.ListCheckpoints()
+	if got, want := len(checkpoints), 2; got != want {
+		t.Fatalf("checkpoint count = %d, want %d", got, want)
+	}
+	if got, want := checkpoints[0].Preview, "second request"; got != want {
+		t.Fatalf("latest checkpoint preview = %q, want %q", got, want)
+	}
+
+	systemPrompt, messages, usage, err := loaded.RestoreCheckpointContext(checkpoints[0].MessageID)
+	if err != nil {
+		t.Fatalf("RestoreCheckpointContext() error = %v", err)
+	}
+	if got, want := systemPrompt, "system prompt"; got != want {
+		t.Fatalf("checkpoint system prompt = %q, want %q", got, want)
+	}
+	if got, want := len(messages), 2; got != want {
+		t.Fatalf("checkpoint message count = %d, want %d", got, want)
+	}
+	if got, want := messages[0].Content, "first request"; got != want {
+		t.Fatalf("checkpoint first message = %q, want %q", got, want)
+	}
+	if usage != nil {
+		t.Fatalf("checkpoint usage = %#v, want nil", usage)
+	}
+}
+
+func TestRestoreCheckpointFilesRevertsTrackedWriteAndCreate(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	workDir := t.TempDir()
+	trackedPath := filepath.Join(workDir, "tracked.txt")
+	if err := os.WriteFile(trackedPath, []byte("before"), 0o644); err != nil {
+		t.Fatalf("write tracked seed: %v", err)
+	}
+
+	s, err := Create(workDir, "system prompt")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.Activate(); err != nil {
+		t.Fatalf("activate session: %v", err)
+	}
+	if err := s.AppendUserInput("seed"); err != nil {
+		t.Fatalf("append seed user input: %v", err)
+	}
+	if err := s.AppendAssistant("seed reply"); err != nil {
+		t.Fatalf("append seed assistant reply: %v", err)
+	}
+	if err := s.SaveSnapshot("system prompt", []llm.Message{
+		llm.NewUserMessage("seed"),
+		llm.NewAssistantMessage("seed reply"),
+	}); err != nil {
+		t.Fatalf("save seed snapshot: %v", err)
+	}
+	if err := s.AppendUserInput("change files"); err != nil {
+		t.Fatalf("append mutation user input: %v", err)
+	}
+	if err := s.RecordFileMutation("tracked.txt", trackedPath); err != nil {
+		t.Fatalf("RecordFileMutation(existing) error = %v", err)
+	}
+	if err := os.WriteFile(trackedPath, []byte("after"), 0o644); err != nil {
+		t.Fatalf("write tracked mutation: %v", err)
+	}
+
+	createdPath := filepath.Join(workDir, "created.txt")
+	if err := s.RecordFileMutation("created.txt", createdPath); err != nil {
+		t.Fatalf("RecordFileMutation(new) error = %v", err)
+	}
+	if err := os.WriteFile(createdPath, []byte("created"), 0o644); err != nil {
+		t.Fatalf("write created file: %v", err)
+	}
+
+	checkpoint := s.ListCheckpoints()[0]
+	if !checkpoint.HasCodeRestore {
+		t.Fatal("expected code restore to be available after tracked file mutations")
+	}
+	if err := s.RestoreCheckpointFiles(checkpoint.MessageID); err != nil {
+		t.Fatalf("RestoreCheckpointFiles() error = %v", err)
+	}
+
+	if got, err := os.ReadFile(trackedPath); err != nil {
+		t.Fatalf("read restored tracked file: %v", err)
+	} else if string(got) != "before" {
+		t.Fatalf("tracked file content = %q, want %q", string(got), "before")
+	}
+	if _, err := os.Stat(createdPath); !os.IsNotExist(err) {
+		t.Fatalf("expected created file removed by restore, got %v", err)
+	}
+}
+
+func TestForkFromCheckpointCopiesPrefixAndCheckpointBackups(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	workDir := t.TempDir()
+	trackedPath := filepath.Join(workDir, "tracked.txt")
+	if err := os.WriteFile(trackedPath, []byte("base"), 0o644); err != nil {
+		t.Fatalf("write tracked seed: %v", err)
+	}
+
+	s, err := Create(workDir, "system prompt")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.Activate(); err != nil {
+		t.Fatalf("activate session: %v", err)
+	}
+
+	if err := s.AppendUserInput("first request"); err != nil {
+		t.Fatalf("append first user input: %v", err)
+	}
+	if err := s.AppendAssistant("first reply"); err != nil {
+		t.Fatalf("append first assistant reply: %v", err)
+	}
+	if err := s.SaveSnapshot("system prompt", []llm.Message{
+		llm.NewUserMessage("first request"),
+		llm.NewAssistantMessage("first reply"),
+	}); err != nil {
+		t.Fatalf("save first snapshot: %v", err)
+	}
+
+	if err := s.AppendUserInput("second request"); err != nil {
+		t.Fatalf("append second user input: %v", err)
+	}
+	if err := s.RecordFileMutation("tracked.txt", trackedPath); err != nil {
+		t.Fatalf("record second-turn file mutation: %v", err)
+	}
+	if err := os.WriteFile(trackedPath, []byte("second turn"), 0o644); err != nil {
+		t.Fatalf("write second-turn content: %v", err)
+	}
+	if err := s.AppendAssistant("second reply"); err != nil {
+		t.Fatalf("append second assistant reply: %v", err)
+	}
+	if err := s.SaveSnapshot("system prompt", []llm.Message{
+		llm.NewUserMessage("first request"),
+		llm.NewAssistantMessage("first reply"),
+		llm.NewUserMessage("second request"),
+		llm.NewAssistantMessage("second reply"),
+	}); err != nil {
+		t.Fatalf("save second snapshot: %v", err)
+	}
+
+	if err := s.AppendUserInput("third request"); err != nil {
+		t.Fatalf("append third user input: %v", err)
+	}
+
+	checkpoints := s.ListCheckpoints()
+	if got, want := len(checkpoints), 3; got != want {
+		t.Fatalf("checkpoint count = %d, want %d", got, want)
+	}
+	thirdID := checkpoints[0].MessageID
+	secondID := checkpoints[1].MessageID
+
+	fork, err := s.ForkFromCheckpoint(thirdID)
+	if err != nil {
+		t.Fatalf("ForkFromCheckpoint() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = fork.Close()
+	})
+	if err := fork.Activate(); err != nil {
+		t.Fatalf("activate fork: %v", err)
+	}
+
+	systemPrompt, messages := fork.RestoreContext()
+	if got, want := systemPrompt, "system prompt"; got != want {
+		t.Fatalf("fork system prompt = %q, want %q", got, want)
+	}
+	if got, want := len(messages), 4; got != want {
+		t.Fatalf("fork message count = %d, want %d", got, want)
+	}
+
+	forkCheckpoints := fork.ListCheckpoints()
+	if got, want := len(forkCheckpoints), 2; got != want {
+		t.Fatalf("fork checkpoint count = %d, want %d", got, want)
+	}
+	if got, want := forkCheckpoints[0].MessageID, secondID; got != want {
+		t.Fatalf("fork latest checkpoint id = %q, want %q", got, want)
+	}
+	if !forkCheckpoints[0].HasCodeRestore {
+		t.Fatal("expected copied checkpoint backups to stay available in fork")
+	}
+
+	if err := os.WriteFile(trackedPath, []byte("broken"), 0o644); err != nil {
+		t.Fatalf("write broken content: %v", err)
+	}
+	if err := fork.RestoreCheckpointFiles(secondID); err != nil {
+		t.Fatalf("fork RestoreCheckpointFiles() error = %v", err)
+	}
+	if got, err := os.ReadFile(trackedPath); err != nil {
+		t.Fatalf("read rewound tracked file: %v", err)
+	} else if string(got) != "base" {
+		t.Fatalf("fork rewound tracked file = %q, want %q", string(got), "base")
 	}
 }
 
@@ -429,7 +738,7 @@ func TestCleanupExpiredRemovesOnlyStaleSessions(t *testing.T) {
 
 	staleDir := filepath.Dir(stale.Path())
 	staleTime := time.Now().Add(-45 * 24 * time.Hour)
-	for _, path := range []string{staleDir, stale.Path(), snapshotPath(stale.Path())} {
+	for _, path := range []string{staleDir, stale.Path()} {
 		if err := os.Chtimes(path, staleTime, staleTime); err != nil {
 			t.Fatalf("chtimes stale path %s: %v", path, err)
 		}

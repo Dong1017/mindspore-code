@@ -496,7 +496,7 @@ func (a *Application) refreshEngineSessionBindings() {
 		a.ctxManager.SetTrajectoryPath(trajectoryPath)
 	}
 	a.Engine.SetLLMDebugDumper(a.llmDebugDumper)
-	a.Engine.SetTrajectoryRecorder(newTrajectoryRecorder(a.session, a.ctxManager, a.noteLiveLLMActivity))
+	a.Engine.SetTrajectoryRecorder(newTrajectoryRecorder(a.session, a.ctxManager, a.WorkDir, a.noteLiveLLMActivity))
 }
 
 func (a *Application) dumpPreCompactSnapshot(snapshot agentctx.CompactSnapshot) error {
@@ -657,7 +657,7 @@ func initProvider(cfg configs.ModelConfig, opts llm.ResolveOptions) (llm.Provide
 	return client, nil
 }
 
-func newTrajectoryRecorder(s *session.Session, cm *agentctx.Manager, noteLiveLLMActivity func() error) *loop.TrajectoryRecorder {
+func newTrajectoryRecorder(s *session.Session, cm *agentctx.Manager, workDir string, noteLiveLLMActivity func() error) *loop.TrajectoryRecorder {
 	ensureSessionActive := func() error {
 		if noteLiveLLMActivity == nil {
 			return nil
@@ -717,6 +717,29 @@ func newTrajectoryRecorder(s *session.Session, cm *agentctx.Manager, noteLiveLLM
 			}
 			return s.AppendContextCompaction(trigger, beforeTokens, afterTokens, message)
 		},
+		PrepareFileMutation: func(tc llm.ToolCall) error {
+			if s == nil {
+				return nil
+			}
+			switch strings.TrimSpace(tc.Function.Name) {
+			case "write", "edit":
+			default:
+				return nil
+			}
+
+			path, err := trackedFileMutationPath(tc)
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(path) == "" {
+				return nil
+			}
+			fullPath, err := fs.ResolveSafePath(workDir, path)
+			if err != nil {
+				return err
+			}
+			return s.RecordFileMutation(path, fullPath)
+		},
 		PersistSnapshot: func() error {
 			if s == nil || cm == nil {
 				return nil
@@ -732,6 +755,23 @@ func newTrajectoryRecorder(s *session.Session, cm *agentctx.Manager, noteLiveLLM
 			)
 		},
 	}
+}
+
+func trackedFileMutationPath(tc llm.ToolCall) (string, error) {
+	var params struct {
+		Path     string `json:"path"`
+		FilePath string `json:"file_path"`
+		Filename string `json:"filename"`
+	}
+	if err := json.Unmarshal(tc.Function.Arguments, &params); err != nil {
+		return "", fmt.Errorf("parse %s path: %w", tc.Function.Name, err)
+	}
+	for _, path := range []string{params.Path, params.FilePath, params.Filename} {
+		if trimmed := strings.TrimSpace(path); trimmed != "" {
+			return trimmed, nil
+		}
+	}
+	return "", nil
 }
 
 func requestMaxTokensPtr(v *int) *int {
