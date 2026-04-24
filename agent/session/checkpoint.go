@@ -1,10 +1,12 @@
 package session
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -20,12 +22,13 @@ const (
 
 // ResumeStateRecord stores one restorable conversation state inside trajectory.jsonl.
 type ResumeStateRecord struct {
-	Type          string         `json:"type"`
-	Sequence      int            `json:"sequence"`
-	UpdatedAt     time.Time      `json:"updated_at"`
-	SystemPrompt  string         `json:"system_prompt"`
-	Messages      []llm.Message  `json:"messages,omitempty"`
-	ProviderUsage *UsageSnapshot `json:"provider_usage,omitempty"`
+	Type            string         `json:"type"`
+	Sequence        int            `json:"sequence"`
+	UpdatedAt       time.Time      `json:"updated_at"`
+	SystemPrompt    string         `json:"system_prompt,omitempty"`
+	Messages        []llm.Message  `json:"messages,omitempty"`
+	ProviderUsage   *UsageSnapshot `json:"provider_usage,omitempty"`
+	ContextBoundary bool           `json:"context_boundary,omitempty"`
 }
 
 // FileCheckpointRef points to one tracked file backup for a checkpointed turn.
@@ -38,12 +41,13 @@ type FileCheckpointRef struct {
 
 // CheckpointRecord stores one rewindable user turn marker.
 type CheckpointRecord struct {
-	Type           string              `json:"type"`
-	Timestamp      time.Time           `json:"timestamp"`
-	MessageID      string              `json:"message_id"`
-	Preview        string              `json:"preview"`
-	ResumeStateSeq int                 `json:"resume_state_seq"`
-	Files          []FileCheckpointRef `json:"files,omitempty"`
+	Type              string              `json:"type"`
+	Timestamp         time.Time           `json:"timestamp"`
+	MessageID         string              `json:"message_id"`
+	Preview           string              `json:"preview"`
+	ContextEntryCount int                 `json:"context_entry_count,omitempty"`
+	ResumeStateSeq    int                 `json:"resume_state_seq,omitempty"`
+	Files             []FileCheckpointRef `json:"files,omitempty"`
 }
 
 // CheckpointSummary is the UI-facing shape used by rewind pickers.
@@ -129,15 +133,8 @@ func cloneFileRefs(refs []FileCheckpointRef) []FileCheckpointRef {
 	return cloned
 }
 
-func snapshotFromResumeState(sessionID, workDir string, record ResumeStateRecord) Snapshot {
-	return Snapshot{
-		SessionID:     sessionID,
-		WorkDir:       workDir,
-		SystemPrompt:  record.SystemPrompt,
-		UpdatedAt:     record.UpdatedAt,
-		Messages:      cloneMessages(record.Messages),
-		ProviderUsage: cloneUsageSnapshot(record.ProviderUsage),
-	}
+func (r ResumeStateRecord) isContextBoundary() bool {
+	return r.ContextBoundary || r.Messages != nil
 }
 
 func parseSequenceSuffix(value, prefix string) int {
@@ -149,6 +146,144 @@ func parseSequenceSuffix(value, prefix string) int {
 		return 0
 	}
 	return n
+}
+
+type reconstructedContextState struct {
+	systemPrompt  string
+	messages      []llm.Message
+	providerUsage *UsageSnapshot
+	updatedAt     time.Time
+}
+
+func appendToolCallToAssistant(messages *[]llm.Message, pendingAssistant *int, record MessageRecord) {
+	call := llm.ToolCall{
+		ID:   strings.TrimSpace(record.ToolCallID),
+		Type: "function",
+		Function: llm.ToolCallFunc{
+			Name:      record.ToolName,
+			Arguments: append([]byte(nil), record.Arguments...),
+		},
+	}
+
+	if *pendingAssistant >= 0 && *pendingAssistant < len(*messages) {
+		msg := (*messages)[*pendingAssistant]
+		if msg.Role == "assistant" && msg.ToolCallID == "" {
+			msg.ToolCalls = append(msg.ToolCalls, call)
+			(*messages)[*pendingAssistant] = msg
+			return
+		}
+	}
+
+	*messages = append(*messages, llm.Message{
+		Role:      "assistant",
+		ToolCalls: []llm.ToolCall{call},
+	})
+	*pendingAssistant = len(*messages) - 1
+}
+
+func applyMessageRecordToContext(messages *[]llm.Message, pendingAssistant *int, record MessageRecord) {
+	switch record.Type {
+	case recordTypeUser:
+		*messages = append(*messages, llm.NewUserMessage(record.Content))
+		*pendingAssistant = -1
+	case recordTypeAssistant:
+		*messages = append(*messages, llm.NewAssistantMessage(record.Content))
+		*pendingAssistant = len(*messages) - 1
+	case recordTypeToolCall:
+		appendToolCallToAssistant(messages, pendingAssistant, record)
+	case recordTypeToolResult:
+		*messages = append(*messages, llm.NewToolMessage(record.ToolCallID, record.Content))
+		*pendingAssistant = -1
+	case recordTypeSkill, recordTypeCompact:
+		*pendingAssistant = -1
+	}
+}
+
+func applyResumeStateToContext(state *reconstructedContextState, record ResumeStateRecord) {
+	if strings.TrimSpace(record.SystemPrompt) != "" {
+		state.systemPrompt = record.SystemPrompt
+	}
+	if record.isContextBoundary() {
+		state.messages = cloneMessages(record.Messages)
+	}
+	if record.ProviderUsage != nil {
+		state.providerUsage = cloneUsageSnapshot(record.ProviderUsage)
+	}
+	if record.UpdatedAt.After(state.updatedAt) {
+		state.updatedAt = record.UpdatedAt
+	}
+}
+
+func (s *Session) reconstructStateLocked(entryCount int) reconstructedContextState {
+	state := reconstructedContextState{
+		systemPrompt: strings.TrimSpace(s.meta.SystemPrompt),
+	}
+	if entryCount < 0 {
+		entryCount = 0
+	}
+	if entryCount > len(s.log) {
+		entryCount = len(s.log)
+	}
+
+	pendingAssistant := -1
+	for i := 0; i < entryCount; i++ {
+		entry := s.log[i]
+		switch entry.kind {
+		case recordTypeResumeState:
+			applyResumeStateToContext(&state, entry.resume)
+			pendingAssistant = -1
+		case recordTypeUser, recordTypeAssistant, recordTypeToolCall, recordTypeToolResult, recordTypeSkill, recordTypeCompact:
+			applyMessageRecordToContext(&state.messages, &pendingAssistant, entry.message)
+			if entry.message.Timestamp.After(state.updatedAt) {
+				state.updatedAt = entry.message.Timestamp
+			}
+		}
+	}
+
+	if state.updatedAt.IsZero() {
+		state.updatedAt = s.meta.UpdatedAt
+	}
+	if strings.TrimSpace(state.systemPrompt) == "" {
+		state.systemPrompt = strings.TrimSpace(s.snapshot.SystemPrompt)
+	}
+	return state
+}
+
+func (s *Session) contextMatchesTrajectoryLocked(systemPrompt string, messages []llm.Message) bool {
+	state := s.reconstructStateLocked(len(s.log))
+	return state.systemPrompt == systemPrompt && messagesEqual(state.messages, messages)
+}
+
+func messagesEqual(a, b []llm.Message) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	return reflect.DeepEqual(a, b)
+}
+
+func usageSnapshotsEqual(a, b *UsageSnapshot) bool {
+	switch {
+	case a == nil && b == nil:
+		return true
+	case a == nil || b == nil:
+		return false
+	}
+
+	if a.Provider != b.Provider || a.TokenScope != b.TokenScope || a.Tokens != b.Tokens || a.LocalDelta != b.LocalDelta {
+		return false
+	}
+
+	switch {
+	case a.Usage == nil && b.Usage == nil:
+		return true
+	case a.Usage == nil || b.Usage == nil:
+		return false
+	}
+
+	return a.Usage.PromptTokens == b.Usage.PromptTokens &&
+		a.Usage.CompletionTokens == b.Usage.CompletionTokens &&
+		a.Usage.TotalTokens == b.Usage.TotalTokens &&
+		bytes.Equal(a.Usage.Raw, b.Usage.Raw)
 }
 
 func (s *Session) applyTrajectoryEntryLocked(entry trajectoryEntry) {
@@ -175,12 +310,30 @@ func (s *Session) applyTrajectoryEntryLocked(entry trajectoryEntry) {
 		if record.Sequence > s.nextResumeStateSeq {
 			s.nextResumeStateSeq = record.Sequence
 		}
-		s.snapshot = snapshotFromResumeState(s.meta.SessionID, s.meta.WorkDir, record)
-		s.meta.SystemPrompt = record.SystemPrompt
+		if record.isContextBoundary() {
+			s.snapshot.Messages = cloneMessages(record.Messages)
+			s.legacySnapshotFallback = false
+			s.bootstrapResumeState = false
+		}
+		if strings.TrimSpace(record.SystemPrompt) != "" {
+			s.snapshot.SystemPrompt = record.SystemPrompt
+			s.meta.SystemPrompt = record.SystemPrompt
+		}
+		if record.ProviderUsage != nil {
+			s.snapshot.ProviderUsage = cloneUsageSnapshot(record.ProviderUsage)
+		}
+		if s.snapshot.SessionID == "" {
+			s.snapshot.SessionID = s.meta.SessionID
+		}
+		if strings.TrimSpace(s.snapshot.WorkDir) == "" {
+			s.snapshot.WorkDir = s.meta.WorkDir
+		}
+		if record.UpdatedAt.After(s.snapshot.UpdatedAt) {
+			s.snapshot.UpdatedAt = record.UpdatedAt
+		}
 		if record.UpdatedAt.After(s.meta.UpdatedAt) {
 			s.meta.UpdatedAt = record.UpdatedAt
 		}
-		s.bootstrapResumeState = false
 	case recordTypeCheckpoint:
 		record := entry.checkpoint
 		messageID := strings.TrimSpace(record.MessageID)
@@ -223,14 +376,20 @@ func (s *Session) ensureResumeStateBootstrapLocked() error {
 	if s == nil || !s.bootstrapResumeState {
 		return nil
 	}
+	if s.contextMatchesTrajectoryLocked(s.snapshot.SystemPrompt, s.snapshot.Messages) {
+		s.bootstrapResumeState = false
+		s.legacySnapshotFallback = false
+		return nil
+	}
 
 	record := ResumeStateRecord{
-		Type:          recordTypeResumeState,
-		Sequence:      s.nextResumeStateSeq + 1,
-		UpdatedAt:     s.snapshot.UpdatedAt,
-		SystemPrompt:  s.snapshot.SystemPrompt,
-		Messages:      cloneMessages(s.snapshot.Messages),
-		ProviderUsage: cloneUsageSnapshot(s.snapshot.ProviderUsage),
+		Type:            recordTypeResumeState,
+		Sequence:        s.nextResumeStateSeq + 1,
+		UpdatedAt:       s.snapshot.UpdatedAt,
+		SystemPrompt:    s.snapshot.SystemPrompt,
+		Messages:        cloneMessages(s.snapshot.Messages),
+		ProviderUsage:   cloneUsageSnapshot(s.snapshot.ProviderUsage),
+		ContextBoundary: true,
 	}
 	if record.UpdatedAt.IsZero() {
 		record.UpdatedAt = time.Now()
@@ -363,16 +522,24 @@ func (s *Session) resumeStateForCheckpointLocked(record CheckpointRecord) (Resum
 	for _, state := range s.resumeStates {
 		if state.Sequence == record.ResumeStateSeq {
 			return ResumeStateRecord{
-				Type:          state.Type,
-				Sequence:      state.Sequence,
-				UpdatedAt:     state.UpdatedAt,
-				SystemPrompt:  state.SystemPrompt,
-				Messages:      cloneMessages(state.Messages),
-				ProviderUsage: cloneUsageSnapshot(state.ProviderUsage),
+				Type:            state.Type,
+				Sequence:        state.Sequence,
+				UpdatedAt:       state.UpdatedAt,
+				SystemPrompt:    state.SystemPrompt,
+				Messages:        cloneMessages(state.Messages),
+				ProviderUsage:   cloneUsageSnapshot(state.ProviderUsage),
+				ContextBoundary: state.ContextBoundary,
 			}, nil
 		}
 	}
 	return ResumeStateRecord{}, fmt.Errorf("resume state %d not found", record.ResumeStateSeq)
+}
+
+func (s *Session) checkpointEntryLimitLocked(record CheckpointRecord) int {
+	if record.ContextEntryCount > 0 {
+		return record.ContextEntryCount - 1
+	}
+	return -1
 }
 
 // RestoreCheckpointContext returns the restorable conversation state from before the selected user message.
@@ -387,6 +554,10 @@ func (s *Session) RestoreCheckpointContext(messageID string) (string, []llm.Mess
 	record, ok := s.checkpointRecordLocked(messageID)
 	if !ok {
 		return "", nil, nil, fmt.Errorf("checkpoint %s not found", strings.TrimSpace(messageID))
+	}
+	if limit := s.checkpointEntryLimitLocked(record); limit >= 0 {
+		state := s.reconstructStateLocked(limit)
+		return state.systemPrompt, cloneMessages(state.messages), cloneUsageSnapshot(state.providerUsage), nil
 	}
 	state, err := s.resumeStateForCheckpointLocked(record)
 	if err != nil {
@@ -505,10 +676,21 @@ func (s *Session) ForkFromCheckpoint(messageID string) (*Session, error) {
 		s.mu.RUnlock()
 		return nil, fmt.Errorf("checkpoint %s not found", strings.TrimSpace(messageID))
 	}
-	state, err := s.resumeStateForCheckpointLocked(record)
-	if err != nil {
-		s.mu.RUnlock()
-		return nil, err
+	var state reconstructedContextState
+	if limit := s.checkpointEntryLimitLocked(record); limit >= 0 {
+		state = s.reconstructStateLocked(limit)
+	} else {
+		legacyState, err := s.resumeStateForCheckpointLocked(record)
+		if err != nil {
+			s.mu.RUnlock()
+			return nil, err
+		}
+		state = reconstructedContextState{
+			systemPrompt:  legacyState.SystemPrompt,
+			messages:      cloneMessages(legacyState.Messages),
+			providerUsage: cloneUsageSnapshot(legacyState.ProviderUsage),
+			updatedAt:     legacyState.UpdatedAt,
+		}
 	}
 
 	workDir := s.meta.WorkDir
@@ -533,7 +715,7 @@ func (s *Session) ForkFromCheckpoint(messageID string) (*Session, error) {
 			SessionID:    id,
 			WorkDir:      workDir,
 			WorkDirKey:   key,
-			SystemPrompt: state.SystemPrompt,
+			SystemPrompt: state.systemPrompt,
 			CreatedAt:    now,
 			UpdatedAt:    now,
 		},
@@ -545,41 +727,51 @@ func (s *Session) ForkFromCheckpoint(messageID string) (*Session, error) {
 		snapshot: Snapshot{
 			SessionID:     id,
 			WorkDir:       workDir,
-			SystemPrompt:  state.SystemPrompt,
-			UpdatedAt:     state.UpdatedAt,
-			Messages:      cloneMessages(state.Messages),
-			ProviderUsage: cloneUsageSnapshot(state.ProviderUsage),
+			SystemPrompt:  state.systemPrompt,
+			UpdatedAt:     state.updatedAt,
+			Messages:      cloneMessages(state.messages),
+			ProviderUsage: cloneUsageSnapshot(state.providerUsage),
 		},
 		path:         path,
 		snapshotPath: snapshotPath(path),
 	}
 
-	for _, entry := range s.log {
-		switch entry.kind {
-		case recordTypeCheckpoint:
-			if strings.TrimSpace(entry.checkpoint.MessageID) == strings.TrimSpace(messageID) {
-				goto done
-			}
-		case recordTypeUser:
-			if strings.TrimSpace(entry.message.MessageID) == strings.TrimSpace(messageID) {
-				goto done
-			}
+	if limit := s.checkpointEntryLimitLocked(record); limit >= 0 {
+		if limit > len(s.log) {
+			limit = len(s.log)
 		}
-		fork.applyTrajectoryEntryLocked(entry)
+		for i := 0; i < limit; i++ {
+			fork.applyTrajectoryEntryLocked(s.log[i])
+		}
+	} else {
+		for _, entry := range s.log {
+			switch entry.kind {
+			case recordTypeCheckpoint:
+				if strings.TrimSpace(entry.checkpoint.MessageID) == strings.TrimSpace(messageID) {
+					goto done
+				}
+			case recordTypeUser:
+				if strings.TrimSpace(entry.message.MessageID) == strings.TrimSpace(messageID) {
+					goto done
+				}
+			}
+			fork.applyTrajectoryEntryLocked(entry)
+		}
 	}
 
 done:
 	fork.activeCheckpointMessageID = ""
-	fork.meta.SystemPrompt = state.SystemPrompt
+	fork.meta.SystemPrompt = state.systemPrompt
 	fork.snapshot = Snapshot{
 		SessionID:     id,
 		WorkDir:       workDir,
-		SystemPrompt:  state.SystemPrompt,
-		UpdatedAt:     state.UpdatedAt,
-		Messages:      cloneMessages(state.Messages),
-		ProviderUsage: cloneUsageSnapshot(state.ProviderUsage),
+		SystemPrompt:  state.systemPrompt,
+		UpdatedAt:     state.updatedAt,
+		Messages:      cloneMessages(state.messages),
+		ProviderUsage: cloneUsageSnapshot(state.providerUsage),
 	}
 	fork.bootstrapResumeState = false
+	fork.legacySnapshotFallback = false
 	if err := fork.copyForkBackupsFrom(s); err != nil {
 		s.mu.RUnlock()
 		return nil, err

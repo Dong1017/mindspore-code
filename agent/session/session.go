@@ -28,7 +28,7 @@ const (
 	recordTypeCompact     = "context_compact"
 	recordTypeResumeState = "resume_state"
 	recordTypeCheckpoint  = "checkpoint"
-	formatVersion         = 2
+	formatVersion         = 3
 	defaultSessionSubdir  = ".mscli/sessions"
 	replayWaitCap         = 5 * time.Second
 )
@@ -113,6 +113,7 @@ type Session struct {
 	nextResumeStateSeq        int
 	nextMessageSeq            int
 	nextBackupSeq             int
+	legacySnapshotFallback    bool
 	bootstrapResumeState      bool
 }
 
@@ -156,12 +157,6 @@ func Create(workDir, systemPrompt string) (*Session, error) {
 		path:         path,
 		snapshotPath: snapshotPath(path),
 	}
-	s.applyTrajectoryEntryLocked(makeTrajectoryEntry(ResumeStateRecord{
-		Type:         recordTypeResumeState,
-		Sequence:     1,
-		UpdatedAt:    now,
-		SystemPrompt: systemPrompt,
-	}))
 	return s, nil
 }
 
@@ -340,11 +335,12 @@ func (s *Session) AppendUserInput(content string) error {
 	now := time.Now()
 	messageID := s.nextMessageIDLocked()
 	checkpoint := CheckpointRecord{
-		Type:           recordTypeCheckpoint,
-		Timestamp:      now,
-		MessageID:      messageID,
-		Preview:        sessionPreview(content),
-		ResumeStateSeq: s.latestResumeStateSeqLocked(),
+		Type:              recordTypeCheckpoint,
+		Timestamp:         now,
+		MessageID:         messageID,
+		Preview:           sessionPreview(content),
+		ContextEntryCount: len(s.log) + 1,
+		ResumeStateSeq:    s.latestResumeStateSeqLocked(),
 	}
 	if err := s.appendTrajectoryEntryLocked(checkpoint); err != nil {
 		return err
@@ -745,9 +741,13 @@ func (s *Session) RestoreContext() (string, []llm.Message) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	messages := make([]llm.Message, len(s.snapshot.Messages))
-	copy(messages, s.snapshot.Messages)
-	return s.snapshot.SystemPrompt, messages
+	if s.legacySnapshotFallback {
+		messages := cloneMessages(s.snapshot.Messages)
+		return s.snapshot.SystemPrompt, messages
+	}
+
+	state := s.reconstructStateLocked(len(s.log))
+	return state.systemPrompt, cloneMessages(state.messages)
 }
 
 // UsageSnapshot returns a copy of the persisted provider-backed usage snapshot.
@@ -758,7 +758,12 @@ func (s *Session) UsageSnapshot() *UsageSnapshot {
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return cloneUsageSnapshot(s.snapshot.ProviderUsage)
+	if s.legacySnapshotFallback {
+		return cloneUsageSnapshot(s.snapshot.ProviderUsage)
+	}
+
+	state := s.reconstructStateLocked(len(s.log))
+	return cloneUsageSnapshot(state.providerUsage)
 }
 
 // Path returns the trajectory file path.
@@ -1021,17 +1026,32 @@ func loadFromPath(path string, appendOnly bool) (*Session, error) {
 		if err != nil {
 			return nil, err
 		}
-		if snapshot.SessionID == "" {
-			snapshot = Snapshot{
-				SessionID:    meta.SessionID,
-				WorkDir:      meta.WorkDir,
-				SystemPrompt: meta.SystemPrompt,
-				UpdatedAt:    meta.UpdatedAt,
+		if snapshot.SessionID != "" {
+			sessionState.snapshot = snapshot
+			sessionState.meta.SystemPrompt = snapshot.SystemPrompt
+			sessionState.legacySnapshotFallback = true
+			sessionState.bootstrapResumeState = appendOnly
+		} else {
+			state := sessionState.reconstructStateLocked(len(sessionState.log))
+			sessionState.snapshot = Snapshot{
+				SessionID:     meta.SessionID,
+				WorkDir:       meta.WorkDir,
+				SystemPrompt:  state.systemPrompt,
+				UpdatedAt:     state.updatedAt,
+				Messages:      cloneMessages(state.messages),
+				ProviderUsage: cloneUsageSnapshot(state.providerUsage),
 			}
 		}
-		sessionState.snapshot = snapshot
-		sessionState.meta.SystemPrompt = snapshot.SystemPrompt
-		sessionState.bootstrapResumeState = appendOnly
+	} else {
+		state := sessionState.reconstructStateLocked(len(sessionState.log))
+		sessionState.snapshot = Snapshot{
+			SessionID:     meta.SessionID,
+			WorkDir:       meta.WorkDir,
+			SystemPrompt:  state.systemPrompt,
+			UpdatedAt:     state.updatedAt,
+			Messages:      cloneMessages(state.messages),
+			ProviderUsage: cloneUsageSnapshot(state.providerUsage),
+		}
 	}
 	if sessionState.snapshot.SessionID == "" {
 		sessionState.snapshot = Snapshot{
@@ -1104,19 +1124,41 @@ func (s *Session) SaveSnapshotWithUsage(systemPrompt string, messages []llm.Mess
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	systemPromptChanged := s.snapshot.SystemPrompt != systemPrompt
+	usageChanged := !usageSnapshotsEqual(s.snapshot.ProviderUsage, usage)
+	contextBoundary := !s.contextMatchesTrajectoryLocked(systemPrompt, messages)
+	now := time.Now()
+
 	s.meta.SystemPrompt = systemPrompt
 	s.snapshot.SystemPrompt = systemPrompt
-	s.snapshot.UpdatedAt = time.Now()
+	s.snapshot.UpdatedAt = now
 	s.snapshot.Messages = cloneMessages(messages)
 	s.snapshot.ProviderUsage = cloneUsageSnapshot(usage)
-	return s.appendTrajectoryEntryLocked(ResumeStateRecord{
-		Type:          recordTypeResumeState,
-		Sequence:      s.nextResumeStateSeq + 1,
-		UpdatedAt:     s.snapshot.UpdatedAt,
-		SystemPrompt:  systemPrompt,
-		Messages:      cloneMessages(messages),
-		ProviderUsage: cloneUsageSnapshot(usage),
-	})
+
+	if !contextBoundary && !systemPromptChanged && !usageChanged {
+		return nil
+	}
+
+	record := ResumeStateRecord{
+		Type:      recordTypeResumeState,
+		Sequence:  s.nextResumeStateSeq + 1,
+		UpdatedAt: now,
+	}
+	if contextBoundary {
+		record.SystemPrompt = systemPrompt
+		record.Messages = cloneMessages(messages)
+		record.ProviderUsage = cloneUsageSnapshot(usage)
+		record.ContextBoundary = true
+	} else {
+		if systemPromptChanged {
+			record.SystemPrompt = systemPrompt
+		}
+		if usageChanged {
+			record.ProviderUsage = cloneUsageSnapshot(usage)
+		}
+	}
+
+	return s.appendTrajectoryEntryLocked(record)
 }
 
 func cloneUsageSnapshot(usage *UsageSnapshot) *UsageSnapshot {

@@ -175,21 +175,32 @@ func TestCmdRewindApplyForksConversationBeforeCheckpoint(t *testing.T) {
 	timer := time.NewTimer(2 * time.Second)
 	defer timer.Stop()
 
-	var replayed []model.EventType
+	var replayed []model.Event
 	for len(replayed) < 4 {
 		select {
 		case next := <-app.EventCh:
 			if next.Type == model.UserInput || next.Type == model.AgentReply {
-				replayed = append(replayed, next.Type)
+				replayed = append(replayed, next)
 			}
 		case <-timer.C:
 			t.Fatalf("timed out waiting for replayed fork history, got %v", replayed)
 		}
 	}
-	want := []model.EventType{model.UserInput, model.AgentReply, model.UserInput, model.AgentReply}
+	want := []struct {
+		eventType model.EventType
+		message   string
+	}{
+		{eventType: model.UserInput, message: "first request"},
+		{eventType: model.AgentReply, message: "first reply"},
+		{eventType: model.UserInput, message: "second request"},
+		{eventType: model.AgentReply, message: "second reply"},
+	}
 	for i := range want {
-		if replayed[i] != want[i] {
-			t.Fatalf("replayed[%d] = %q, want %q", i, replayed[i], want[i])
+		if replayed[i].Type != want[i].eventType {
+			t.Fatalf("replayed[%d].Type = %q, want %q", i, replayed[i].Type, want[i].eventType)
+		}
+		if replayed[i].Message != want[i].message {
+			t.Fatalf("replayed[%d].Message = %q, want %q", i, replayed[i].Message, want[i].message)
 		}
 	}
 }

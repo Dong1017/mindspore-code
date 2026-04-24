@@ -210,6 +210,138 @@ func TestLoadByIDFallsBackToLegacySnapshotSidecar(t *testing.T) {
 	}
 }
 
+func TestSaveSnapshotWithUsageOnlyWritesContextBoundaryAfterCompaction(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	workDir := t.TempDir()
+	s, err := Create(workDir, "system prompt")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.Activate(); err != nil {
+		t.Fatalf("activate session: %v", err)
+	}
+
+	usage := &UsageSnapshot{
+		Provider:   "anthropic",
+		TokenScope: "total",
+		Tokens:     99,
+	}
+
+	if err := s.AppendUserInput("first request"); err != nil {
+		t.Fatalf("append first user input: %v", err)
+	}
+	if err := s.AppendAssistant("first reply"); err != nil {
+		t.Fatalf("append first assistant reply: %v", err)
+	}
+	if err := s.SaveSnapshotWithUsage("system prompt", []llm.Message{
+		llm.NewUserMessage("first request"),
+		llm.NewAssistantMessage("first reply"),
+	}, usage); err != nil {
+		t.Fatalf("save first snapshot: %v", err)
+	}
+
+	if err := s.AppendUserInput("second request"); err != nil {
+		t.Fatalf("append second user input: %v", err)
+	}
+	if err := s.AppendAssistant("second reply"); err != nil {
+		t.Fatalf("append second assistant reply: %v", err)
+	}
+	if err := s.SaveSnapshotWithUsage("system prompt", []llm.Message{
+		llm.NewUserMessage("first request"),
+		llm.NewAssistantMessage("first reply"),
+		llm.NewUserMessage("second request"),
+		llm.NewAssistantMessage("second reply"),
+	}, usage); err != nil {
+		t.Fatalf("save second snapshot: %v", err)
+	}
+
+	if err := s.SaveSnapshotWithUsage("system prompt", []llm.Message{
+		llm.NewAssistantMessage("Summary:\nkeep working from here."),
+	}, usage); err != nil {
+		t.Fatalf("save compact boundary snapshot: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("close session: %v", err)
+	}
+
+	data, err := os.ReadFile(s.Path())
+	if err != nil {
+		t.Fatalf("read trajectory: %v", err)
+	}
+	text := string(data)
+	if got, want := strings.Count(text, `"type":"resume_state"`), 2; got != want {
+		t.Fatalf("resume_state record count = %d, want %d\n%s", got, want, text)
+	}
+	if got, want := strings.Count(text, `"messages"`), 1; got != want {
+		t.Fatalf("resume_state messages field count = %d, want %d\n%s", got, want, text)
+	}
+	if got, want := strings.Count(text, `"context_boundary":true`), 1; got != want {
+		t.Fatalf("context boundary count = %d, want %d\n%s", got, want, text)
+	}
+}
+
+func TestRestoreContextReconstructsFromCompactBoundaryAndLaterTrajectory(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	workDir := t.TempDir()
+	s, err := Create(workDir, "system prompt")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.Activate(); err != nil {
+		t.Fatalf("activate session: %v", err)
+	}
+	if err := s.AppendUserInput("before compact"); err != nil {
+		t.Fatalf("append pre-compact user input: %v", err)
+	}
+	if err := s.AppendAssistant("before compact reply"); err != nil {
+		t.Fatalf("append pre-compact assistant reply: %v", err)
+	}
+	if err := s.SaveSnapshot("system prompt", []llm.Message{
+		llm.NewAssistantMessage("Summary:\ncontinue from the compacted state."),
+	}); err != nil {
+		t.Fatalf("save compacted state: %v", err)
+	}
+	if err := s.AppendContextCompaction("manual", 120, 40, "Context compacted: 120 -> 40 tokens."); err != nil {
+		t.Fatalf("append compaction notice: %v", err)
+	}
+	if err := s.AppendUserInput("after compact"); err != nil {
+		t.Fatalf("append post-compact user input: %v", err)
+	}
+	if err := s.AppendAssistant("after compact reply"); err != nil {
+		t.Fatalf("append post-compact assistant reply: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("close session: %v", err)
+	}
+
+	loaded, err := LoadByID(workDir, s.ID())
+	if err != nil {
+		t.Fatalf("load session: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = loaded.Close()
+	})
+
+	systemPrompt, messages := loaded.RestoreContext()
+	if got, want := systemPrompt, "system prompt"; got != want {
+		t.Fatalf("restored system prompt = %q, want %q", got, want)
+	}
+	if got, want := len(messages), 3; got != want {
+		t.Fatalf("restored message count = %d, want %d", got, want)
+	}
+	if got, want := messages[0].Content, "Summary:\ncontinue from the compacted state."; got != want {
+		t.Fatalf("restored compact summary = %q, want %q", got, want)
+	}
+	if got, want := messages[1].Content, "after compact"; got != want {
+		t.Fatalf("restored post-compact user = %q, want %q", got, want)
+	}
+	if got, want := messages[2].Content, "after compact reply"; got != want {
+		t.Fatalf("restored post-compact assistant = %q, want %q", got, want)
+	}
+}
+
 func TestCheckpointsRestoreConversationStateFromBeforeUserTurn(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
