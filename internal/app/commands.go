@@ -37,6 +37,8 @@ func (a *Application) handleCommand(input string) {
 		a.cmdCtx()
 	case "/clear":
 		a.cmdClear()
+	case "/branch", "/fork":
+		a.cmdBranch(cmd.Name, args)
 	case "/rewind":
 		a.cmdRewind(args)
 	case "/resume":

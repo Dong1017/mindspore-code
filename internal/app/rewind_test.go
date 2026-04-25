@@ -257,3 +257,58 @@ func TestCmdRewindApplyRestoresTrackedFiles(t *testing.T) {
 		t.Fatalf("rewound context message count = %d, want %d", got, want)
 	}
 }
+
+func TestCmdBranchForksCurrentConversation(t *testing.T) {
+	for _, command := range []string{"/branch", "/fork"} {
+		t.Run(strings.TrimPrefix(command, "/"), func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+
+			workDir := t.TempDir()
+			fixture := buildRewindFixture(t, workDir, false)
+			t.Cleanup(func() {
+				_ = fixture.session.Close()
+			})
+
+			ctxManager := agentctx.NewManager(agentctx.ManagerConfig{
+				ContextWindow: 4096,
+				ReserveTokens: 512,
+			})
+			ctxManager.SetSystemPrompt("system prompt")
+			for _, msg := range fixture.currentContext {
+				if err := ctxManager.AddMessage(msg); err != nil {
+					t.Fatalf("add current context: %v", err)
+				}
+			}
+
+			app := newModelCommandTestApp()
+			app.WorkDir = workDir
+			app.session = fixture.session
+			app.ctxManager = ctxManager
+			oldSessionID := fixture.session.ID()
+
+			app.handleCommand(command)
+			t.Cleanup(func() {
+				if app.session != nil {
+					_ = app.session.Close()
+				}
+			})
+
+			ev := drainUntilClearScreen(t, app)
+			if got, want := ev.Message, "Conversation branched."; got != want {
+				t.Fatalf("clear message = %q, want %q", got, want)
+			}
+			if ev.InputPrefill != "" {
+				t.Fatalf("clear input prefill = %q, want empty", ev.InputPrefill)
+			}
+			if !strings.Contains(ev.Summary, oldSessionID) {
+				t.Fatalf("clear summary = %q, want old session hint", ev.Summary)
+			}
+			if got := app.session.ID(); got == oldSessionID {
+				t.Fatalf("forked session id = %q, want a new session id", got)
+			}
+			if got, want := len(app.ctxManager.GetNonSystemMessages()), len(fixture.currentContext); got != want {
+				t.Fatalf("branched context message count = %d, want %d", got, want)
+			}
+		})
+	}
+}

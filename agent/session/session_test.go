@@ -584,6 +584,73 @@ func TestForkFromCheckpointCopiesPrefixAndCheckpointBackups(t *testing.T) {
 	}
 }
 
+func TestForkCurrentCopiesFullConversationAndCheckpointBackups(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	workDir := t.TempDir()
+	trackedPath := filepath.Join(workDir, "tracked.txt")
+	if err := os.WriteFile(trackedPath, []byte("base"), 0o644); err != nil {
+		t.Fatalf("write tracked seed: %v", err)
+	}
+
+	s, err := Create(workDir, "system prompt")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.Activate(); err != nil {
+		t.Fatalf("activate session: %v", err)
+	}
+
+	if err := s.AppendUserInput("first request"); err != nil {
+		t.Fatalf("append first user input: %v", err)
+	}
+	if err := s.AppendAssistant("first reply"); err != nil {
+		t.Fatalf("append first assistant reply: %v", err)
+	}
+	if err := s.AppendUserInput("second request"); err != nil {
+		t.Fatalf("append second user input: %v", err)
+	}
+	if err := s.RecordFileMutation("tracked.txt", trackedPath); err != nil {
+		t.Fatalf("record second-turn file mutation: %v", err)
+	}
+	if err := os.WriteFile(trackedPath, []byte("second turn"), 0o644); err != nil {
+		t.Fatalf("write second-turn content: %v", err)
+	}
+	if err := s.AppendAssistant("second reply"); err != nil {
+		t.Fatalf("append second assistant reply: %v", err)
+	}
+
+	fork, err := s.ForkCurrent()
+	if err != nil {
+		t.Fatalf("ForkCurrent() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = fork.Close()
+	})
+	if err := fork.Activate(); err != nil {
+		t.Fatalf("activate fork: %v", err)
+	}
+
+	systemPrompt, messages := fork.RestoreContext()
+	if got, want := systemPrompt, "system prompt"; got != want {
+		t.Fatalf("fork system prompt = %q, want %q", got, want)
+	}
+	if got, want := len(messages), 4; got != want {
+		t.Fatalf("fork message count = %d, want %d", got, want)
+	}
+	if got, want := messages[3].Content, "second reply"; got != want {
+		t.Fatalf("fork latest message = %q, want %q", got, want)
+	}
+
+	forkCheckpoints := fork.ListCheckpoints()
+	if got, want := len(forkCheckpoints), 2; got != want {
+		t.Fatalf("fork checkpoint count = %d, want %d", got, want)
+	}
+	if !forkCheckpoints[0].HasCodeRestore {
+		t.Fatal("expected copied checkpoint backups to stay available in current fork")
+	}
+}
+
 func TestWorkDirKeySanitizesWindowsInvalidFilenameChars(t *testing.T) {
 	key := workDirKey(`C:\Users\alice\work\mscli`)
 

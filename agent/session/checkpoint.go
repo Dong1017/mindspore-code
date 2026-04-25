@@ -717,35 +717,7 @@ func (s *Session) copyForkBackupsFrom(source *Session) error {
 	return nil
 }
 
-// ForkFromCheckpoint creates a new session containing the visible history before the selected user message.
-func (s *Session) ForkFromCheckpoint(messageID string) (*Session, error) {
-	if s == nil {
-		return nil, fmt.Errorf("session is nil")
-	}
-
-	s.mu.RLock()
-	record, ok := s.checkpointRecordLocked(messageID)
-	if !ok {
-		s.mu.RUnlock()
-		return nil, fmt.Errorf("checkpoint %s not found", strings.TrimSpace(messageID))
-	}
-	var state reconstructedContextState
-	if limit := s.checkpointEntryLimitLocked(record); limit >= 0 {
-		state = s.reconstructStateLocked(limit)
-	} else {
-		legacyState, err := s.resumeStateForCheckpointLocked(record)
-		if err != nil {
-			s.mu.RUnlock()
-			return nil, err
-		}
-		state = reconstructedContextState{
-			systemPrompt:  legacyState.SystemPrompt,
-			messages:      cloneMessages(legacyState.Messages),
-			providerUsage: cloneUsageSnapshot(legacyState.ProviderUsage),
-			updatedAt:     legacyState.UpdatedAt,
-		}
-	}
-
+func (s *Session) newForkSessionLocked(state reconstructedContextState) (*Session, error) {
 	workDir := s.meta.WorkDir
 	if strings.TrimSpace(workDir) == "" {
 		workDir = s.snapshot.WorkDir
@@ -757,11 +729,10 @@ func (s *Session) ForkFromCheckpoint(messageID string) (*Session, error) {
 	now := time.Now()
 	id, path, err := nextSessionLocation(key, now)
 	if err != nil {
-		s.mu.RUnlock()
 		return nil, err
 	}
 
-	fork := &Session{
+	return &Session{
 		meta: Meta{
 			Type:         recordTypeMeta,
 			Version:      formatVersion,
@@ -787,6 +758,80 @@ func (s *Session) ForkFromCheckpoint(messageID string) (*Session, error) {
 		},
 		path:         path,
 		snapshotPath: snapshotPath(path),
+	}, nil
+}
+
+func (s *Session) finalizeForkLocked(fork *Session, state reconstructedContextState) error {
+	fork.activeCheckpointMessageID = ""
+	fork.meta.SystemPrompt = state.systemPrompt
+	fork.snapshot = Snapshot{
+		SessionID:     fork.meta.SessionID,
+		WorkDir:       fork.meta.WorkDir,
+		SystemPrompt:  state.systemPrompt,
+		UpdatedAt:     state.updatedAt,
+		Messages:      cloneMessages(state.messages),
+		ProviderUsage: cloneUsageSnapshot(state.providerUsage),
+	}
+	fork.bootstrapResumeState = false
+	fork.legacySnapshotFallback = false
+	return fork.copyForkBackupsFrom(s)
+}
+
+// ForkCurrent creates a new session containing the current visible history.
+func (s *Session) ForkCurrent() (*Session, error) {
+	if s == nil {
+		return nil, fmt.Errorf("session is nil")
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	state := s.reconstructStateLocked(len(s.log))
+	fork, err := s.newForkSessionLocked(state)
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range s.log {
+		fork.applyTrajectoryEntryLocked(entry)
+	}
+	if err := s.finalizeForkLocked(fork, state); err != nil {
+		return nil, err
+	}
+	return fork, nil
+}
+
+// ForkFromCheckpoint creates a new session containing the visible history before the selected user message.
+func (s *Session) ForkFromCheckpoint(messageID string) (*Session, error) {
+	if s == nil {
+		return nil, fmt.Errorf("session is nil")
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	record, ok := s.checkpointRecordLocked(messageID)
+	if !ok {
+		return nil, fmt.Errorf("checkpoint %s not found", strings.TrimSpace(messageID))
+	}
+	var state reconstructedContextState
+	if limit := s.checkpointEntryLimitLocked(record); limit >= 0 {
+		state = s.reconstructStateLocked(limit)
+	} else {
+		legacyState, err := s.resumeStateForCheckpointLocked(record)
+		if err != nil {
+			return nil, err
+		}
+		state = reconstructedContextState{
+			systemPrompt:  legacyState.SystemPrompt,
+			messages:      cloneMessages(legacyState.Messages),
+			providerUsage: cloneUsageSnapshot(legacyState.ProviderUsage),
+			updatedAt:     legacyState.UpdatedAt,
+		}
+	}
+
+	fork, err := s.newForkSessionLocked(state)
+	if err != nil {
+		return nil, err
 	}
 
 	if limit := s.checkpointEntryLimitLocked(record); limit >= 0 {
@@ -813,23 +858,9 @@ func (s *Session) ForkFromCheckpoint(messageID string) (*Session, error) {
 	}
 
 done:
-	fork.activeCheckpointMessageID = ""
-	fork.meta.SystemPrompt = state.systemPrompt
-	fork.snapshot = Snapshot{
-		SessionID:     id,
-		WorkDir:       workDir,
-		SystemPrompt:  state.systemPrompt,
-		UpdatedAt:     state.updatedAt,
-		Messages:      cloneMessages(state.messages),
-		ProviderUsage: cloneUsageSnapshot(state.providerUsage),
-	}
-	fork.bootstrapResumeState = false
-	fork.legacySnapshotFallback = false
-	if err := fork.copyForkBackupsFrom(s); err != nil {
-		s.mu.RUnlock()
+	if err := s.finalizeForkLocked(fork, state); err != nil {
 		return nil, err
 	}
-	s.mu.RUnlock()
 
 	return fork, nil
 }

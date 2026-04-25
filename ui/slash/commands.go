@@ -178,6 +178,18 @@ func (r *Registry) registerDefaults() {
 	})
 
 	r.Register(Command{
+		Name:        "/branch",
+		Description: "Fork the current session",
+		Usage:       "/branch",
+	})
+
+	r.Register(Command{
+		Name:        "/fork",
+		Description: "Fork the current session",
+		Usage:       "/fork",
+	})
+
+	r.Register(Command{
 		Name:        "/rewind",
 		Description: "Fork a new session from an earlier checkpoint",
 		Usage:       "/rewind",

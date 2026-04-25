@@ -3,6 +3,7 @@ package app
 import (
 	"strings"
 
+	"github.com/mindspore-lab/mindspore-cli/agent/session"
 	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
 
@@ -12,6 +13,14 @@ func (a *Application) cmdRewind(args []string) {
 		return
 	}
 	a.openRewindPicker()
+}
+
+func (a *Application) cmdBranch(commandName string, args []string) {
+	if len(args) != 0 {
+		a.emitToolError("session", "usage: %s", commandName)
+		return
+	}
+	a.applyBranch()
 }
 
 func (a *Application) openRewindPicker() {
@@ -68,6 +77,74 @@ func (a *Application) cmdRewindApply(args []string) {
 	a.applyRewind(messageID, restoreCode)
 }
 
+func (a *Application) preserveCurrentSessionForFork(oldSession *session.Session) bool {
+	if oldSession == nil {
+		return false
+	}
+	if err := oldSession.Activate(); err != nil {
+		a.emitToolError("session", "Failed to preserve the current conversation: %v", err)
+		return false
+	}
+	if err := a.persistSessionSnapshot(); err != nil {
+		a.emitToolError("session", "Failed to preserve the current conversation: %v", err)
+		return false
+	}
+	return true
+}
+
+func (a *Application) switchToForkedConversation(oldSession, forked *session.Session, message, oldSessionID, inputPrefill string) {
+	if err := forked.Activate(); err != nil {
+		a.emitToolError("session", "Failed to activate forked session: %v", err)
+		return
+	}
+
+	systemPrompt, messages := forked.RestoreContext()
+	loaded := &loadedConversation{
+		runtimeSession: forked,
+		systemPrompt:   systemPrompt,
+		messages:       messages,
+		usageSnapshot:  forked.UsageSnapshot(),
+		replayBacklog:  forked.ReplayEvents(),
+	}
+
+	a.bindConversation(loaded, sessionSwitchOptions{})
+	if oldSession != a.session {
+		_ = oldSession.Close()
+	}
+
+	a.EventCh <- model.Event{
+		Type:         model.ClearScreen,
+		Message:      message,
+		Summary:      inlineResumeHintForSession(oldSessionID),
+		InputPrefill: inputPrefill,
+	}
+	a.startReplayHistory()
+}
+
+func (a *Application) applyBranch() {
+	if a == nil || a.session == nil {
+		a.emitToolError("session", "no active session to branch")
+		return
+	}
+
+	oldSession := a.session
+	oldSessionID := strings.TrimSpace(oldSession.ID())
+	if !a.preserveCurrentSessionForFork(oldSession) {
+		return
+	}
+
+	a.interruptReplay()
+	a.interruptActiveTasks()
+
+	forked, err := oldSession.ForkCurrent()
+	if err != nil {
+		a.emitToolError("session", "Failed to fork session: %v", err)
+		return
+	}
+
+	a.switchToForkedConversation(oldSession, forked, "Conversation branched.", oldSessionID, "")
+}
+
 func (a *Application) applyRewind(messageID string, restoreCode bool) {
 	if a == nil || a.session == nil {
 		a.emitToolError("session", "no active session to rewind")
@@ -81,12 +158,7 @@ func (a *Application) applyRewind(messageID string, restoreCode bool) {
 		a.emitToolError("session", "Failed to load rewind prompt: %v", err)
 		return
 	}
-	if err := oldSession.Activate(); err != nil {
-		a.emitToolError("session", "Failed to preserve the current conversation: %v", err)
-		return
-	}
-	if err := a.persistSessionSnapshot(); err != nil {
-		a.emitToolError("session", "Failed to preserve the current conversation: %v", err)
+	if !a.preserveCurrentSessionForFork(oldSession) {
 		return
 	}
 
@@ -105,34 +177,10 @@ func (a *Application) applyRewind(messageID string, restoreCode bool) {
 		a.emitToolError("session", "Failed to fork rewound session: %v", err)
 		return
 	}
-	if err := forked.Activate(); err != nil {
-		a.emitToolError("session", "Failed to activate rewound session: %v", err)
-		return
-	}
-
-	systemPrompt, messages := forked.RestoreContext()
-	loaded := &loadedConversation{
-		runtimeSession: forked,
-		systemPrompt:   systemPrompt,
-		messages:       messages,
-		usageSnapshot:  forked.UsageSnapshot(),
-		replayBacklog:  forked.ReplayEvents(),
-	}
-
-	a.bindConversation(loaded, sessionSwitchOptions{})
-	if oldSession != a.session {
-		_ = oldSession.Close()
-	}
 
 	message := "Conversation rewound."
 	if restoreCode {
 		message = "Code and conversation rewound."
 	}
-	a.EventCh <- model.Event{
-		Type:         model.ClearScreen,
-		Message:      message,
-		Summary:      inlineResumeHintForSession(oldSessionID),
-		InputPrefill: selectedInput,
-	}
-	a.startReplayHistory()
+	a.switchToForkedConversation(oldSession, forked, message, oldSessionID, selectedInput)
 }
