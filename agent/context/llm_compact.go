@@ -132,41 +132,85 @@ const rewindSummaryPrompt = `
 CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.
 
 - Do NOT use Read, Bash, Grep, Glob, Edit, Write, or ANY other tool.
-- You already have the recent conversation segment in the messages above.
+- You already have all the context you need in the conversation above.
+- Tool calls will be REJECTED and will waste your only turn — you will fail the task.
 - Your entire response must be plain text: an <analysis> block followed by a <summary> block.
 
-Your task is to summarize the RECENT portion of the conversation that is about to be removed by a rewind. Earlier messages are being kept intact and do not need to be summarized. Focus only on what happened in the recent messages: user requests, decisions, files or commands discussed, changes made, errors and fixes, current state, and any pending follow-up that remains relevant.
+Your task is to create a detailed summary of the RECENT portion of the conversation — the messages that follow earlier retained context. The earlier messages are being kept intact and do NOT need to be summarized. Focus your summary on what was discussed, learned, and accomplished in the recent messages only.
 
-The summary must be useful as background context after the conversation is rewound. Do not invent work that was not present in the recent messages.
+Before providing your final summary, wrap your analysis in <analysis> tags to organize your thoughts and ensure you've covered all necessary points. In your analysis process:
 
-Respond using this structure:
+1. Analyze the recent messages chronologically. For each section thoroughly identify:
+   - The user's explicit requests and intents
+   - Your approach to addressing the user's requests
+   - Key decisions, technical concepts and code patterns
+   - Specific details like:
+     - file names
+     - full code snippets
+     - function signatures
+     - file edits
+   - Errors that you ran into and how you fixed them
+   - Pay special attention to specific user feedback that you received, especially if the user told you to do something differently.
+2. Double-check for technical accuracy and completeness, addressing each required element thoroughly.
 
+Your summary should include the following sections:
+
+1. Primary Request and Intent: Capture the user's explicit requests and intents from the recent messages
+2. Key Technical Concepts: List important technical concepts, technologies, and frameworks discussed recently.
+3. Files and Code Sections: Enumerate specific files and code sections examined, modified, or created. Include full code snippets where applicable and include a summary of why this file read or edit is important.
+4. Errors and fixes: List errors encountered and how they were fixed.
+5. Problem Solving: Document problems solved and any ongoing troubleshooting efforts.
+6. All user messages: List ALL user messages from the recent portion that are not tool results.
+7. Pending Tasks: Outline any pending tasks from the recent messages.
+8. Current Work: Describe precisely what was being worked on immediately before this summary request.
+9. Optional Next Step: List the next step related to the most recent work. Include direct quotes from the most recent conversation.
+
+Here's an example of how your output should be structured:
+
+<example>
 <analysis>
-[Briefly verify the important details to preserve.]
+[Your thought process, ensuring all points are covered thoroughly and accurately]
 </analysis>
 
 <summary>
 1. Primary Request and Intent:
-   [Recent user requests and intent]
-2. Key Technical Concepts:
-   [Important concepts, tools, files, packages, or commands]
-3. Files and Code Sections:
-   [Files examined or changed, with relevant details]
-4. Errors and fixes:
-   [Errors encountered and how they were handled]
-5. Problem Solving:
-   [Problems solved and important decisions]
-6. All user messages:
-   [Recent non-tool user messages]
-7. Pending Tasks:
-   [Remaining tasks, if any]
-8. Current Work:
-   [State immediately before rewind]
-9. Optional Next Step:
-   [Only if directly implied by the recent work]
-</summary>
+   [Detailed description]
 
-REMINDER: Do NOT call any tools. Respond with plain text only — an <analysis> block followed by a <summary> block.`
+2. Key Technical Concepts:
+   - [Concept 1]
+   - [Concept 2]
+
+3. Files and Code Sections:
+   - [File Name 1]
+      - [Summary of why this file is important]
+      - [Important Code Snippet]
+
+4. Errors and fixes:
+    - [Error description]:
+      - [How you fixed it]
+
+5. Problem Solving:
+   [Description]
+
+6. All user messages:
+    - [Detailed non tool use user message]
+
+7. Pending Tasks:
+   - [Task 1]
+
+8. Current Work:
+   [Precise description of current work]
+
+9. Optional Next Step:
+   [Optional Next step to take]
+
+</summary>
+</example>
+
+Please provide your summary based on the RECENT messages only (after the retained earlier context), following this structure and ensuring precision and thoroughness in your response.
+
+
+REMINDER: Do NOT call any tools. Respond with plain text only — an <analysis> block followed by a <summary> block. Tool calls will be rejected and you will fail the task.`
 
 var (
 	compactAnalysisBlockRE = regexp.MustCompile(`(?is)<analysis>.*?</analysis>`)
@@ -319,15 +363,26 @@ func (m *Manager) SummarizeRewindSegmentWithContext(ctx stdctx.Context, messages
 }
 
 func rewindSummaryRequestMessages(messages []llm.Message, userContext string) []llm.Message {
-	prompt := rewindSummaryPrompt
-	if context := strings.TrimSpace(userContext); context != "" {
-		prompt += "\n\nAdditional context from the user:\n" + context
-	}
+	prompt := rewindSummaryPromptWithUserContext(userContext)
 	reqMessages := make([]llm.Message, 0, len(messages)+2)
 	reqMessages = append(reqMessages, llm.NewSystemMessage(compactSummarySystemPrompt))
 	reqMessages = append(reqMessages, messages...)
 	reqMessages = append(reqMessages, llm.NewUserMessage(prompt))
 	return reqMessages
+}
+
+func rewindSummaryPromptWithUserContext(userContext string) string {
+	context := strings.TrimSpace(userContext)
+	if context == "" {
+		return rewindSummaryPrompt
+	}
+
+	reminder := "\n\nREMINDER:"
+	before, after, found := strings.Cut(rewindSummaryPrompt, reminder)
+	if !found {
+		return strings.TrimRight(rewindSummaryPrompt, "\n") + "\n\nAdditional Instructions:\nUser context: " + context
+	}
+	return before + "\n\nAdditional Instructions:\nUser context: " + context + reminder + after
 }
 
 func formatCompactSummary(summary string) string {

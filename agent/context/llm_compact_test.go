@@ -152,8 +152,23 @@ func TestSummarizeRewindSegmentUsesFeedbackAndReturnsContinuationMessage(t *test
 	if provider.lastReq == nil {
 		t.Fatal("provider request was not captured")
 	}
-	if got := provider.lastReq.Messages[len(provider.lastReq.Messages)-1].Content; !strings.Contains(got, "Additional context from the user:\nfocus on decisions") {
-		t.Fatalf("summary prompt missing user context: %q", got)
+	prompt := provider.lastReq.Messages[len(provider.lastReq.Messages)-1].Content
+	if !strings.Contains(prompt, "Your task is to create a detailed summary of the RECENT portion of the conversation") {
+		t.Fatalf("summary prompt missing rewind template task: %q", prompt)
+	}
+	if !strings.Contains(prompt, "Tool calls will be REJECTED and will waste your only turn") {
+		t.Fatalf("summary prompt missing tool rejection warning: %q", prompt)
+	}
+	contextIndex := strings.Index(prompt, "Additional Instructions:\nUser context: focus on decisions")
+	if contextIndex < 0 {
+		t.Fatalf("summary prompt missing user context: %q", prompt)
+	}
+	reminderIndex := strings.LastIndex(prompt, "REMINDER: Do NOT call any tools.")
+	if reminderIndex < 0 {
+		t.Fatalf("summary prompt missing final reminder: %q", prompt)
+	}
+	if contextIndex > reminderIndex {
+		t.Fatalf("summary prompt user context appears after final reminder: %q", prompt)
 	}
 	if strings.Contains(summary, "<analysis>") {
 		t.Fatalf("summary should strip analysis block, got %q", summary)
