@@ -162,7 +162,7 @@ func (r *Registry) registerDefaults() {
 	r.Register(Command{
 		Name:        "/compact",
 		Description: "Compact conversation context",
-		Usage:       "/compact",
+		Usage:       "/compact [optional custom summarization instructions]",
 	})
 
 	r.Register(Command{

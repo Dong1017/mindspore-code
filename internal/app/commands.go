@@ -32,7 +32,7 @@ func (a *Application) handleCommand(input string) {
 	case "/exit":
 		a.cmdExit()
 	case "/compact":
-		a.cmdCompact()
+		a.cmdCompact(cmd.Remainder)
 	case "/ctx":
 		a.cmdCtx()
 	case "/clear":
@@ -453,7 +453,7 @@ func (a *Application) cmdExit() {
 	}()
 }
 
-func (a *Application) cmdCompact() {
+func (a *Application) cmdCompact(customInstructions string) {
 	a.EventCh <- model.Event{Type: model.AgentThinking}
 
 	if a.ctxManager == nil {
@@ -475,7 +475,7 @@ func (a *Application) cmdCompact() {
 	defer cancel()
 
 	before := a.ctxManager.TokenUsage()
-	if err := a.ctxManager.CompactWithContext(compactCtx); err != nil {
+	if err := a.ctxManager.CompactWithContextInstructions(compactCtx, customInstructions); err != nil {
 		a.EventCh <- model.Event{
 			Type:     model.ToolError,
 			ToolName: "context",

@@ -126,6 +126,46 @@ func TestCompactUsesLLMSummaryAndTrajectoryReference(t *testing.T) {
 	}
 }
 
+func TestCompactWithInstructionsAddsPromptBeforeReminder(t *testing.T) {
+	t.Setenv(envCompactMode, compactModeLLM)
+	provider := &compactTestProvider{
+		response: llm.CompletionResponse{
+			Content: "<summary>1. Primary Request and Intent:\n   preserve API decisions.</summary>",
+		},
+	}
+	mgr := NewManager(ManagerConfig{
+		ContextWindow:       1000,
+		ReserveTokens:       100,
+		CompactionThreshold: 0.9,
+		CompactProvider:     provider,
+	})
+
+	for i := 0; i < 3; i++ {
+		if err := mgr.AddMessage(llm.NewUserMessage(strings.Repeat("api details ", 100))); err != nil {
+			t.Fatalf("AddMessage #%d failed: %v", i+1, err)
+		}
+	}
+
+	if err := mgr.CompactWithInstructions("preserve API edge cases"); err != nil {
+		t.Fatalf("CompactWithInstructions failed: %v", err)
+	}
+	if provider.lastReq == nil {
+		t.Fatal("provider request was not captured")
+	}
+	prompt := provider.lastReq.Messages[len(provider.lastReq.Messages)-1].Content
+	instructionsIndex := strings.Index(prompt, "Additional Instructions: preserve API edge cases")
+	if instructionsIndex < 0 {
+		t.Fatalf("compact prompt missing custom instructions: %q", prompt)
+	}
+	reminderIndex := strings.LastIndex(prompt, "REMINDER: Do NOT call any tools.")
+	if reminderIndex < 0 {
+		t.Fatalf("compact prompt missing final reminder: %q", prompt)
+	}
+	if instructionsIndex > reminderIndex {
+		t.Fatalf("compact prompt custom instructions appear after final reminder: %q", prompt)
+	}
+}
+
 func TestSummarizeRewindSegmentUsesFeedbackAndReturnsContinuationMessage(t *testing.T) {
 	provider := &compactTestProvider{
 		response: llm.CompletionResponse{

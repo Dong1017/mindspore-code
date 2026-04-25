@@ -21,13 +21,15 @@ import (
 type singleReplyProvider struct {
 	content string
 	usage   llm.Usage
+	lastReq *llm.CompletionRequest
 }
 
 func (p *singleReplyProvider) Name() string {
 	return "single-reply"
 }
 
-func (p *singleReplyProvider) Complete(context.Context, *llm.CompletionRequest) (*llm.CompletionResponse, error) {
+func (p *singleReplyProvider) Complete(_ context.Context, req *llm.CompletionRequest) (*llm.CompletionResponse, error) {
+	p.lastReq = req
 	return &llm.CompletionResponse{Content: p.content, FinishReason: llm.FinishStop, Usage: p.usage}, nil
 }
 

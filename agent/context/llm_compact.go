@@ -244,7 +244,7 @@ func isTruthyEnv(value string) bool {
 	}
 }
 
-func (m *Manager) compactWithLLMLocked(ctx stdctx.Context, targetTokens int) ([]llm.Message, CompactResult, error) {
+func (m *Manager) compactWithLLMLocked(ctx stdctx.Context, targetTokens int, customInstructions string) ([]llm.Message, CompactResult, error) {
 	if m.provider == nil {
 		return nil, CompactResult{Strategy: CompactStrategyLLM}, fmt.Errorf("llm compact provider is not configured")
 	}
@@ -256,7 +256,7 @@ func (m *Manager) compactWithLLMLocked(ctx stdctx.Context, targetTokens int) ([]
 	}
 
 	maxTokens := compactSummaryMaxTokens(targetTokens)
-	reqMessages := compactSummaryRequestMessages(m.messages)
+	reqMessages := compactSummaryRequestMessages(m.messages, customInstructions)
 	req := &llm.CompletionRequest{
 		Messages:  reqMessages,
 		MaxTokens: &maxTokens,
@@ -302,12 +302,20 @@ func compactSummaryMaxTokens(targetTokens int) int {
 	return maxTokens
 }
 
-func compactSummaryRequestMessages(messages []llm.Message) []llm.Message {
+func compactSummaryRequestMessages(messages []llm.Message, customInstructions string) []llm.Message {
 	reqMessages := make([]llm.Message, 0, len(messages)+2)
 	reqMessages = append(reqMessages, llm.NewSystemMessage(compactSummarySystemPrompt))
 	reqMessages = append(reqMessages, messages...)
-	reqMessages = append(reqMessages, llm.NewUserMessage(compactSummaryPrompt))
+	reqMessages = append(reqMessages, llm.NewUserMessage(compactSummaryPromptWithInstructions(customInstructions)))
 	return reqMessages
+}
+
+func compactSummaryPromptWithInstructions(customInstructions string) string {
+	instructions := strings.TrimSpace(customInstructions)
+	if instructions == "" {
+		return compactSummaryPrompt
+	}
+	return promptWithAdditionalInstructionsBeforeReminder(compactSummaryPrompt, "Additional Instructions: "+instructions)
 }
 
 // SummarizeRewindSegmentWithContext summarizes the segment that will be removed by a rewind.
@@ -376,13 +384,21 @@ func rewindSummaryPromptWithUserContext(userContext string) string {
 	if context == "" {
 		return rewindSummaryPrompt
 	}
+	return promptWithAdditionalInstructionsBeforeReminder(rewindSummaryPrompt, "Additional Instructions:\nUser context: "+context)
+}
+
+func promptWithAdditionalInstructionsBeforeReminder(prompt, instructions string) string {
+	instructions = strings.TrimSpace(instructions)
+	if instructions == "" {
+		return prompt
+	}
 
 	reminder := "\n\nREMINDER:"
-	before, after, found := strings.Cut(rewindSummaryPrompt, reminder)
-	if !found {
-		return strings.TrimRight(rewindSummaryPrompt, "\n") + "\n\nAdditional Instructions:\nUser context: " + context
+	index := strings.LastIndex(prompt, reminder)
+	if index < 0 {
+		return strings.TrimRight(prompt, "\n") + "\n\n" + instructions
 	}
-	return before + "\n\nAdditional Instructions:\nUser context: " + context + reminder + after
+	return prompt[:index] + "\n\n" + instructions + prompt[index:]
 }
 
 func formatCompactSummary(summary string) string {
