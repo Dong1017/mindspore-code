@@ -161,17 +161,80 @@ func renderRewindConfirmBody(picker *model.RewindPicker, width, _ int) []string 
 	}
 	lines = append(lines, optionMarker(selectedSummary)+summaryStyle.Render("summarize from here"))
 	if picker.CapturingSummary {
-		input := picker.SummaryInput
-		if strings.TrimSpace(input) == "" {
-			input = "add context (optional)"
-			lines = append(lines, "  "+sessionPickerMetaStyle.Render(input))
-		} else {
-			lines = append(lines, "  "+sessionPickerPreviewStyle.Render(truncateSessionPickerText(input, width-2)))
-		}
+		lines = append(lines, "  "+renderRewindSummaryInput(picker.SummaryInput, picker.SummaryCursor, width-2))
 	}
 	lines = append(lines, "")
 	lines = append(lines, sessionPickerMetaStyle.Render("Warning: shell/manual edits are not restored. Only write/edit tool changes are tracked."))
 	return lines
+}
+
+func renderRewindSummaryInput(input string, cursor, width int) string {
+	if width < 1 {
+		width = 1
+	}
+	if input == "" {
+		placeholder := truncateSessionPickerText("add context (optional)", maxInt(0, width-1))
+		return tokenCursorStyle.Render(" ") + sessionPickerMetaStyle.Render(placeholder)
+	}
+
+	runes := []rune(input)
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(runes) {
+		cursor = len(runes)
+	}
+
+	maxContent := width
+	if cursor == len(runes) {
+		maxContent = width - 1
+	}
+	if maxContent < 0 {
+		maxContent = 0
+	}
+
+	start := 0
+	if maxContent > 0 && len(runes) > maxContent {
+		if cursor == len(runes) {
+			start = len(runes) - maxContent
+		} else if cursor >= maxContent {
+			start = cursor - maxContent + 1
+		}
+		if maxStart := len(runes) - maxContent; start > maxStart {
+			start = maxStart
+		}
+	}
+	if start < 0 {
+		start = 0
+	}
+
+	end := len(runes)
+	if maxContent == 0 {
+		end = start
+	} else if end > start+maxContent {
+		end = start + maxContent
+	}
+
+	var b strings.Builder
+	for i := start; i < end; i++ {
+		ch := rewindSummaryVisibleRune(runes[i])
+		if i == cursor {
+			b.WriteString(tokenCursorStyle.Render(ch))
+		} else {
+			b.WriteString(sessionPickerPreviewStyle.Render(ch))
+		}
+	}
+	if cursor == len(runes) {
+		b.WriteString(tokenCursorStyle.Render(" "))
+	}
+	return b.String()
+}
+
+func rewindSummaryVisibleRune(ch rune) string {
+	if ch == ' ' {
+		return "\u00a0"
+	}
+	return string(ch)
 }
 
 func optionMarker(selected bool) string {
