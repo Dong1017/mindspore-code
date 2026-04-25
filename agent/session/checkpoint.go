@@ -619,6 +619,78 @@ func (s *Session) RestoreCheckpointContext(messageID string) (string, []llm.Mess
 	return state.SystemPrompt, cloneMessages(state.Messages), cloneUsageSnapshot(state.ProviderUsage), nil
 }
 
+// MessagesFromCheckpoint returns the current context segment from the selected user message onward.
+func (s *Session) MessagesFromCheckpoint(messageID string) ([]llm.Message, error) {
+	if s == nil {
+		return nil, fmt.Errorf("session is nil")
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	record, ok := s.checkpointRecordLocked(messageID)
+	if !ok {
+		return nil, fmt.Errorf("checkpoint %s not found", strings.TrimSpace(messageID))
+	}
+
+	var prefix reconstructedContextState
+	if limit := s.checkpointEntryLimitLocked(record); limit >= 0 {
+		prefix = s.reconstructStateLocked(limit)
+	} else {
+		legacyState, err := s.resumeStateForCheckpointLocked(record)
+		if err != nil {
+			return nil, err
+		}
+		prefix = reconstructedContextState{
+			messages: cloneMessages(legacyState.Messages),
+		}
+	}
+
+	current := s.reconstructStateLocked(len(s.log)).messages
+	if len(prefix.messages) <= len(current) && messagesEqual(prefix.messages, current[:len(prefix.messages)]) {
+		return cloneMessages(current[len(prefix.messages):]), nil
+	}
+	return s.messagesFromCheckpointLogLocked(messageID)
+}
+
+func (s *Session) messagesFromCheckpointLogLocked(messageID string) ([]llm.Message, error) {
+	messageID = strings.TrimSpace(messageID)
+	start := -1
+	for i, entry := range s.log {
+		switch entry.kind {
+		case recordTypeCheckpoint:
+			if strings.TrimSpace(entry.checkpoint.MessageID) == messageID {
+				start = i + 1
+				break
+			}
+		case recordTypeUser:
+			if strings.TrimSpace(entry.message.MessageID) == messageID {
+				start = i
+				break
+			}
+		}
+		if start >= 0 {
+			break
+		}
+	}
+	if start < 0 {
+		return nil, fmt.Errorf("checkpoint user message %q not found", messageID)
+	}
+
+	messages := []llm.Message{}
+	pendingAssistant := -1
+	for i := start; i < len(s.log); i++ {
+		entry := s.log[i]
+		switch entry.kind {
+		case recordTypeUser, recordTypeAssistant, recordTypeToolCall, recordTypeToolResult, recordTypeSkill, recordTypeCompact:
+			applyMessageRecordToContext(&messages, &pendingAssistant, entry.message)
+		case recordTypeResumeState:
+			pendingAssistant = -1
+		}
+	}
+	return cloneMessages(messages), nil
+}
+
 // RestoreCheckpointFiles restores tracked write/edit paths from before the selected user message.
 func (s *Session) RestoreCheckpointFiles(messageID string) error {
 	if s == nil {

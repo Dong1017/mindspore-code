@@ -342,6 +342,57 @@ func TestRestoreContextReconstructsFromCompactBoundaryAndLaterTrajectory(t *test
 	}
 }
 
+func TestMessagesFromCheckpointFallsBackToTrajectoryWhenCompactBoundaryReplacedPrefix(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	workDir := t.TempDir()
+	s, err := Create(workDir, "system prompt")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.Activate(); err != nil {
+		t.Fatalf("activate session: %v", err)
+	}
+	if err := s.AppendUserInput("first request"); err != nil {
+		t.Fatalf("append first user input: %v", err)
+	}
+	if err := s.AppendAssistant("first reply"); err != nil {
+		t.Fatalf("append first assistant reply: %v", err)
+	}
+	if err := s.AppendUserInput("second request"); err != nil {
+		t.Fatalf("append second user input: %v", err)
+	}
+	secondID := s.ListCheckpoints()[0].MessageID
+	if err := s.AppendAssistant("second reply"); err != nil {
+		t.Fatalf("append second assistant reply: %v", err)
+	}
+	if err := s.SaveSnapshot("system prompt", []llm.Message{
+		llm.NewUserMessage("Summary:\nfirst and second turns."),
+	}); err != nil {
+		t.Fatalf("save compacted state: %v", err)
+	}
+	if err := s.AppendContextCompaction("manual", 100, 20, "Context compacted."); err != nil {
+		t.Fatalf("append compaction notice: %v", err)
+	}
+	if err := s.AppendUserInput("third request"); err != nil {
+		t.Fatalf("append third user input: %v", err)
+	}
+
+	segment, err := s.MessagesFromCheckpoint(secondID)
+	if err != nil {
+		t.Fatalf("MessagesFromCheckpoint() error = %v", err)
+	}
+	if got, want := len(segment), 3; got != want {
+		t.Fatalf("segment message count = %d, want %d", got, want)
+	}
+	if got, want := segment[0].Content, "second request"; got != want {
+		t.Fatalf("segment first message = %q, want %q", got, want)
+	}
+	if got, want := segment[2].Content, "third request"; got != want {
+		t.Fatalf("segment latest message = %q, want %q", got, want)
+	}
+}
+
 func TestCheckpointsRestoreConversationStateFromBeforeUserTurn(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
@@ -412,6 +463,17 @@ func TestCheckpointsRestoreConversationStateFromBeforeUserTurn(t *testing.T) {
 	}
 	if usage != nil {
 		t.Fatalf("checkpoint usage = %#v, want nil", usage)
+	}
+
+	segment, err := loaded.MessagesFromCheckpoint(checkpoints[0].MessageID)
+	if err != nil {
+		t.Fatalf("MessagesFromCheckpoint() error = %v", err)
+	}
+	if got, want := len(segment), 1; got != want {
+		t.Fatalf("checkpoint segment message count = %d, want %d", got, want)
+	}
+	if got, want := segment[0].Content, "second request"; got != want {
+		t.Fatalf("checkpoint segment first message = %q, want %q", got, want)
 	}
 }
 

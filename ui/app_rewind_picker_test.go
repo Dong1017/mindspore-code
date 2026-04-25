@@ -114,3 +114,56 @@ func TestRewindPickerConfirmCodeRestore(t *testing.T) {
 		t.Fatal("expected rewind picker to submit code restore command")
 	}
 }
+
+func TestRewindPickerConfirmSummarizeWithContext(t *testing.T) {
+	userCh := make(chan string, 1)
+	app := New(nil, userCh, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type: model.RewindPickerOpen,
+		RewindPicker: &model.RewindPicker{
+			Items: []model.RewindCheckpointItem{
+				{
+					MessageID:      "msg_000005",
+					Timestamp:      time.Date(2026, time.April, 8, 14, 0, 0, 0, time.UTC),
+					Preview:        "summarize this branch",
+					LastUserInput:  "previous work",
+					TurnCount:      3,
+					HasCodeRestore: false,
+				},
+			},
+		},
+	})
+	app = next.(App)
+
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	app = next.(App)
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyDown})
+	app = next.(App)
+	if app.rewindPicker == nil || app.rewindPicker.ConfirmMode() != model.RewindRestoreSummarize {
+		t.Fatal("expected rewind picker to switch to summarize option")
+	}
+
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	app = next.(App)
+	if app.rewindPicker == nil || !app.rewindPicker.CapturingSummary {
+		t.Fatal("expected rewind picker to capture optional summary context")
+	}
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("keep decisions")})
+	app = next.(App)
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	app = next.(App)
+
+	select {
+	case got := <-userCh:
+		if got != "/__rewind msg_000005 summarize keep decisions" {
+			t.Fatalf("selection command = %q, want %q", got, "/__rewind msg_000005 summarize keep decisions")
+		}
+	default:
+		t.Fatal("expected rewind picker to submit summarize rewind command")
+	}
+}

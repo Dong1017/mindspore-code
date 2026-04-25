@@ -1,9 +1,13 @@
 package app
 
 import (
+	"context"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mindspore-lab/mindspore-cli/agent/session"
+	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
 	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
 
@@ -52,8 +56,8 @@ func (a *Application) openRewindPicker() {
 }
 
 func (a *Application) cmdRewindApply(args []string) {
-	if len(args) != 2 {
-		a.emitToolError("session", "usage: /__rewind <message-id> <conversation|code>")
+	if len(args) < 2 {
+		a.emitToolError("session", "usage: /__rewind <message-id> <conversation|code|summarize>")
 		return
 	}
 
@@ -66,9 +70,20 @@ func (a *Application) cmdRewindApply(args []string) {
 	restoreCode := false
 	switch strings.TrimSpace(args[1]) {
 	case string(model.RewindRestoreConversation):
+		if len(args) != 2 {
+			a.emitToolError("session", "usage: /__rewind <message-id> conversation")
+			return
+		}
 		restoreCode = false
 	case string(model.RewindRestoreCodeConversation):
+		if len(args) != 2 {
+			a.emitToolError("session", "usage: /__rewind <message-id> code")
+			return
+		}
 		restoreCode = true
+	case string(model.RewindRestoreSummarize):
+		a.applyRewindWithSummary(messageID, strings.Join(args[2:], " "))
+		return
 	default:
 		a.emitToolError("session", "unknown rewind mode %q", args[1])
 		return
@@ -143,6 +158,79 @@ func (a *Application) applyBranch() {
 	}
 
 	a.switchToForkedConversation(oldSession, forked, "Conversation branched.", oldSessionID, "")
+}
+
+func (a *Application) rewindSummaryContext() (context.Context, context.CancelFunc) {
+	ctx := context.Background()
+	if a != nil && a.Config != nil && a.Config.Model.TimeoutSec > 0 {
+		return context.WithTimeout(ctx, time.Duration(a.Config.Model.TimeoutSec)*time.Second)
+	}
+	return ctx, func() {}
+}
+
+func (a *Application) summarizeRewindSegment(oldSession *session.Session, messageID, userContext string) (llm.Message, string, error) {
+	if a == nil || a.ctxManager == nil {
+		return llm.Message{}, "", fmt.Errorf("context manager is not available")
+	}
+	messages, err := oldSession.MessagesFromCheckpoint(messageID)
+	if err != nil {
+		return llm.Message{}, "", err
+	}
+	ctx, cancel := a.rewindSummaryContext()
+	defer cancel()
+	return a.ctxManager.SummarizeRewindSegmentWithContext(ctx, messages, userContext)
+}
+
+func appendRewindSummaryToFork(forked *session.Session, summaryMsg llm.Message) error {
+	if forked == nil {
+		return fmt.Errorf("session is nil")
+	}
+	systemPrompt, messages := forked.RestoreContext()
+	messages = append(messages, summaryMsg)
+	if err := forked.SaveSnapshot(systemPrompt, messages); err != nil {
+		return err
+	}
+	return forked.AppendContextCompaction("manual", 0, 0, "Conversation summarized from rewind point.")
+}
+
+func (a *Application) applyRewindWithSummary(messageID, userContext string) {
+	if a == nil || a.session == nil {
+		a.emitToolError("session", "no active session to rewind")
+		return
+	}
+
+	oldSession := a.session
+	oldSessionID := strings.TrimSpace(oldSession.ID())
+	selectedInput, err := oldSession.CheckpointUserInput(messageID)
+	if err != nil {
+		a.emitToolError("session", "Failed to load rewind prompt: %v", err)
+		return
+	}
+	if !a.preserveCurrentSessionForFork(oldSession) {
+		return
+	}
+
+	a.interruptReplay()
+	a.interruptActiveTasks()
+	a.EventCh <- model.Event{Type: model.ContextCompactStarted}
+
+	summaryMsg, _, err := a.summarizeRewindSegment(oldSession, messageID, userContext)
+	if err != nil {
+		a.emitToolError("context", "Failed to summarize rewind segment: %v", err)
+		return
+	}
+
+	forked, err := oldSession.ForkFromCheckpoint(messageID)
+	if err != nil {
+		a.emitToolError("session", "Failed to fork rewound session: %v", err)
+		return
+	}
+	if err := appendRewindSummaryToFork(forked, summaryMsg); err != nil {
+		a.emitToolError("session", "Failed to attach rewind summary: %v", err)
+		return
+	}
+
+	a.switchToForkedConversation(oldSession, forked, "Conversation rewound and summarized.", oldSessionID, selectedInput)
 }
 
 func (a *Application) applyRewind(messageID string, restoreCode bool) {

@@ -37,7 +37,11 @@ func RenderRewindPicker(picker *model.RewindPicker, width, height int) string {
 	if picker.Confirming {
 		lines = append(lines, renderRewindConfirmBody(picker, contentWidth, bodyHeight)...)
 		lines = append(lines, "")
-		lines = append(lines, sessionPickerHintStyle.Render("↑/↓ choose restore mode · enter confirm · esc back"))
+		if picker.CapturingSummary {
+			lines = append(lines, sessionPickerHintStyle.Render("enter summarize · esc restore options"))
+		} else {
+			lines = append(lines, sessionPickerHintStyle.Render("↑/↓ choose restore mode · enter confirm · esc back"))
+		}
 	} else {
 		lines = append(lines, renderRewindListBody(picker, contentWidth, bodyHeight)...)
 		lines = append(lines, "")
@@ -126,14 +130,19 @@ func renderRewindConfirmBody(picker *model.RewindPicker, width, _ int) []string 
 
 	selectedConversation := picker.ConfirmMode() == model.RewindRestoreConversation
 	selectedCode := picker.ConfirmMode() == model.RewindRestoreCodeConversation
+	selectedSummary := picker.ConfirmMode() == model.RewindRestoreSummarize
 
 	conversationStyle := sessionPickerNormalStyle
 	codeStyle := sessionPickerNormalStyle
+	summaryStyle := sessionPickerNormalStyle
 	if selectedConversation {
 		conversationStyle = sessionPickerSelectedStyle
 	}
 	if selectedCode {
 		codeStyle = sessionPickerSelectedStyle
+	}
+	if selectedSummary {
+		summaryStyle = sessionPickerSelectedStyle
 	}
 
 	lines := []string{
@@ -149,6 +158,16 @@ func renderRewindConfirmBody(picker *model.RewindPicker, width, _ int) []string 
 		lines = append(lines, optionMarker(selectedCode)+codeStyle.Render("restore code + conversation"))
 	} else {
 		lines = append(lines, "  "+sessionPickerMetaStyle.Render("restore code + conversation (no tracked write/edit changes)"))
+	}
+	lines = append(lines, optionMarker(selectedSummary)+summaryStyle.Render("summarize from here"))
+	if picker.CapturingSummary {
+		input := picker.SummaryInput
+		if strings.TrimSpace(input) == "" {
+			input = "add context (optional)"
+			lines = append(lines, "  "+sessionPickerMetaStyle.Render(input))
+		} else {
+			lines = append(lines, "  "+sessionPickerPreviewStyle.Render(truncateSessionPickerText(input, width-2)))
+		}
 	}
 	lines = append(lines, "")
 	lines = append(lines, sessionPickerMetaStyle.Render("Warning: shell/manual edits are not restored. Only write/edit tool changes are tracked."))

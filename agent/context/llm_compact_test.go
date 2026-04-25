@@ -126,6 +126,46 @@ func TestCompactUsesLLMSummaryAndTrajectoryReference(t *testing.T) {
 	}
 }
 
+func TestSummarizeRewindSegmentUsesFeedbackAndReturnsContinuationMessage(t *testing.T) {
+	provider := &compactTestProvider{
+		response: llm.CompletionResponse{
+			Content: "<analysis>draft</analysis><summary>1. Primary Request and Intent:\n   keep the removed work.</summary>",
+		},
+	}
+	mgr := NewManager(ManagerConfig{
+		ContextWindow:   4096,
+		ReserveTokens:   512,
+		CompactProvider: provider,
+		TrajectoryPath:  "/tmp/mscli/trajectory.jsonl",
+	})
+
+	msg, summary, err := mgr.SummarizeRewindSegmentWithContext(stdctx.Background(), []llm.Message{
+		llm.NewUserMessage("recent request"),
+		llm.NewAssistantMessage("recent answer"),
+	}, "focus on decisions")
+	if err != nil {
+		t.Fatalf("SummarizeRewindSegmentWithContext() error = %v", err)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("provider calls = %d, want 1", provider.calls)
+	}
+	if provider.lastReq == nil {
+		t.Fatal("provider request was not captured")
+	}
+	if got := provider.lastReq.Messages[len(provider.lastReq.Messages)-1].Content; !strings.Contains(got, "Additional context from the user:\nfocus on decisions") {
+		t.Fatalf("summary prompt missing user context: %q", got)
+	}
+	if strings.Contains(summary, "<analysis>") {
+		t.Fatalf("summary should strip analysis block, got %q", summary)
+	}
+	if !strings.Contains(msg.Content, "This conversation was rewound.") || !strings.Contains(msg.Content, "keep the removed work") {
+		t.Fatalf("continuation message = %q, want rewind summary", msg.Content)
+	}
+	if !strings.Contains(msg.Content, "/tmp/mscli/trajectory.jsonl") {
+		t.Fatalf("continuation message missing trajectory reference: %q", msg.Content)
+	}
+}
+
 func TestAddMessageAutoCompactUsesLLMSummary(t *testing.T) {
 	t.Setenv(envCompactMode, compactModeLLM)
 	provider := &compactTestProvider{

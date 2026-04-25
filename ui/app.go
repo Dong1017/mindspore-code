@@ -804,6 +804,57 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 
+		if a.rewindPicker.CapturingSummary {
+			switch msg.String() {
+			case "enter":
+				item := a.rewindPicker.SelectedItem()
+				context := strings.TrimSpace(a.rewindPicker.SummaryInput)
+				a.rewindPicker = nil
+				if item != nil && a.userCh != nil {
+					command := fmt.Sprintf("/__rewind %s %s", item.MessageID, model.RewindRestoreSummarize)
+					if context != "" {
+						command += " " + context
+					}
+					select {
+					case a.userCh <- command:
+					default:
+					}
+				}
+				return a, a.syncModalAltScreen()
+			case "esc":
+				a.rewindPicker.CapturingSummary = false
+				return a, nil
+			case "backspace":
+				a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor = deleteRuneBeforeCursor(a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor)
+				return a, nil
+			case "delete":
+				a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor = deleteRuneAtCursor(a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor)
+				return a, nil
+			case "left":
+				a.rewindPicker.SummaryCursor = moveCursorLeft(a.rewindPicker.SummaryCursor)
+				return a, nil
+			case "right":
+				a.rewindPicker.SummaryCursor = moveCursorRight(a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor)
+				return a, nil
+			case "home", "ctrl+a":
+				a.rewindPicker.SummaryCursor = 0
+				return a, nil
+			case "end", "ctrl+e":
+				a.rewindPicker.SummaryCursor = len([]rune(a.rewindPicker.SummaryInput))
+				return a, nil
+			case " ":
+				a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor = insertRunesAtCursor(a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor, []rune{' '})
+				return a, nil
+			default:
+				if msg.Type == tea.KeyRunes {
+					a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor = insertRunesAtCursor(a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor, msg.Runes)
+				} else if msg.Type == tea.KeySpace {
+					a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor = insertRunesAtCursor(a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor, []rune{' '})
+				}
+				return a, nil
+			}
+		}
+
 		switch msg.String() {
 		case "up", "left":
 			a.rewindPicker.MoveConfirmSelection(-1)
@@ -814,6 +865,12 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			item := a.rewindPicker.SelectedItem()
 			mode := a.rewindPicker.ConfirmMode()
+			if mode == model.RewindRestoreSummarize {
+				a.rewindPicker.CapturingSummary = true
+				a.rewindPicker.SummaryInput = ""
+				a.rewindPicker.SummaryCursor = 0
+				return a, nil
+			}
 			a.rewindPicker = nil
 			if item != nil && a.userCh != nil {
 				select {

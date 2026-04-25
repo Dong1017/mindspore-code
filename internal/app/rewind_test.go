@@ -258,6 +258,67 @@ func TestCmdRewindApplyRestoresTrackedFiles(t *testing.T) {
 	}
 }
 
+func TestCmdRewindApplySummarizesRewoundHistory(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	workDir := t.TempDir()
+	fixture := buildRewindFixture(t, workDir, false)
+	t.Cleanup(func() {
+		_ = fixture.session.Close()
+	})
+
+	provider := &singleReplyProvider{
+		content: "<analysis>draft</analysis><summary>1. Primary Request and Intent:\n   summarized third turn.</summary>",
+	}
+	ctxManager := agentctx.NewManager(agentctx.ManagerConfig{
+		ContextWindow:   4096,
+		ReserveTokens:   512,
+		CompactProvider: provider,
+	})
+	ctxManager.SetSystemPrompt("system prompt")
+	for _, msg := range fixture.currentContext {
+		if err := ctxManager.AddMessage(msg); err != nil {
+			t.Fatalf("add current context: %v", err)
+		}
+	}
+
+	app := newModelCommandTestApp()
+	app.WorkDir = workDir
+	app.session = fixture.session
+	app.ctxManager = ctxManager
+	oldSessionID := fixture.session.ID()
+
+	app.cmdRewindApply([]string{fixture.thirdID, string(model.RewindRestoreSummarize), "keep", "decisions"})
+	t.Cleanup(func() {
+		if app.session != nil {
+			_ = app.session.Close()
+		}
+	})
+
+	drainUntilEventType(t, app, model.ContextCompactStarted)
+	ev := drainUntilClearScreen(t, app)
+	if got, want := ev.Message, "Conversation rewound and summarized."; got != want {
+		t.Fatalf("clear message = %q, want %q", got, want)
+	}
+	if got, want := ev.InputPrefill, "third request"; got != want {
+		t.Fatalf("clear input prefill = %q, want %q", got, want)
+	}
+	if !strings.Contains(ev.Summary, oldSessionID) {
+		t.Fatalf("clear summary = %q, want old session hint", ev.Summary)
+	}
+	if got := app.session.ID(); got == oldSessionID {
+		t.Fatalf("forked session id = %q, want a new session id", got)
+	}
+
+	messages := app.ctxManager.GetNonSystemMessages()
+	if got, want := len(messages), 5; got != want {
+		t.Fatalf("summarized context message count = %d, want %d", got, want)
+	}
+	if got := messages[4].Content; !strings.Contains(got, "This conversation was rewound.") || !strings.Contains(got, "summarized third turn") {
+		t.Fatalf("summary context = %q, want rewind summary", got)
+	}
+}
+
 func TestCmdBranchForksCurrentConversation(t *testing.T) {
 	for _, command := range []string{"/branch", "/fork"} {
 		t.Run(strings.TrimPrefix(command, "/"), func(t *testing.T) {

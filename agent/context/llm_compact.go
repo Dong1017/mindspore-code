@@ -128,6 +128,46 @@ When you are using compact - please focus on test output and code changes. Inclu
 
 REMINDER: Do NOT call any tools. Respond with plain text only — an <analysis> block followed by a <summary> block. Tool calls will be rejected and you will fail the task.`
 
+const rewindSummaryPrompt = `
+CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.
+
+- Do NOT use Read, Bash, Grep, Glob, Edit, Write, or ANY other tool.
+- You already have the recent conversation segment in the messages above.
+- Your entire response must be plain text: an <analysis> block followed by a <summary> block.
+
+Your task is to summarize the RECENT portion of the conversation that is about to be removed by a rewind. Earlier messages are being kept intact and do not need to be summarized. Focus only on what happened in the recent messages: user requests, decisions, files or commands discussed, changes made, errors and fixes, current state, and any pending follow-up that remains relevant.
+
+The summary must be useful as background context after the conversation is rewound. Do not invent work that was not present in the recent messages.
+
+Respond using this structure:
+
+<analysis>
+[Briefly verify the important details to preserve.]
+</analysis>
+
+<summary>
+1. Primary Request and Intent:
+   [Recent user requests and intent]
+2. Key Technical Concepts:
+   [Important concepts, tools, files, packages, or commands]
+3. Files and Code Sections:
+   [Files examined or changed, with relevant details]
+4. Errors and fixes:
+   [Errors encountered and how they were handled]
+5. Problem Solving:
+   [Problems solved and important decisions]
+6. All user messages:
+   [Recent non-tool user messages]
+7. Pending Tasks:
+   [Remaining tasks, if any]
+8. Current Work:
+   [State immediately before rewind]
+9. Optional Next Step:
+   [Only if directly implied by the recent work]
+</summary>
+
+REMINDER: Do NOT call any tools. Respond with plain text only — an <analysis> block followed by a <summary> block.`
+
 var (
 	compactAnalysisBlockRE = regexp.MustCompile(`(?is)<analysis>.*?</analysis>`)
 	compactSummaryBlockRE  = regexp.MustCompile(`(?is)<summary>(.*?)</summary>`)
@@ -226,6 +266,70 @@ func compactSummaryRequestMessages(messages []llm.Message) []llm.Message {
 	return reqMessages
 }
 
+// SummarizeRewindSegmentWithContext summarizes the segment that will be removed by a rewind.
+func (m *Manager) SummarizeRewindSegmentWithContext(ctx stdctx.Context, messages []llm.Message, userContext string) (llm.Message, string, error) {
+	if m == nil {
+		return llm.Message{}, "", fmt.Errorf("context manager is nil")
+	}
+	if ctx == nil {
+		ctx = stdctx.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return llm.Message{}, "", err
+	}
+	if len(messages) == 0 {
+		return llm.Message{}, "", fmt.Errorf("nothing to summarize after the selected checkpoint")
+	}
+
+	m.mu.RLock()
+	provider := m.provider
+	dumper := m.dumper
+	trajectoryPath := m.trajectoryPath
+	targetTokens := m.config.ContextWindow - m.config.ReserveTokens
+	m.mu.RUnlock()
+
+	if provider == nil {
+		return llm.Message{}, "", fmt.Errorf("llm compact provider is not configured")
+	}
+	if targetTokens <= 0 {
+		targetTokens = compactTargetTokens
+	}
+	maxTokens := compactSummaryMaxTokens(targetTokens)
+	req := &llm.CompletionRequest{
+		Messages:  rewindSummaryRequestMessages(messages, userContext),
+		MaxTokens: &maxTokens,
+	}
+	if dumper != nil {
+		ctx = llm.WithDebugDumper(ctx, dumper)
+	}
+	resp, err := provider.Complete(ctx, req)
+	if err != nil {
+		return llm.Message{}, "", fmt.Errorf("generate rewind summary: %w", err)
+	}
+	summary := strings.TrimSpace(resp.Content)
+	if summary == "" {
+		return llm.Message{}, "", fmt.Errorf("generate rewind summary: empty response")
+	}
+	if len(resp.ToolCalls) > 0 {
+		return llm.Message{}, "", fmt.Errorf("generate rewind summary: model attempted tool use")
+	}
+
+	formatted := formatCompactSummary(summary)
+	return llm.NewUserMessage(rewindSummaryContinuationMessage(formatted, trajectoryPath)), formatted, nil
+}
+
+func rewindSummaryRequestMessages(messages []llm.Message, userContext string) []llm.Message {
+	prompt := rewindSummaryPrompt
+	if context := strings.TrimSpace(userContext); context != "" {
+		prompt += "\n\nAdditional context from the user:\n" + context
+	}
+	reqMessages := make([]llm.Message, 0, len(messages)+2)
+	reqMessages = append(reqMessages, llm.NewSystemMessage(compactSummarySystemPrompt))
+	reqMessages = append(reqMessages, messages...)
+	reqMessages = append(reqMessages, llm.NewUserMessage(prompt))
+	return reqMessages
+}
+
 func formatCompactSummary(summary string) string {
 	formatted := compactAnalysisBlockRE.ReplaceAllString(summary, "")
 	if match := compactSummaryBlockRE.FindStringSubmatch(formatted); len(match) >= 2 {
@@ -247,5 +351,17 @@ func compactContinuationMessage(summary, trajectoryPath string) string {
 		b.WriteString(path)
 	}
 	b.WriteString("\n\nContinue from where the conversation left off. Do not acknowledge this summary unless the user asks about it.")
+	return b.String()
+}
+
+func rewindSummaryContinuationMessage(summary, trajectoryPath string) string {
+	var b strings.Builder
+	b.WriteString("This conversation was rewound. The summary below covers the messages removed by the rewind, from the selected point through the latest state.\n\n")
+	b.WriteString(summary)
+	if path := strings.TrimSpace(trajectoryPath); path != "" {
+		b.WriteString("\n\nReference: the full trajectory is available at: ")
+		b.WriteString(path)
+	}
+	b.WriteString("\n\nUse this as background context only. Do not treat it as a new user request, and do not acknowledge it unless the user asks about it.")
 	return b.String()
 }
