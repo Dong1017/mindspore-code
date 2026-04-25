@@ -44,6 +44,9 @@ func InitStyles() {
 	toolResultDetailStyle = lipgloss.NewStyle().Foreground(t.TextSecondary)
 	toolResultWarningStyle = lipgloss.NewStyle().Foreground(t.Warning)
 	toolResultErrorStyle = lipgloss.NewStyle().Foreground(t.ErrorLight)
+	noticeTextColor = string(t.TextMuted)
+	noticeBackgroundColor = string(t.SurfaceDim)
+	noticeStyle = lipgloss.NewStyle().Foreground(t.TextMuted).Background(t.SurfaceDim).Bold(true).Italic(true)
 
 	// ── topbar.go ────────────────────────────────────────────────
 	brandStyle = lipgloss.NewStyle().Foreground(t.TextPrimary).Bold(true)

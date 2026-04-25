@@ -115,8 +115,8 @@ func (a *Application) switchToForkedConversation(oldSession, forked *session.Ses
 
 	systemPrompt, messages := forked.RestoreContext()
 	replayBacklog := forked.ReplayEvents()
-	if hint := inlineResumeHintForSession(oldSessionID); hint != "" {
-		replayBacklog = append(replayBacklog, model.Event{Type: model.ContextNotice, Message: hint})
+	if notice, ok := inlineResumeNoticeForSession(oldSessionID); ok {
+		replayBacklog = append(replayBacklog, notice)
 	}
 	loaded := &loadedConversation{
 		runtimeSession: forked,

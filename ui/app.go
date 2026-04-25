@@ -1247,6 +1247,13 @@ func (a App) maybeDispatchQueuedInput() App {
 	return a
 }
 
+func contextNoticeDisplay(ev model.Event) model.DisplayMode {
+	if kind, _ := ev.Meta[model.EventMetaNoticeKind].(string); kind == model.NoticeKindResume {
+		return model.DisplayResumeNotice
+	}
+	return model.DisplayNotice
+}
+
 func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 	a = a.applyUsageSnapshot(ev)
 	prevMessages := append([]model.Message(nil), a.state.Messages...)
@@ -1302,7 +1309,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		a.state = a.finalizeAgentMessage(model.Message{Kind: model.MsgAgent, Content: content, RawANSI: ev.RawANSI})
 
 	case model.ContextNotice:
-		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: ev.Message, Display: model.DisplayNotice})
+		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: ev.Message, Display: contextNoticeDisplay(ev)})
 
 	case model.AgentReplyDelta:
 		a.replayWait = nil

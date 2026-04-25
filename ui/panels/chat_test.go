@@ -34,6 +34,45 @@ func TestInitStyles_UserMessagesUseBlackTextInsideBoldBlock(t *testing.T) {
 	}
 }
 
+func TestInitStyles_NoticeUsesHighlightedMutedItalicText(t *testing.T) {
+	orig := theme.Current
+	t.Cleanup(func() {
+		theme.Current = orig
+		InitStyles()
+	})
+
+	theme.Current = theme.Dark
+	InitStyles()
+
+	if got := noticeStyle.GetForeground(); got != theme.Dark.TextMuted {
+		t.Fatalf("noticeStyle foreground = %v, want %v", got, theme.Dark.TextMuted)
+	}
+	if got := noticeStyle.GetBackground(); got != theme.Dark.SurfaceDim {
+		t.Fatalf("noticeStyle background = %v, want %v", got, theme.Dark.SurfaceDim)
+	}
+	if !noticeStyle.GetBold() {
+		t.Fatal("noticeStyle bold = false, want true")
+	}
+	if !noticeStyle.GetItalic() {
+		t.Fatal("noticeStyle italic = false, want true")
+	}
+}
+
+func TestRenderMessages_NoticesUseSharedStyleAndInlineCodeHighlight(t *testing.T) {
+	state := model.State{Messages: []model.Message{
+		{Kind: model.MsgAgent, Content: "Run `/resume sess_123` now", Display: model.DisplayNotice},
+		{Kind: model.MsgAgent, Content: "Resume with `/resume sess_456`", Display: model.DisplayResumeNotice},
+	}}
+
+	view := RenderMessages(state, "", "", 80, true)
+	if got := strings.Count(view, "\x1b[38;5;240;48;5;236;1;3m"); got < 2 {
+		t.Fatalf("expected shared notice style on both notices, count = %d in %q", got, view)
+	}
+	if got := strings.Count(view, "\x1b[38;5;203;48;5;238;1;3m"); got < 2 {
+		t.Fatalf("expected highlighted inline code in both notices, count = %d in %q", got, view)
+	}
+}
+
 func TestRenderMessages_ToolPendingShowsOneCallLine(t *testing.T) {
 	state := model.State{
 		Messages: []model.Message{

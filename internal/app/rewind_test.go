@@ -123,6 +123,16 @@ func drainUntilNoticeContaining(t *testing.T, app *Application, substring string
 	}
 }
 
+func assertResumeNotice(t *testing.T, notice model.Event, oldSessionID string) {
+	t.Helper()
+	if got, want := notice.Message, "Resume the previous conversation with: `/resume "+oldSessionID+"`"; got != want {
+		t.Fatalf("resume notice = %q, want %q", got, want)
+	}
+	if got, want := notice.Meta[model.EventMetaNoticeKind], model.NoticeKindResume; got != want {
+		t.Fatalf("resume notice kind = %v, want %q", got, want)
+	}
+}
+
 func TestCmdRewindOpensCheckpointPicker(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
@@ -233,9 +243,7 @@ func TestCmdRewindApplyForksConversationBeforeCheckpoint(t *testing.T) {
 		}
 	}
 	notice := drainUntilNoticeContaining(t, app, oldSessionID)
-	if !strings.Contains(notice.Message, "Resume the previous conversation with:") {
-		t.Fatalf("resume notice = %q, want resume hint", notice.Message)
-	}
+	assertResumeNotice(t, notice, oldSessionID)
 }
 
 func TestCmdRewindApplyRestoresTrackedFiles(t *testing.T) {
@@ -342,9 +350,7 @@ func TestCmdRewindApplySummarizesRewoundHistory(t *testing.T) {
 		t.Fatalf("summary context = %q, want rewind summary", got)
 	}
 	notice := drainUntilNoticeContaining(t, app, oldSessionID)
-	if !strings.Contains(notice.Message, "Resume the previous conversation with:") {
-		t.Fatalf("resume notice = %q, want resume hint", notice.Message)
-	}
+	assertResumeNotice(t, notice, oldSessionID)
 }
 
 func TestCmdBranchForksCurrentConversation(t *testing.T) {
@@ -399,9 +405,7 @@ func TestCmdBranchForksCurrentConversation(t *testing.T) {
 				t.Fatalf("branched context message count = %d, want %d", got, want)
 			}
 			notice := drainUntilNoticeContaining(t, app, oldSessionID)
-			if !strings.Contains(notice.Message, "Resume the previous conversation with:") {
-				t.Fatalf("resume notice = %q, want resume hint", notice.Message)
-			}
+			assertResumeNotice(t, notice, oldSessionID)
 		})
 	}
 }

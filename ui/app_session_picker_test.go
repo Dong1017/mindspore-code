@@ -120,7 +120,7 @@ func TestClearScreenSummaryShowsNoticeMessage(t *testing.T) {
 
 	next, _ := app.handleEvent(model.Event{
 		Type:    model.ClearScreen,
-		Summary: "Resume the previous conversation with: /resume sess_123",
+		Summary: "Resume the previous conversation with: `/resume sess_123`",
 	})
 	app = next.(App)
 
@@ -130,7 +130,7 @@ func TestClearScreenSummaryShowsNoticeMessage(t *testing.T) {
 	if got := app.state.Messages[0].Display; got != model.DisplayNotice {
 		t.Fatalf("message display after clear = %v, want notice", got)
 	}
-	if got := app.state.Messages[0].Content; got != "Resume the previous conversation with: /resume sess_123" {
+	if got := app.state.Messages[0].Content; got != "Resume the previous conversation with: `/resume sess_123`" {
 		t.Fatalf("message content after clear = %q", got)
 	}
 }

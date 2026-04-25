@@ -16,6 +16,8 @@ var (
 	mdRenderer   *glamour.TermRenderer
 )
 
+const noticeInlineCodeBackground = "238"
+
 var orderedListPattern = regexp.MustCompile(`^\d+\.\s+`)
 
 // markdownStyle returns a custom glamour StyleConfig based on the dark theme
@@ -162,6 +164,18 @@ func markdownStyle() ansi.StyleConfig {
 	return s
 }
 
+func noticeMarkdownStyle() ansi.StyleConfig {
+	s := markdownStyle()
+	s.Document.StylePrimitive.Color = stringPtr(noticeTextColor)
+	s.Document.StylePrimitive.BackgroundColor = stringPtr(noticeBackgroundColor)
+	s.Document.StylePrimitive.Bold = boolPtr(true)
+	s.Document.StylePrimitive.Italic = boolPtr(true)
+	s.Code.StylePrimitive.BackgroundColor = stringPtr(noticeInlineCodeBackground)
+	s.Code.StylePrimitive.Bold = boolPtr(true)
+	s.Code.StylePrimitive.Italic = boolPtr(true)
+	return s
+}
+
 // prepareForGlamour adds markdown hard-break markers (two trailing spaces)
 // to non-blank lines outside fenced code blocks, so that glamour's
 // paragraph renderer preserves the original line structure instead of
@@ -254,6 +268,30 @@ func RenderMarkdown(content string, width int) string {
 	return strings.TrimSpace(out)
 }
 
+// RenderNoticeMarkdown applies the shared notice treatment while preserving
+// markdown inline-code highlighting.
+func RenderNoticeMarkdown(content string, width int) string {
+	if strings.TrimSpace(content) == "" {
+		return content
+	}
+	if width < 10 {
+		width = 10
+	}
+	prepared := prepareForGlamour(content)
+	r, err := glamour.NewTermRenderer(
+		glamour.WithStyles(noticeMarkdownStyle()),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		return noticeStyle.Width(width).Render(content)
+	}
+	out, err := r.Render(prepared)
+	if err != nil {
+		return noticeStyle.Width(width).Render(content)
+	}
+	return strings.TrimSpace(out)
+}
+
 // cappedMessageWidth returns width capped at maxTextWidth.
 func cappedMessageWidth(width int) int {
 	if width > maxTextWidth {
@@ -285,5 +323,5 @@ func getRenderer(width int) *glamour.TermRenderer {
 }
 
 func boolPtr(b bool) *bool       { return &b }
-func stringPtr(s string) *string  { return &s }
+func stringPtr(s string) *string { return &s }
 func uintPtr(u uint) *uint       { return &u }

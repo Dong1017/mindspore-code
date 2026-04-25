@@ -45,11 +45,17 @@ const (
 type DisplayMode int
 
 const (
-	DisplayExpanded  DisplayMode = iota // full output shown (Shell user-cmd, Edit, Write)
-	DisplayCollapsed                    // 1-line summary (Read, Grep, Glob, agent-internal Shell)
-	DisplayWarning                      // expanded + yellow highlight
-	DisplayError                        // expanded + red highlight
-	DisplayNotice                       // non-reply agent text (context notices, etc.)
+	DisplayExpanded     DisplayMode = iota // full output shown (Shell user-cmd, Edit, Write)
+	DisplayCollapsed                       // 1-line summary (Read, Grep, Glob, agent-internal Shell)
+	DisplayWarning                         // expanded + yellow highlight
+	DisplayError                           // expanded + red highlight
+	DisplayNotice                          // non-reply agent text (context notices, etc.)
+	DisplayResumeNotice                    // muted italic resume hint
+)
+
+const (
+	EventMetaNoticeKind = "notice_kind"
+	NoticeKindResume    = "resume"
 )
 
 // Message is a single entry in the chat stream.
