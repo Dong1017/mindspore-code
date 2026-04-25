@@ -114,12 +114,16 @@ func (a *Application) switchToForkedConversation(oldSession, forked *session.Ses
 	}
 
 	systemPrompt, messages := forked.RestoreContext()
+	replayBacklog := forked.ReplayEvents()
+	if hint := inlineResumeHintForSession(oldSessionID); hint != "" {
+		replayBacklog = append(replayBacklog, model.Event{Type: model.ContextNotice, Message: hint})
+	}
 	loaded := &loadedConversation{
 		runtimeSession: forked,
 		systemPrompt:   systemPrompt,
 		messages:       messages,
 		usageSnapshot:  forked.UsageSnapshot(),
-		replayBacklog:  forked.ReplayEvents(),
+		replayBacklog:  replayBacklog,
 	}
 
 	a.bindConversation(loaded, sessionSwitchOptions{})
@@ -130,7 +134,6 @@ func (a *Application) switchToForkedConversation(oldSession, forked *session.Ses
 	a.EventCh <- model.Event{
 		Type:         model.ClearScreen,
 		Message:      message,
-		Summary:      inlineResumeHintForSession(oldSessionID),
 		InputPrefill: inputPrefill,
 	}
 	a.startReplayHistory()

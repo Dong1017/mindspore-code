@@ -103,6 +103,26 @@ func buildRewindFixture(t *testing.T, workDir string, mutateThirdTurn bool) rewi
 	}
 }
 
+func drainUntilNoticeContaining(t *testing.T, app *Application, substring string) model.Event {
+	t.Helper()
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+
+	for {
+		select {
+		case ev := <-app.EventCh:
+			if ev.Type == model.ToolError {
+				t.Fatalf("unexpected tool error while waiting for notice: %#v", ev)
+			}
+			if ev.Type == model.ContextNotice && strings.Contains(ev.Message, substring) {
+				return ev
+			}
+		case <-timer.C:
+			t.Fatalf("timed out waiting for notice containing %q", substring)
+		}
+	}
+}
+
 func TestCmdRewindOpensCheckpointPicker(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
@@ -171,8 +191,8 @@ func TestCmdRewindApplyForksConversationBeforeCheckpoint(t *testing.T) {
 	if got, want := ev.InputPrefill, "third request"; got != want {
 		t.Fatalf("clear input prefill = %q, want %q", got, want)
 	}
-	if !strings.Contains(ev.Summary, oldSessionID) {
-		t.Fatalf("clear summary = %q, want old session hint", ev.Summary)
+	if ev.Summary != "" {
+		t.Fatalf("clear summary = %q, want empty", ev.Summary)
 	}
 	if got := app.session.ID(); got == oldSessionID {
 		t.Fatalf("forked session id = %q, want a new session id", got)
@@ -211,6 +231,10 @@ func TestCmdRewindApplyForksConversationBeforeCheckpoint(t *testing.T) {
 		if replayed[i].Message != want[i].message {
 			t.Fatalf("replayed[%d].Message = %q, want %q", i, replayed[i].Message, want[i].message)
 		}
+	}
+	notice := drainUntilNoticeContaining(t, app, oldSessionID)
+	if !strings.Contains(notice.Message, "Resume the previous conversation with:") {
+		t.Fatalf("resume notice = %q, want resume hint", notice.Message)
 	}
 }
 
@@ -303,8 +327,8 @@ func TestCmdRewindApplySummarizesRewoundHistory(t *testing.T) {
 	if got, want := ev.InputPrefill, "third request"; got != want {
 		t.Fatalf("clear input prefill = %q, want %q", got, want)
 	}
-	if !strings.Contains(ev.Summary, oldSessionID) {
-		t.Fatalf("clear summary = %q, want old session hint", ev.Summary)
+	if ev.Summary != "" {
+		t.Fatalf("clear summary = %q, want empty", ev.Summary)
 	}
 	if got := app.session.ID(); got == oldSessionID {
 		t.Fatalf("forked session id = %q, want a new session id", got)
@@ -316,6 +340,10 @@ func TestCmdRewindApplySummarizesRewoundHistory(t *testing.T) {
 	}
 	if got := messages[4].Content; !strings.Contains(got, "This conversation was rewound.") || !strings.Contains(got, "summarized third turn") {
 		t.Fatalf("summary context = %q, want rewind summary", got)
+	}
+	notice := drainUntilNoticeContaining(t, app, oldSessionID)
+	if !strings.Contains(notice.Message, "Resume the previous conversation with:") {
+		t.Fatalf("resume notice = %q, want resume hint", notice.Message)
 	}
 }
 
@@ -361,14 +389,18 @@ func TestCmdBranchForksCurrentConversation(t *testing.T) {
 			if ev.InputPrefill != "" {
 				t.Fatalf("clear input prefill = %q, want empty", ev.InputPrefill)
 			}
-			if !strings.Contains(ev.Summary, oldSessionID) {
-				t.Fatalf("clear summary = %q, want old session hint", ev.Summary)
+			if ev.Summary != "" {
+				t.Fatalf("clear summary = %q, want empty", ev.Summary)
 			}
 			if got := app.session.ID(); got == oldSessionID {
 				t.Fatalf("forked session id = %q, want a new session id", got)
 			}
 			if got, want := len(app.ctxManager.GetNonSystemMessages()), len(fixture.currentContext); got != want {
 				t.Fatalf("branched context message count = %d, want %d", got, want)
+			}
+			notice := drainUntilNoticeContaining(t, app, oldSessionID)
+			if !strings.Contains(notice.Message, "Resume the previous conversation with:") {
+				t.Fatalf("resume notice = %q, want resume hint", notice.Message)
 			}
 		})
 	}
