@@ -190,35 +190,7 @@ func (a *Application) handleSkillAliasCommand(commandName, rawRemainder string) 
 }
 
 func (a *Application) cmdModel(args []string) {
-	if len(args) == 0 {
-		a.emitModelSetupPopup(true)
-		return
-	}
-
-	modelArg := strings.TrimSpace(strings.Join(args, " "))
-	if preset, ok := resolveBuiltinModelPreset(modelArg); ok {
-		a.switchToBuiltinModelPreset(preset)
-		return
-	}
-
-	a.restoreModelConfigFromPreset()
-	modelArg = args[0]
-	if strings.Contains(modelArg, ":") {
-		parts := strings.SplitN(modelArg, ":", 2)
-		providerName := llm.NormalizeProvider(parts[0])
-		modelName := strings.TrimSpace(parts[1])
-		if !llm.IsSupportedProvider(providerName) {
-			a.EventCh <- model.Event{
-				Type:    model.AgentReply,
-				Message: fmt.Sprintf("Unsupported provider prefix: %s (supported: openai-completion, openai-responses, anthropic)", providerName),
-			}
-			return
-		}
-		a.switchModel(providerName, modelName)
-		return
-	}
-
-	a.switchModel("", modelArg)
+	a.emitModelSetupPopup(true)
 }
 
 // applyPreset applies a preset with the given API key. It saves the current
@@ -238,43 +210,6 @@ func (a *Application) applyPreset(preset builtinModelPreset, apiKey string) erro
 	return nil
 }
 
-func (a *Application) switchToBuiltinModelPreset(preset builtinModelPreset) {
-	a.EventCh <- model.Event{Type: model.AgentThinking}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-	defer cancel()
-
-	apiKey, err := a.resolveModelPresetAPIKey(ctx, preset)
-	if err != nil {
-		a.EventCh <- model.Event{
-			Type:     model.ToolError,
-			ToolName: "model",
-			Message:  fmt.Sprintf("Failed to switch preset: %v", err),
-		}
-		return
-	}
-
-	if err := a.applyPreset(preset, apiKey); err != nil {
-		a.EventCh <- model.Event{
-			Type:     model.ToolError,
-			ToolName: "model",
-			Message:  fmt.Sprintf("Failed to switch preset: %v", err),
-		}
-		return
-	}
-
-	a.EventCh <- model.Event{
-		Type:    model.ModelUpdate,
-		Message: a.Config.Model.Model,
-		CtxMax:  a.Config.Context.Window,
-	}
-
-	a.EventCh <- model.Event{
-		Type:    model.AgentReply,
-		Message: fmt.Sprintf("Model switched to preset: %s", preset.Label),
-	}
-}
-
 func (a *Application) restoreModelConfigFromPreset() {
 	if strings.TrimSpace(a.activeModelPresetID) == "" || a.modelBeforePreset == nil {
 		return
@@ -284,42 +219,20 @@ func (a *Application) restoreModelConfigFromPreset() {
 	a.activeModelPresetID = ""
 }
 
-func (a *Application) switchModel(providerName, modelName string) {
-	a.EventCh <- model.Event{Type: model.AgentThinking}
-
-	err := a.SetProvider(providerName, modelName, "")
-	if err != nil {
-		a.EventCh <- model.Event{
-			Type:     model.ToolError,
-			ToolName: "model",
-			Message:  fmt.Sprintf("Failed to switch model: %v", err),
-		}
-		return
-	}
-
-	a.EventCh <- model.Event{
-		Type:    model.ModelUpdate,
-		Message: a.Config.Model.Model,
-		CtxMax:  a.Config.Context.Window,
-	}
-
-	a.EventCh <- model.Event{
-		Type:    model.AgentReply,
-		Message: fmt.Sprintf("Model switched to: %s", a.Config.Model.Model),
-	}
-}
-
 func (a *Application) cmdModelSetup(args []string) {
-	if len(args) < 2 {
+	if len(args) < 1 {
 		a.EventCh <- model.Event{
 			Type:     model.ToolError,
 			ToolName: "model",
-			Message:  "model setup requires preset ID and token",
+			Message:  "model setup requires preset ID",
 		}
 		return
 	}
 	presetID := args[0]
-	token := strings.TrimSpace(args[1])
+	token := ""
+	if len(args) >= 2 {
+		token = strings.TrimSpace(args[1])
+	}
 
 	preset, ok := resolveBuiltinModelPreset(presetID)
 	if !ok {
@@ -342,10 +255,23 @@ func (a *Application) cmdModelSetup(args []string) {
 
 	a.EventCh <- model.Event{Type: model.AgentThinking}
 
-	// Step 1: Verify token and get user info (same as /login).
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 
+	// If no token provided, use saved credentials.
+	if token == "" {
+		cred, err := loadCredentials()
+		if err != nil || strings.TrimSpace(cred.Token) == "" {
+			a.EventCh <- model.Event{
+				Type:    model.ModelSetupTokenError,
+				Message: "not logged in. Please enter your token.",
+			}
+			return
+		}
+		token = cred.Token
+	}
+
+	// Step 1: Verify token and get user info.
 	userName, userRole, err := a.verifyUserToken(ctx, serverURL, token)
 	if err != nil {
 		a.EventCh <- model.Event{

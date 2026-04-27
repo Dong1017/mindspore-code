@@ -261,6 +261,7 @@ type SetupPopup struct {
 	CurrentMode    string // "mscli-provided", "own", or "" — for (current) badge
 	CurrentPreset  string // preset ID currently active — for (current) badge
 	CanEscape      bool   // false on first boot (no config to fall back to)
+	IsLoggedIn     bool   // true when saved credentials exist — skip token input
 }
 
 type SessionPickerMode string
