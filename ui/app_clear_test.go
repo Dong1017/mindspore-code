@@ -52,3 +52,19 @@ func TestClearScreenClearsVisibleChatState(t *testing.T) {
 		t.Fatalf("cmdOutputLines after clear = %d, want 0", got)
 	}
 }
+
+func TestClearScreenPrefillsInput(t *testing.T) {
+	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+	app.input.Model.SetValue("draft")
+
+	next, _ := app.handleEvent(model.Event{
+		Type:         model.ClearScreen,
+		InputPrefill: "restored prompt",
+	})
+	app = next.(App)
+
+	if got, want := app.input.Value(), "restored prompt"; got != want {
+		t.Fatalf("input after clear = %q, want %q", got, want)
+	}
+}

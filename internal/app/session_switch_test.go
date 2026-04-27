@@ -1,7 +1,6 @@
 package app
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -52,6 +51,12 @@ func TestCmdResumeOpensSessionPicker(t *testing.T) {
 	}
 	if got, want := ev.SessionPicker.Items[0].FirstUserInput, "fix the replay command"; got != want {
 		t.Fatalf("picker first user input = %q, want %q", got, want)
+	}
+	if got, want := ev.SessionPicker.Items[0].LastUserInput, "fix the replay command"; got != want {
+		t.Fatalf("picker last user input = %q, want %q", got, want)
+	}
+	if got, want := ev.SessionPicker.Items[0].TurnCount, 1; got != want {
+		t.Fatalf("picker turn count = %d, want %d", got, want)
 	}
 }
 
@@ -122,8 +127,8 @@ func TestCmdResumeSwitchesConversationAndShowsReturnHint(t *testing.T) {
 	app.cmdResume([]string{target.ID()})
 
 	clearEv := drainUntilEventType(t, app, model.ClearScreen)
-	if !strings.Contains(clearEv.Summary, current.ID()) {
-		t.Fatalf("clear summary = %q, want current session hint", clearEv.Summary)
+	if clearEv.Summary != "" {
+		t.Fatalf("clear summary = %q, want empty", clearEv.Summary)
 	}
 	if got, want := app.session.ID(), target.ID(); got != want {
 		t.Fatalf("active session id = %q, want %q", got, want)
@@ -149,6 +154,8 @@ func TestCmdResumeSwitchesConversationAndShowsReturnHint(t *testing.T) {
 	if replayed[0] != model.UserInput || replayed[1] != model.AgentReply {
 		t.Fatalf("replayed event order = %v, want [UserInput AgentReply]", replayed)
 	}
+	notice := drainUntilNoticeContaining(t, app, current.ID())
+	assertResumeNotice(t, notice, current.ID())
 }
 
 func TestCmdResumeFromEmptyConversationSkipsClearScreen(t *testing.T) {

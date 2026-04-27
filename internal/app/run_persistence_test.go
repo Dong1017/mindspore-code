@@ -21,13 +21,15 @@ import (
 type singleReplyProvider struct {
 	content string
 	usage   llm.Usage
+	lastReq *llm.CompletionRequest
 }
 
 func (p *singleReplyProvider) Name() string {
 	return "single-reply"
 }
 
-func (p *singleReplyProvider) Complete(context.Context, *llm.CompletionRequest) (*llm.CompletionResponse, error) {
+func (p *singleReplyProvider) Complete(_ context.Context, req *llm.CompletionRequest) (*llm.CompletionResponse, error) {
+	p.lastReq = req
 	return &llm.CompletionResponse{Content: p.content, FinishReason: llm.FinishStop, Usage: p.usage}, nil
 }
 
@@ -158,7 +160,7 @@ func TestRunTaskPersistsSessionAfterLiveLLMReply(t *testing.T) {
 		session:    runtimeSession,
 		ctxManager: ctxManager,
 	}
-	engine.SetTrajectoryRecorder(newTrajectoryRecorder(runtimeSession, ctxManager, app.noteLiveLLMActivity))
+	engine.SetTrajectoryRecorder(newTrajectoryRecorder(runtimeSession, ctxManager, workDir, app.noteLiveLLMActivity))
 
 	app.runTask("hello")
 
@@ -166,8 +168,8 @@ func TestRunTaskPersistsSessionAfterLiveLLMReply(t *testing.T) {
 		t.Fatalf("expected trajectory after live llm reply, got %v", err)
 	}
 	snapshotPath := filepath.Join(filepath.Dir(runtimeSession.Path()), "snapshot.json")
-	if _, err := os.Stat(snapshotPath); err != nil {
-		t.Fatalf("expected snapshot after live llm reply, got %v", err)
+	if _, err := os.Stat(snapshotPath); !os.IsNotExist(err) {
+		t.Fatalf("expected no snapshot sidecar after live llm reply, got %v", err)
 	}
 
 	trajectory, err := os.ReadFile(runtimeSession.Path())

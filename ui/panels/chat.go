@@ -40,6 +40,9 @@ var (
 	toolResultDetailStyle  lipgloss.Style
 	toolResultWarningStyle lipgloss.Style
 	toolResultErrorStyle   lipgloss.Style
+	noticeTextColor        string
+	noticeBackgroundColor  string
+	noticeStyle            lipgloss.Style
 )
 
 // RenderMessages converts messages into styled text for the viewport.
@@ -97,7 +100,7 @@ func renderAgentMsg(msg model.Message, width int) string {
 	// interfere with glamour's escape sequences (same approach as crush).
 	bulletPrefix := agentStyle.Render("• ")
 	blankPrefix := agentStyle.Render("  ")
-	if msg.Streaming || msg.Display == model.DisplayNotice {
+	if msg.Streaming || msg.Display == model.DisplayNotice || msg.Display == model.DisplayResumeNotice {
 		bulletPrefix = blankPrefix
 	}
 
@@ -107,7 +110,9 @@ func renderAgentMsg(msg model.Message, width int) string {
 		bodyWidth = 1
 	}
 	rendered := msg.Content
-	if !msg.RawANSI {
+	if msg.Display == model.DisplayNotice || msg.Display == model.DisplayResumeNotice {
+		rendered = RenderNoticeMarkdown(msg.Content, bodyWidth)
+	} else if !msg.RawANSI {
 		rendered = RenderMarkdown(msg.Content, bodyWidth)
 	}
 	lines := strings.Split(rendered, "\n")

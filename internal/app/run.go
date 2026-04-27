@@ -630,7 +630,21 @@ func inlineResumeHintForSession(sessionID string) string {
 	if sessionID == "" {
 		return ""
 	}
-	return fmt.Sprintf("Resume the previous conversation with: /resume %s", sessionID)
+	return fmt.Sprintf("Resume the previous conversation with: `/resume %s`", sessionID)
+}
+
+func inlineResumeNoticeForSession(sessionID string) (model.Event, bool) {
+	message := inlineResumeHintForSession(sessionID)
+	if message == "" {
+		return model.Event{}, false
+	}
+	return model.Event{
+		Type:    model.ContextNotice,
+		Message: message,
+		Meta: map[string]any{
+			model.EventMetaNoticeKind: model.NoticeKindResume,
+		},
+	}, true
 }
 
 func (a *Application) recordUnavailableTurn(userInput, assistantReply string) error {

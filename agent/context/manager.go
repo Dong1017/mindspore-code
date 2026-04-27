@@ -219,7 +219,7 @@ func (m *Manager) AddMessageWithContext(ctx stdctx.Context, msg llm.Message) err
 	preCompactUserMessage := strings.TrimSpace(msg.Role) == "user" && m.shouldCompactLocked(msgTokens)
 	if preCompactUserMessage {
 		targetTokens := m.preAppendCompactionTargetTokensLocked(msgTokens)
-		if err := m.compactToTargetLocked(ctx, targetTokens, CompactTriggerAuto); err != nil {
+		if err := m.compactToTargetLocked(ctx, targetTokens, CompactTriggerAuto, ""); err != nil {
 			return fmt.Errorf("compact context before user message: %w", err)
 		}
 	}
@@ -307,8 +307,18 @@ func (m *Manager) Compact() error {
 	return m.CompactWithContext(stdctx.Background())
 }
 
+// CompactWithInstructions manually triggers context compaction with custom LLM summarization instructions.
+func (m *Manager) CompactWithInstructions(customInstructions string) error {
+	return m.CompactWithContextInstructions(stdctx.Background(), customInstructions)
+}
+
 // CompactWithContext manually triggers context compaction and uses ctx for LLM-based summarization.
 func (m *Manager) CompactWithContext(ctx stdctx.Context) error {
+	return m.CompactWithContextInstructions(ctx, "")
+}
+
+// CompactWithContextInstructions manually triggers context compaction with custom LLM summarization instructions.
+func (m *Manager) CompactWithContextInstructions(ctx stdctx.Context, customInstructions string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if ctx == nil {
@@ -323,7 +333,7 @@ func (m *Manager) CompactWithContext(ctx stdctx.Context) error {
 	if targetTokens <= 0 || currentTokens <= targetTokens {
 		targetTokens = currentTokens / smallWindowCompactTargetDivisor
 	}
-	return m.compactToTargetLocked(ctx, targetTokens, CompactTriggerManual)
+	return m.compactToTargetLocked(ctx, targetTokens, CompactTriggerManual, customInstructions)
 }
 
 // TokenUsage returns current token usage.
@@ -575,7 +585,7 @@ func (m *Manager) compactLocked(ctx stdctx.Context) error {
 	if currentTokens == 0 || !m.shouldCompactLocked(0) {
 		return nil
 	}
-	return m.compactToTargetLocked(ctx, m.compactionTargetTokensLocked(), CompactTriggerAuto)
+	return m.compactToTargetLocked(ctx, m.compactionTargetTokensLocked(), CompactTriggerAuto, "")
 }
 
 func (m *Manager) preAppendCompactionTargetTokensLocked(additionalTokens int) int {
@@ -609,7 +619,7 @@ func (m *Manager) preAppendCompactionTargetTokensLocked(additionalTokens int) in
 	return targetTokens
 }
 
-func (m *Manager) compactToTargetLocked(ctx stdctx.Context, targetTokens int, trigger CompactTrigger) error {
+func (m *Manager) compactToTargetLocked(ctx stdctx.Context, targetTokens int, trigger CompactTrigger, customInstructions string) error {
 	currentTokens := m.currentTokensLocked()
 	if currentTokens == 0 {
 		return nil
@@ -628,7 +638,7 @@ func (m *Manager) compactToTargetLocked(ctx stdctx.Context, targetTokens int, tr
 	compacted := m.messages
 	var result CompactResult
 	if m.shouldUseLLMCompactLocked() {
-		next, llmResult, err := m.compactWithLLMLocked(ctx, targetTokens)
+		next, llmResult, err := m.compactWithLLMLocked(ctx, targetTokens, customInstructions)
 		if err == nil {
 			compacted = next
 			result = llmResult

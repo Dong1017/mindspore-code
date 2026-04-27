@@ -278,11 +278,41 @@ type SessionPicker struct {
 	EmptyMessage string
 }
 
+type RewindRestoreMode string
+
+const (
+	RewindRestoreConversation     RewindRestoreMode = "conversation"
+	RewindRestoreCodeConversation RewindRestoreMode = "code"
+	RewindRestoreSummarize        RewindRestoreMode = "summarize"
+)
+
+type RewindPicker struct {
+	Items            []RewindCheckpointItem
+	Selected         int
+	Confirming       bool
+	ConfirmSelected  int
+	EmptyMessage     string
+	SummaryInput     string
+	SummaryCursor    int
+	CapturingSummary bool
+}
+
+type RewindCheckpointItem struct {
+	MessageID      string
+	Timestamp      time.Time
+	Preview        string
+	LastUserInput  string
+	TurnCount      int
+	HasCodeRestore bool
+}
+
 type SessionPickerItem struct {
 	ID             string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	FirstUserInput string
+	LastUserInput  string
+	TurnCount      int
 }
 
 // MoveModeSelection moves the mode cursor by delta, wrapping around 2 options.
@@ -307,6 +337,65 @@ func (p *SessionPicker) MoveSelection(delta int) {
 		return
 	}
 	p.Selected = (p.Selected + delta%n + n) % n
+}
+
+func (p *RewindPicker) MoveSelection(delta int) {
+	n := len(p.Items)
+	if n == 0 {
+		return
+	}
+	p.Selected = (p.Selected + delta%n + n) % n
+}
+
+func (p *RewindPicker) SelectedItem() *RewindCheckpointItem {
+	if p == nil || len(p.Items) == 0 || p.Selected < 0 || p.Selected >= len(p.Items) {
+		return nil
+	}
+	return &p.Items[p.Selected]
+}
+
+func (p *RewindPicker) MoveConfirmSelection(delta int) {
+	if p == nil {
+		return
+	}
+	item := p.SelectedItem()
+	if item == nil {
+		p.ConfirmSelected = 0
+		return
+	}
+	n := 2
+	if item.HasCodeRestore {
+		n = 3
+	}
+	if n <= 1 {
+		p.ConfirmSelected = 0
+		return
+	}
+	p.ConfirmSelected = (p.ConfirmSelected + delta%n + n) % n
+}
+
+func (p *RewindPicker) ConfirmMode() RewindRestoreMode {
+	if p == nil {
+		return RewindRestoreConversation
+	}
+	item := p.SelectedItem()
+	if item == nil {
+		return RewindRestoreConversation
+	}
+	if item.HasCodeRestore {
+		switch p.ConfirmSelected {
+		case 1:
+			return RewindRestoreCodeConversation
+		case 2:
+			return RewindRestoreSummarize
+		default:
+			return RewindRestoreConversation
+		}
+	}
+	if p.ConfirmSelected == 1 {
+		return RewindRestoreSummarize
+	}
+	return RewindRestoreConversation
 }
 
 type TrainMetricsView struct {

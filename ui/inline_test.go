@@ -103,8 +103,9 @@ func TestWindowResizeClearsAndReprintsHistory(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected replayed history to contain %q, got:\n%s", want, got)
 		}
+	}
+}
 
-		
 func TestEnsureWaitForEvent_SequencesLocalCommandBeforeBackendEvent(t *testing.T) {
 	eventCh := make(chan model.Event, 1)
 	eventCh <- model.Event{Type: model.AgentReply, Message: "backend reply"}

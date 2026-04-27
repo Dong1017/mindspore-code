@@ -45,11 +45,17 @@ const (
 type DisplayMode int
 
 const (
-	DisplayExpanded  DisplayMode = iota // full output shown (Shell user-cmd, Edit, Write)
-	DisplayCollapsed                    // 1-line summary (Read, Grep, Glob, agent-internal Shell)
-	DisplayWarning                      // expanded + yellow highlight
-	DisplayError                        // expanded + red highlight
-	DisplayNotice                       // non-reply agent text (context notices, etc.)
+	DisplayExpanded     DisplayMode = iota // full output shown (Shell user-cmd, Edit, Write)
+	DisplayCollapsed                       // 1-line summary (Read, Grep, Glob, agent-internal Shell)
+	DisplayWarning                         // expanded + yellow highlight
+	DisplayError                           // expanded + red highlight
+	DisplayNotice                          // non-reply agent text (context notices, etc.)
+	DisplayResumeNotice                    // muted italic resume hint
+)
+
+const (
+	EventMetaNoticeKind = "notice_kind"
+	NoticeKindResume    = "resume"
 )
 
 // Message is a single entry in the chat stream.
@@ -103,6 +109,7 @@ const (
 	ModelSetupOpen        EventType = "ModelSetupOpen"
 	ModelSetupClose       EventType = "ModelSetupClose"
 	SessionPickerOpen     EventType = "SessionPickerOpen"
+	RewindPickerOpen      EventType = "RewindPickerOpen"
 	ModelSetupTokenError  EventType = "ModelSetupTokenError"
 	MouseModeToggle       EventType = "MouseModeToggle"
 	IssueUserUpdate       EventType = "IssueUserUpdate"
@@ -133,8 +140,10 @@ type Event struct {
 	Popup         *SelectionPopup // non-nil for popup events only
 	SetupPopup    *SetupPopup     // non-nil for model setup popup events
 	SessionPicker *SessionPicker
+	RewindPicker  *RewindPicker
 	IssueView     *IssueEventData // non-nil for issue view events only
 	Issue         *issuepkg.Issue // reserved for lightweight issue payloads
+	InputPrefill  string
 }
 
 // ReplayWaitData lets replay fast-forward the UI timer while using shorter real delays.

@@ -162,7 +162,7 @@ func (r *Registry) registerDefaults() {
 	r.Register(Command{
 		Name:        "/compact",
 		Description: "Compact conversation context",
-		Usage:       "/compact",
+		Usage:       "/compact [optional custom summarization instructions]",
 	})
 
 	r.Register(Command{
@@ -175,6 +175,24 @@ func (r *Registry) registerDefaults() {
 		Name:        "/clear",
 		Description: "Start a fresh conversation",
 		Usage:       "/clear",
+	})
+
+	r.Register(Command{
+		Name:        "/branch",
+		Description: "Fork the current session",
+		Usage:       "/branch",
+	})
+
+	r.Register(Command{
+		Name:        "/fork",
+		Description: "Fork the current session",
+		Usage:       "/fork",
+	})
+
+	r.Register(Command{
+		Name:        "/rewind",
+		Description: "Fork a new session from an earlier checkpoint",
+		Usage:       "/rewind",
 	})
 
 	r.Register(Command{

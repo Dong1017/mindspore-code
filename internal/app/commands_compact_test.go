@@ -29,7 +29,7 @@ func TestCmdCompactCompactsContextAndEmitsTokenUpdate(t *testing.T) {
 	app := newModelCommandTestApp()
 	app.ctxManager = ctxManager
 
-	app.cmdCompact()
+	app.cmdCompact("")
 
 	drainUntilEventType(t, app, model.AgentThinking)
 	drainUntilEventType(t, app, model.ContextCompactStarted)
@@ -47,6 +47,51 @@ func TestCmdCompactCompactsContextAndEmitsTokenUpdate(t *testing.T) {
 	}
 	if !strings.Contains(reply.Message, "Context compacted:") {
 		t.Fatalf("reply message = %q, want compaction summary", reply.Message)
+	}
+}
+
+func TestCmdCompactPassesCustomSummarizationInstructions(t *testing.T) {
+	t.Setenv("MSCLI_COMPACT_MODE", "llm")
+
+	provider := &singleReplyProvider{
+		content: "<summary>1. Primary Request and Intent:\n   preserve API edge cases.</summary>",
+	}
+	ctxManager := agentctx.NewManager(agentctx.ManagerConfig{
+		ContextWindow:       1000,
+		ReserveTokens:       100,
+		CompactionThreshold: 0.9,
+		CompactProvider:     provider,
+	})
+	for i := 0; i < 3; i++ {
+		if err := ctxManager.AddMessage(llm.NewUserMessage(strings.Repeat("before compact ", 80))); err != nil {
+			t.Fatalf("AddMessage #%d failed: %v", i+1, err)
+		}
+	}
+
+	app := newModelCommandTestApp()
+	app.ctxManager = ctxManager
+
+	app.handleCommand("/compact preserve API edge cases")
+
+	drainUntilEventType(t, app, model.AgentThinking)
+	drainUntilEventType(t, app, model.ContextCompactStarted)
+	drainUntilEventType(t, app, model.TokenUpdate)
+	drainUntilEventType(t, app, model.AgentReply)
+
+	if provider.lastReq == nil {
+		t.Fatal("provider request was not captured")
+	}
+	prompt := provider.lastReq.Messages[len(provider.lastReq.Messages)-1].Content
+	instructionsIndex := strings.Index(prompt, "Additional Instructions: preserve API edge cases")
+	if instructionsIndex < 0 {
+		t.Fatalf("compact prompt missing custom instructions: %q", prompt)
+	}
+	reminderIndex := strings.LastIndex(prompt, "REMINDER: Do NOT call any tools.")
+	if reminderIndex < 0 {
+		t.Fatalf("compact prompt missing final reminder: %q", prompt)
+	}
+	if instructionsIndex > reminderIndex {
+		t.Fatalf("compact prompt custom instructions appear after final reminder: %q", prompt)
 	}
 }
 
@@ -80,7 +125,7 @@ func TestCmdCompactDebugDumpsPreCompactSnapshot(t *testing.T) {
 	app.llmDebugDumper = llm.NewDebugDumper(filepath.Dir(runtimeSession.Path()))
 	ctxManager.SetPreCompactSnapshotHook(app.dumpPreCompactSnapshot)
 
-	app.cmdCompact()
+	app.cmdCompact("")
 
 	drainUntilEventType(t, app, model.AgentThinking)
 	drainUntilEventType(t, app, model.ContextCompactStarted)

@@ -51,14 +51,35 @@ func TestContextNoticeDoesNotInterruptStreamingAgentMessage(t *testing.T) {
 	}
 }
 
+func TestResumeContextNoticeUsesResumeDisplay(t *testing.T) {
+	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+
+	next, _ := app.handleEvent(model.Event{
+		Type:    model.ContextNotice,
+		Message: "Resume the previous conversation with: `/resume sess_123`",
+		Meta: map[string]any{
+			model.EventMetaNoticeKind: model.NoticeKindResume,
+		},
+	})
+	app = next.(App)
+
+	if got, want := len(app.state.Messages), 1; got != want {
+		t.Fatalf("message count after resume notice = %d, want %d", got, want)
+	}
+	if got := app.state.Messages[0].Display; got != model.DisplayResumeNotice {
+		t.Fatalf("resume notice display = %v, want %v", got, model.DisplayResumeNotice)
+	}
+}
+
 func TestAgentReplyPreservesRawANSIFlag(t *testing.T) {
 	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
 	app.bootActive = false
 
 	next, _ := app.handleEvent(model.Event{
-		Type:     model.AgentReply,
-		Message:  "\x1b[38;5;252m[ OVERVIEW ]\x1b[0m",
-		RawANSI:  true,
+		Type:    model.AgentReply,
+		Message: "\x1b[38;5;252m[ OVERVIEW ]\x1b[0m",
+		RawANSI: true,
 	})
 	app = next.(App)
 

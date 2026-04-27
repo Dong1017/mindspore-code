@@ -213,6 +213,7 @@ type App struct {
 	modelPicker      *model.SelectionPopup
 	setupPopup       *model.SetupPopup
 	sessionPicker    *model.SessionPicker
+	rewindPicker     *model.RewindPicker
 	appendHistoryFn  func(string)
 
 	// Transcript viewer (alt-screen overlay, toggled via Ctrl+O)
@@ -468,7 +469,7 @@ func (a *App) wantsModalAltScreen() bool {
 	if a == nil {
 		return false
 	}
-	return a.modelPicker != nil || a.setupPopup != nil || a.sessionPicker != nil || a.transcriptView != nil
+	return a.modelPicker != nil || a.setupPopup != nil || a.sessionPicker != nil || a.rewindPicker != nil || a.transcriptView != nil
 }
 
 func (a *App) syncModalAltScreen() tea.Cmd {
@@ -779,7 +780,114 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Multi-step model setup popup navigation
+	if a.rewindPicker != nil {
+		if !a.rewindPicker.Confirming {
+			switch msg.String() {
+			case "up", "left":
+				a.rewindPicker.MoveSelection(-1)
+				return a, nil
+			case "down", "right":
+				a.rewindPicker.MoveSelection(1)
+				return a, nil
+			case "enter":
+				if len(a.rewindPicker.Items) == 0 {
+					a.rewindPicker = nil
+					return a, a.syncModalAltScreen()
+				}
+				a.rewindPicker.Confirming = true
+				a.rewindPicker.MoveConfirmSelection(0)
+				return a, nil
+			case "esc":
+				a.rewindPicker = nil
+				return a, a.syncModalAltScreen()
+			}
+			return a, nil
+		}
+
+		if a.rewindPicker.CapturingSummary {
+			switch msg.String() {
+			case "enter":
+				item := a.rewindPicker.SelectedItem()
+				context := strings.TrimSpace(a.rewindPicker.SummaryInput)
+				a.rewindPicker = nil
+				if item != nil && a.userCh != nil {
+					command := fmt.Sprintf("/__rewind %s %s", item.MessageID, model.RewindRestoreSummarize)
+					if context != "" {
+						command += " " + context
+					}
+					select {
+					case a.userCh <- command:
+					default:
+					}
+				}
+				return a, a.syncModalAltScreen()
+			case "esc":
+				a.rewindPicker.CapturingSummary = false
+				return a, nil
+			case "backspace":
+				a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor = deleteRuneBeforeCursor(a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor)
+				return a, nil
+			case "delete":
+				a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor = deleteRuneAtCursor(a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor)
+				return a, nil
+			case "left":
+				a.rewindPicker.SummaryCursor = moveCursorLeft(a.rewindPicker.SummaryCursor)
+				return a, nil
+			case "right":
+				a.rewindPicker.SummaryCursor = moveCursorRight(a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor)
+				return a, nil
+			case "home", "ctrl+a":
+				a.rewindPicker.SummaryCursor = 0
+				return a, nil
+			case "end", "ctrl+e":
+				a.rewindPicker.SummaryCursor = len([]rune(a.rewindPicker.SummaryInput))
+				return a, nil
+			case " ":
+				a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor = insertRunesAtCursor(a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor, []rune{' '})
+				return a, nil
+			default:
+				if msg.Type == tea.KeyRunes {
+					a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor = insertRunesAtCursor(a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor, msg.Runes)
+				} else if msg.Type == tea.KeySpace {
+					a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor = insertRunesAtCursor(a.rewindPicker.SummaryInput, a.rewindPicker.SummaryCursor, []rune{' '})
+				}
+				return a, nil
+			}
+		}
+
+		switch msg.String() {
+		case "up", "left":
+			a.rewindPicker.MoveConfirmSelection(-1)
+			return a, nil
+		case "down", "right", "tab":
+			a.rewindPicker.MoveConfirmSelection(1)
+			return a, nil
+		case "enter":
+			item := a.rewindPicker.SelectedItem()
+			mode := a.rewindPicker.ConfirmMode()
+			if mode == model.RewindRestoreSummarize {
+				a.rewindPicker.CapturingSummary = true
+				a.rewindPicker.SummaryInput = ""
+				a.rewindPicker.SummaryCursor = 0
+				return a, nil
+			}
+			a.rewindPicker = nil
+			if item != nil && a.userCh != nil {
+				select {
+				case a.userCh <- fmt.Sprintf("/__rewind %s %s", item.MessageID, mode):
+				default:
+				}
+			}
+			return a, a.syncModalAltScreen()
+		case "esc":
+			a.rewindPicker.Confirming = false
+			a.rewindPicker.ConfirmSelected = 0
+			return a, nil
+		}
+		return a, nil
+	}
+
+	// Session picker navigation
 	if a.sessionPicker != nil {
 		switch msg.String() {
 		case "up", "left":
@@ -1139,6 +1247,13 @@ func (a App) maybeDispatchQueuedInput() App {
 	return a
 }
 
+func contextNoticeDisplay(ev model.Event) model.DisplayMode {
+	if kind, _ := ev.Meta[model.EventMetaNoticeKind].(string); kind == model.NoticeKindResume {
+		return model.DisplayResumeNotice
+	}
+	return model.DisplayNotice
+}
+
 func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 	a = a.applyUsageSnapshot(ev)
 	prevMessages := append([]model.Message(nil), a.state.Messages...)
@@ -1194,7 +1309,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		a.state = a.finalizeAgentMessage(model.Message{Kind: model.MsgAgent, Content: content, RawANSI: ev.RawANSI})
 
 	case model.ContextNotice:
-		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: ev.Message, Display: model.DisplayNotice})
+		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: ev.Message, Display: contextNoticeDisplay(ev)})
 
 	case model.AgentReplyDelta:
 		a.replayWait = nil
@@ -1401,6 +1516,10 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		if a.cmdOutputLines != nil {
 			*a.cmdOutputLines = 0
 		}
+		if ev.InputPrefill != "" {
+			a.input.Model.SetValue(ev.InputPrefill)
+			a.resizeActiveLayout()
+		}
 		if strings.TrimSpace(ev.Summary) != "" {
 			a.state = a.state.WithMessage(model.Message{
 				Kind:    model.MsgAgent,
@@ -1448,6 +1567,14 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 			cp := *ev.SessionPicker
 			cp.Items = append([]model.SessionPickerItem(nil), ev.SessionPicker.Items...)
 			a.sessionPicker = &cp
+			eventCmd = combineCmds(eventCmd, a.syncModalAltScreen())
+		}
+
+	case model.RewindPickerOpen:
+		if ev.RewindPicker != nil {
+			cp := *ev.RewindPicker
+			cp.Items = append([]model.RewindCheckpointItem(nil), ev.RewindPicker.Items...)
+			a.rewindPicker = &cp
 			eventCmd = combineCmds(eventCmd, a.syncModalAltScreen())
 		}
 
@@ -3381,6 +3508,9 @@ func (a App) View() string {
 	blank := strings.Repeat("\n", blankLines)
 	if a.sessionPicker != nil {
 		return panels.RenderSessionPicker(a.sessionPicker, a.width, a.height)
+	}
+	if a.rewindPicker != nil {
+		return panels.RenderRewindPicker(a.rewindPicker, a.width, a.height)
 	}
 	if a.trainView.Active && a.trainView.SelectionPopup != nil {
 		return overlayPopup(blank, panels.RenderSelectionPopup(a.trainView.SelectionPopup), a.width, a.height)

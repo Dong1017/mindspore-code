@@ -73,6 +73,11 @@ func resolveSafePath(workDir, input string) (string, error) {
 	return fullAbs, nil
 }
 
+// ResolveSafePath exposes the same path validation used by filesystem tools.
+func ResolveSafePath(workDir, input string) (string, error) {
+	return resolveSafePath(workDir, input)
+}
+
 func normalizeAllowedAbsolutePath(input string) (string, error) {
 	cleanedSlash := filepath.ToSlash(filepath.Clean(input))
 	if !matchesAllowedHomePath(cleanedSlash) {

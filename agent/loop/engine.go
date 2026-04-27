@@ -45,6 +45,7 @@ type TrajectoryRecorder struct {
 	RecordToolResult        func(llm.ToolCall, string) error
 	RecordSkillActivate     func(string) error
 	RecordContextCompaction func(trigger string, beforeTokens, afterTokens int, message string) error
+	PrepareFileMutation     func(llm.ToolCall) error
 	PersistSnapshot         func() error
 }
 
@@ -475,6 +476,12 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 		}
 		ex.addEvent(NewEvent(EventToolError, errMsg))
 		return nil
+	}
+
+	if ex.engine.recorder != nil && ex.engine.recorder.PrepareFileMutation != nil {
+		if err := ex.engine.recorder.PrepareFileMutation(tc); err != nil {
+			return err
+		}
 	}
 
 	startEv := NewEvent(EventToolCallStart, describeToolCall(toolName, tc.Function.Arguments))

@@ -84,6 +84,8 @@ func (a *Application) openSessionPicker(mode model.SessionPickerMode, replaySpee
 			CreatedAt:      summary.CreatedAt,
 			UpdatedAt:      summary.UpdatedAt,
 			FirstUserInput: summary.FirstUserInput,
+			LastUserInput:  summary.LastUserInput,
+			TurnCount:      summary.TurnCount,
 		})
 	}
 
@@ -109,9 +111,10 @@ func (a *Application) switchConversation(opts sessionSwitchOptions) {
 		return
 	}
 
-	resumeHint := ""
+	var resumeNotice model.Event
+	hasResumeNotice := false
 	if a.session != nil && a.sessionLLMActivity.Load() {
-		resumeHint = inlineResumeHintForSession(a.session.ID())
+		resumeNotice, hasResumeNotice = inlineResumeNoticeForSession(a.session.ID())
 	}
 	if err := a.persistSessionSnapshot(); err != nil {
 		a.emitToolError("session", "Failed to preserve the current conversation: %v", err)
@@ -127,6 +130,9 @@ func (a *Application) switchConversation(opts sessionSwitchOptions) {
 		a.emitToolError("session", "Failed to load %s: %v", target, err)
 		return
 	}
+	if hasResumeNotice && !opts.Replay {
+		loaded.replayBacklog = append(loaded.replayBacklog, resumeNotice)
+	}
 
 	previous := a.session
 	a.bindConversation(loaded, opts)
@@ -136,10 +142,14 @@ func (a *Application) switchConversation(opts sessionSwitchOptions) {
 	}
 
 	if shouldClearScreen {
+		summary := ""
+		if opts.Replay && hasResumeNotice {
+			summary = resumeNotice.Message
+		}
 		a.EventCh <- model.Event{
 			Type:    model.ClearScreen,
 			Message: "Conversation switched.",
-			Summary: resumeHint,
+			Summary: summary,
 		}
 	}
 	a.startReplayHistory()
