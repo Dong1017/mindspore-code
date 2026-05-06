@@ -27,6 +27,7 @@ type RemoteConfig struct {
 
 const DefaultServerURL = "https://mscli.dev"
 const DefaultRequestMaxIterations = 100
+const DefaultRequestMaxResearchToolCalls = 20
 
 func (c *Config) normalize() {
 	if strings.TrimSpace(c.Model.Provider) == "" {
@@ -46,9 +47,10 @@ type ModelConfig struct {
 
 // RequestConfig holds optional per-request overrides sourced from env.
 type RequestConfig struct {
-	Temperature   *float64 `yaml:"-"`
-	MaxTokens     *int     `yaml:"-"`
-	MaxIterations *int     `yaml:"-"`
+	Temperature          *float64 `yaml:"-"`
+	MaxTokens            *int     `yaml:"-"`
+	MaxIterations        *int     `yaml:"-"`
+	MaxResearchToolCalls *int     `yaml:"-"`
 }
 
 // UIConfig holds the UI configuration.
@@ -108,6 +110,7 @@ type DockerConfig struct {
 // DefaultConfig returns a configuration with default values.
 func DefaultConfig() *Config {
 	defaultMaxIterations := DefaultRequestMaxIterations
+	defaultMaxResearchToolCalls := DefaultRequestMaxResearchToolCalls
 	cfg := &Config{
 		Model: ModelConfig{
 			URL:        "https://api.openai.com/v1",
@@ -147,7 +150,8 @@ func DefaultConfig() *Config {
 		},
 		ModelProfiles: make(map[string]ModelTokenProfile),
 		Request: RequestConfig{
-			MaxIterations: &defaultMaxIterations,
+			MaxIterations:        &defaultMaxIterations,
+			MaxResearchToolCalls: &defaultMaxResearchToolCalls,
 		},
 		Server: RemoteConfig{
 			URL: DefaultServerURL,
@@ -195,6 +199,10 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("max_iterations must be non-negative")
 	}
 
+	if c.Request.MaxResearchToolCalls != nil && *c.Request.MaxResearchToolCalls < 0 {
+		return fmt.Errorf("max_research_tool_calls must be non-negative")
+	}
+
 	if c.Context.Window < c.Context.ReserveTokens {
 		return fmt.Errorf("window must be greater than reserve_tokens")
 	}
@@ -238,6 +246,10 @@ func (c *Config) Merge(other *Config) {
 	if other.Request.MaxIterations != nil {
 		v := *other.Request.MaxIterations
 		c.Request.MaxIterations = &v
+	}
+	if other.Request.MaxResearchToolCalls != nil {
+		v := *other.Request.MaxResearchToolCalls
+		c.Request.MaxResearchToolCalls = &v
 	}
 
 	if other.Context.Window != 0 {

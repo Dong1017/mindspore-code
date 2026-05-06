@@ -8,9 +8,10 @@ import (
 
 // Task represents a user task.
 type Task struct {
-	ID          string
-	Description string
-	Context     map[string]string
+	ID                   string
+	Description          string
+	Context              map[string]string
+	DisableResearchTools bool
 }
 
 // Event represents an engine event.

@@ -17,13 +17,16 @@ import (
 
 // EngineConfig holds engine configuration.
 type EngineConfig struct {
-	MaxIterations  int
-	ContextWindow  int
-	MaxTokens      *int
-	Temperature    *float32
-	TimeoutPerTurn time.Duration
-	SystemPrompt   string
+	MaxIterations        int
+	MaxResearchToolCalls int
+	ContextWindow        int
+	MaxTokens            *int
+	Temperature          *float32
+	TimeoutPerTurn       time.Duration
+	SystemPrompt         string
 }
+
+var ErrMaxIterations = errors.New("maximum iterations exceeded")
 
 // Engine runs the ReAct loop: LLM → tool call → LLM → done.
 type Engine struct {
@@ -140,13 +143,14 @@ func (e *Engine) runWithContext(ctx context.Context, task Task, sink func(Event)
 
 // executor manages a single ReAct loop run.
 type executor struct {
-	engine     *Engine
-	task       Task
-	events     []Event
-	iterCount  int
-	startTime  time.Time
-	totalUsage llm.Usage
-	sink       func(Event)
+	engine            *Engine
+	task              Task
+	events            []Event
+	iterCount         int
+	researchToolCalls int
+	startTime         time.Time
+	totalUsage        llm.Usage
+	sink              func(Event)
 
 	responsesPreviousID string
 	responsesFollowup   []llm.Message
@@ -210,6 +214,7 @@ func (ex *executor) run(ctx context.Context) ([]Event, error) {
 		ex.addEvent(NewEvent(EventTaskCompleted, "Task completed successfully"))
 	} else if ex.engine.config.MaxIterations > 0 && ex.iterCount >= ex.engine.config.MaxIterations {
 		ex.addEvent(NewEvent(EventTaskFailed, "Task exceeded maximum iterations."))
+		return ex.events, ErrMaxIterations
 	} else {
 		ex.addEvent(NewEvent(EventTaskCompleted, "Task completed successfully"))
 	}
@@ -230,7 +235,7 @@ func (ex *executor) callLLM(ctx context.Context) (*llm.CompletionResponse, error
 
 	req := &llm.CompletionRequest{
 		Messages:    ex.requestMessages(),
-		Tools:       ex.engine.tools.ToLLMTools(),
+		Tools:       ex.filteredTools(),
 		Temperature: ex.engine.config.Temperature,
 		MaxTokens:   ex.engine.config.MaxTokens,
 	}
@@ -258,6 +263,41 @@ func (ex *executor) callLLM(ctx context.Context) (*llm.CompletionResponse, error
 	return resp, nil
 }
 
+func (ex *executor) filteredTools() []llm.Tool {
+	all := ex.engine.tools.ToLLMTools()
+	if !ex.task.DisableResearchTools {
+		return all
+	}
+
+	tools := make([]llm.Tool, 0, len(all))
+	for _, tool := range all {
+		if !isResearchTool(tool.Function.Name) {
+			tools = append(tools, tool)
+		}
+	}
+	if len(tools) == 0 {
+		return nil
+	}
+	return tools
+}
+
+func isResearchTool(name string) bool {
+	switch name {
+	case "read", "grep", "glob", "shell", "load_skill":
+		return true
+	default:
+		return false
+	}
+}
+
+func (ex *executor) maybeDisableResearchTools() {
+	if ex.task.DisableResearchTools || ex.engine.config.MaxResearchToolCalls <= 0 {
+		return
+	}
+	if ex.researchToolCalls >= ex.engine.config.MaxResearchToolCalls {
+		ex.task.DisableResearchTools = true
+	}
+}
 func (ex *executor) sanitizeToolPairsBeforeRequest() {
 	if ex.engine == nil || ex.engine.ctxManager == nil {
 		return
@@ -292,6 +332,24 @@ func (ex *executor) sanitizeToolPairsBeforeRequest() {
 }
 
 func (ex *executor) requestMessages() []llm.Message {
+	msgs := ex.baseRequestMessages()
+	if !ex.task.DisableResearchTools {
+		return msgs
+	}
+
+	guidance := llm.NewSystemMessage("Research tools are disabled for this turn. Produce the requested answer or artifact from the existing context. You may still use any available non-research tools.")
+	out := make([]llm.Message, 0, len(msgs)+1)
+	if len(msgs) > 0 && msgs[0].Role == "system" {
+		out = append(out, msgs[0], guidance)
+		out = append(out, msgs[1:]...)
+		return out
+	}
+	out = append(out, guidance)
+	out = append(out, msgs...)
+	return out
+}
+
+func (ex *executor) baseRequestMessages() []llm.Message {
 	if !ex.usesResponsesChain() || ex.responsesPreviousID == "" || len(ex.responsesFollowup) == 0 {
 		return ex.engine.ctxManager.GetMessages()
 	}
@@ -404,6 +462,12 @@ func (ex *executor) handleResponse(ctx context.Context, resp *llm.CompletionResp
 	}
 
 	if len(resp.ToolCalls) > 0 {
+		for _, tc := range resp.ToolCalls {
+			if isResearchTool(tc.Function.Name) {
+				ex.researchToolCalls++
+			}
+		}
+		ex.maybeDisableResearchTools()
 		for _, tc := range resp.ToolCalls {
 			if err := ex.executeToolCall(ctx, tc); err != nil {
 				return false, err

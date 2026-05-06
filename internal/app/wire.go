@@ -78,10 +78,11 @@ type Application struct {
 	projectService *projectpkg.Service
 
 	// Foreground chat task state
-	taskRunID    uint64
-	taskCancels  map[uint64]context.CancelFunc
-	replayCancel context.CancelFunc
-	taskMu       sync.Mutex
+	prevTaskHitIterLimit bool
+	taskRunID            uint64
+	taskCancels          map[uint64]context.CancelFunc
+	replayCancel         context.CancelFunc
+	taskMu               sync.Mutex
 
 	// Model preset runtime override state.
 	activeModelPresetID string
@@ -593,14 +594,22 @@ func requestMaxIterations(v *int) int {
 	return *v
 }
 
+func requestMaxResearchToolCalls(v *int) int {
+	if v == nil {
+		return configs.DefaultRequestMaxResearchToolCalls
+	}
+	return *v
+}
+
 func newEngineConfig(cfg *configs.Config, systemPrompt string) loop.EngineConfig {
 	return loop.EngineConfig{
-		MaxIterations:  requestMaxIterations(cfg.Request.MaxIterations),
-		ContextWindow:  cfg.Context.Window,
-		MaxTokens:      requestMaxTokensPtr(cfg.Request.MaxTokens),
-		Temperature:    requestTemperaturePtr(cfg.Request.Temperature),
-		TimeoutPerTurn: time.Duration(cfg.Model.TimeoutSec) * time.Second,
-		SystemPrompt:   systemPrompt,
+		MaxIterations:        requestMaxIterations(cfg.Request.MaxIterations),
+		MaxResearchToolCalls: requestMaxResearchToolCalls(cfg.Request.MaxResearchToolCalls),
+		ContextWindow:        cfg.Context.Window,
+		MaxTokens:            requestMaxTokensPtr(cfg.Request.MaxTokens),
+		Temperature:          requestTemperaturePtr(cfg.Request.Temperature),
+		TimeoutPerTurn:       time.Duration(cfg.Model.TimeoutSec) * time.Second,
+		SystemPrompt:         systemPrompt,
 	}
 }
 

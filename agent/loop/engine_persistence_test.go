@@ -16,6 +16,7 @@ import (
 type scriptedStreamProvider struct {
 	mu        sync.Mutex
 	responses []*llm.CompletionResponse
+	requests  []*llm.CompletionRequest
 }
 
 func (p *scriptedStreamProvider) Name() string {
@@ -26,9 +27,14 @@ func (p *scriptedStreamProvider) Complete(context.Context, *llm.CompletionReques
 	return nil, io.EOF
 }
 
-func (p *scriptedStreamProvider) CompleteStream(context.Context, *llm.CompletionRequest) (llm.StreamIterator, error) {
+func (p *scriptedStreamProvider) CompleteStream(_ context.Context, req *llm.CompletionRequest) (llm.StreamIterator, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	copied := *req
+	copied.Messages = append([]llm.Message(nil), req.Messages...)
+	copied.Tools = append([]llm.Tool(nil), req.Tools...)
+	p.requests = append(p.requests, &copied)
 
 	if len(p.responses) == 0 {
 		return &scriptedStreamIterator{}, nil

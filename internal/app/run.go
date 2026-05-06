@@ -253,8 +253,9 @@ func (a *Application) runTask(description string) {
 	}
 
 	task := loop.Task{
-		ID:          generateTaskID(),
-		Description: description,
+		ID:                   generateTaskID(),
+		Description:          description,
+		DisableResearchTools: a.prevTaskHitIterLimit && isResearchDisabledContinuationIntent(description),
 	}
 	ctx, runID := a.beginTaskRun()
 	defer a.finishTaskRun(runID)
@@ -266,10 +267,16 @@ func (a *Application) runTask(description string) {
 		}
 	})
 	if errors.Is(err, context.Canceled) {
+		a.prevTaskHitIterLimit = false
 		persistSnapshot()
 		return
 	}
 	if err != nil {
+		a.prevTaskHitIterLimit = errors.Is(err, loop.ErrMaxIterations)
+		if a.prevTaskHitIterLimit {
+			persistSnapshot()
+			return
+		}
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "deadline") {
 			errMsg = fmt.Sprintf("%s\n\nTip: The request timed out. Try:\n  1. Run /compact to reduce context size\n  2. Start a new conversation with /clear\n  3. Increase timeout in config (model.timeout_sec)", errMsg)
@@ -289,7 +296,21 @@ func (a *Application) runTask(description string) {
 		persistSnapshot()
 		return
 	}
+	a.prevTaskHitIterLimit = false
 	persistSnapshot()
+}
+
+func isResearchDisabledContinuationIntent(input string) bool {
+	lowered := strings.ToLower(strings.TrimSpace(input))
+	switch lowered {
+	case "continue", "go on", "proceed", "keep going", "go ahead":
+		return true
+	}
+	return strings.Contains(lowered, "summarize") ||
+		strings.Contains(lowered, "answer") ||
+		strings.Contains(lowered, "final") ||
+		strings.Contains(lowered, "draw") ||
+		strings.Contains(lowered, "write")
 }
 
 func (a *Application) beginTaskRun() (context.Context, uint64) {
