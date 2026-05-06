@@ -180,6 +180,24 @@ func TestLoadWithEnv_RejectsNegativeMaxResearchToolCallsFromEnv(t *testing.T) {
 	}
 }
 
+func TestLoadWithEnv_AllowsZeroMaxResearchToolCallsFromEnv(t *testing.T) {
+	clearEnv(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("MSCLI_MAX_RESEARCH_TOOL_CALLS", "0")
+
+	cfg, err := LoadWithEnv()
+	if err != nil {
+		t.Fatalf("LoadWithEnv() error = %v", err)
+	}
+	if cfg.Request.MaxResearchToolCalls == nil {
+		t.Fatal("request.max_research_tool_calls = nil, want value")
+	}
+	if got, want := *cfg.Request.MaxResearchToolCalls, 0; got != want {
+		t.Fatalf("request.max_research_tool_calls = %d, want %d", got, want)
+	}
+}
+
 func TestLoadWithEnv_IgnoresWhitespaceOnlyModelEnv(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("MSCLI_MODEL", "   ")

@@ -86,6 +86,201 @@ func TestResearchBudgetDisablesResearchToolsOnNextRequest(t *testing.T) {
 	}
 }
 
+func TestResearchBudgetZeroLeavesResearchToolsEnabled(t *testing.T) {
+	provider := &scriptedStreamProvider{
+		responses: []*llm.CompletionResponse{
+			{
+				ToolCalls: []llm.ToolCall{{
+					ID:   "call-read-1",
+					Type: "function",
+					Function: llm.ToolCallFunc{
+						Name:      "read",
+						Arguments: json.RawMessage(`{"path":"README.md"}`),
+					},
+				}},
+				FinishReason: llm.FinishToolCalls,
+			},
+			{
+				Content:      "done",
+				FinishReason: llm.FinishStop,
+			},
+		},
+	}
+
+	registry := tools.NewRegistry()
+	registry.MustRegister(stubTool{name: "read", content: "file contents"})
+	registry.MustRegister(stubTool{name: "write", content: "wrote"})
+
+	engine := NewEngine(EngineConfig{
+		MaxIterations:        2,
+		MaxResearchToolCalls: 0,
+		ContextWindow:        4096,
+	}, provider, registry)
+
+	_, err := engine.RunWithContext(context.Background(), Task{Description: "review"})
+	if err != nil {
+		t.Fatalf("RunWithContext error = %v", err)
+	}
+	if len(provider.requests) != 2 {
+		t.Fatalf("provider requests = %d, want 2", len(provider.requests))
+	}
+	secondTools := toolNames(provider.requests[1].Tools)
+	if !contains(secondTools, "read") || !contains(secondTools, "write") {
+		t.Fatalf("second request tools = %v, want read and write retained", secondTools)
+	}
+	for _, msg := range provider.requests[1].Messages {
+		if strings.Contains(msg.Content, "Research tools are disabled") {
+			t.Fatalf("second request message = %#v, want no research-disabled guidance", msg)
+		}
+	}
+}
+
+func TestResearchToolClassification(t *testing.T) {
+	for _, name := range []string{"read", "grep", "glob", "shell", "load_skill"} {
+		if !isResearchTool(name) {
+			t.Fatalf("isResearchTool(%q) = false, want true", name)
+		}
+	}
+	for _, name := range []string{"write", "edit"} {
+		if isResearchTool(name) {
+			t.Fatalf("isResearchTool(%q) = true, want false", name)
+		}
+	}
+}
+
+func TestDisableResearchToolsFiltersByFunctionName(t *testing.T) {
+	provider := &captureProvider{}
+	registry := tools.NewRegistry()
+	registry.MustRegister(stubTool{name: "read", content: "file contents"})
+	registry.MustRegister(stubTool{name: "write", content: "wrote"})
+
+	engine := NewEngine(EngineConfig{MaxIterations: 1, ContextWindow: 4096}, provider, registry)
+	_, err := engine.RunWithContext(context.Background(), Task{
+		Description:          "summarize",
+		DisableResearchTools: true,
+	})
+	if err != nil {
+		t.Fatalf("RunWithContext error = %v", err)
+	}
+	if provider.lastReq == nil {
+		t.Fatal("provider request = nil")
+	}
+	tools := toolNames(provider.lastReq.Tools)
+	if contains(tools, "read") {
+		t.Fatalf("provider tools = %v, want read filtered by function name", tools)
+	}
+	if !contains(tools, "write") {
+		t.Fatalf("provider tools = %v, want write retained", tools)
+	}
+}
+
+func TestResearchBudgetExceededByBatchDisablesResearchToolsOnNextRequest(t *testing.T) {
+	var readCalls int
+	var grepCalls int
+	provider := &scriptedStreamProvider{
+		responses: []*llm.CompletionResponse{
+			{
+				ToolCalls: []llm.ToolCall{
+					{
+						ID:   "call-read-1",
+						Type: "function",
+						Function: llm.ToolCallFunc{
+							Name:      "read",
+							Arguments: json.RawMessage(`{"path":"README.md"}`),
+						},
+					},
+					{
+						ID:   "call-grep-1",
+						Type: "function",
+						Function: llm.ToolCallFunc{
+							Name:      "grep",
+							Arguments: json.RawMessage(`{"pattern":"hello"}`),
+						},
+					},
+				},
+				FinishReason: llm.FinishToolCalls,
+			},
+			{
+				Content:      "done",
+				FinishReason: llm.FinishStop,
+			},
+		},
+	}
+
+	registry := tools.NewRegistry()
+	registry.MustRegister(countingStubTool{stubTool: stubTool{name: "read", content: "file contents"}, count: &readCalls})
+	registry.MustRegister(countingStubTool{stubTool: stubTool{name: "grep", content: "matches"}, count: &grepCalls})
+	registry.MustRegister(stubTool{name: "write", content: "wrote"})
+
+	engine := NewEngine(EngineConfig{
+		MaxIterations:        2,
+		MaxResearchToolCalls: 1,
+		ContextWindow:        4096,
+	}, provider, registry)
+
+	_, err := engine.RunWithContext(context.Background(), Task{Description: "review"})
+	if err != nil {
+		t.Fatalf("RunWithContext error = %v", err)
+	}
+	if readCalls != 1 || grepCalls != 1 {
+		t.Fatalf("executed read=%d grep=%d, want both calls executed once", readCalls, grepCalls)
+	}
+	if len(provider.requests) != 2 {
+		t.Fatalf("provider requests = %d, want 2", len(provider.requests))
+	}
+	secondTools := toolNames(provider.requests[1].Tools)
+	if contains(secondTools, "read") || contains(secondTools, "grep") {
+		t.Fatalf("second request tools = %v, want research tools filtered after batch", secondTools)
+	}
+	if !contains(secondTools, "write") {
+		t.Fatalf("second request tools = %v, want write retained", secondTools)
+	}
+}
+
+func TestResearchDisabledGuidanceNotInheritedByLaterNormalTask(t *testing.T) {
+	provider := &scriptedStreamProvider{
+		responses: []*llm.CompletionResponse{
+			{
+				Content:      "summary",
+				FinishReason: llm.FinishStop,
+			},
+			{
+				Content:      "normal",
+				FinishReason: llm.FinishStop,
+			},
+		},
+	}
+
+	registry := tools.NewRegistry()
+	registry.MustRegister(stubTool{name: "read", content: "file contents"})
+	registry.MustRegister(stubTool{name: "write", content: "wrote"})
+
+	engine := NewEngine(EngineConfig{MaxIterations: 1, ContextWindow: 4096}, provider, registry)
+	_, err := engine.RunWithContext(context.Background(), Task{
+		Description:          "summarize",
+		DisableResearchTools: true,
+	})
+	if err != nil {
+		t.Fatalf("first RunWithContext error = %v", err)
+	}
+	_, err = engine.RunWithContext(context.Background(), Task{Description: "inspect more files"})
+	if err != nil {
+		t.Fatalf("second RunWithContext error = %v", err)
+	}
+	if len(provider.requests) != 2 {
+		t.Fatalf("provider requests = %d, want 2", len(provider.requests))
+	}
+	for _, msg := range provider.requests[1].Messages {
+		if strings.Contains(msg.Content, "Research tools are disabled") {
+			t.Fatalf("later normal request inherited research-disabled guidance: %#v", msg)
+		}
+	}
+	secondTools := toolNames(provider.requests[1].Tools)
+	if !contains(secondTools, "read") || !contains(secondTools, "write") {
+		t.Fatalf("later normal request tools = %v, want read and write", secondTools)
+	}
+}
+
 func TestDisableResearchToolsSendsNilToolsWhenNoToolsRemain(t *testing.T) {
 	provider := &captureProvider{}
 	registry := tools.NewRegistry()
@@ -237,6 +432,16 @@ type failingStubTool struct {
 
 func (t failingStubTool) Execute(context.Context, json.RawMessage) (*tools.Result, error) {
 	return nil, fmt.Errorf("boom")
+}
+
+type countingStubTool struct {
+	stubTool
+	count *int
+}
+
+func (t countingStubTool) Execute(ctx context.Context, params json.RawMessage) (*tools.Result, error) {
+	(*t.count)++
+	return t.stubTool.Execute(ctx, params)
 }
 
 func toolNames(tools []llm.Tool) []string {
