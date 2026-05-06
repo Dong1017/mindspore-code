@@ -203,6 +203,7 @@ func TestResearchToolCallCountsWhenToolExecutionErrors(t *testing.T) {
 		t.Fatalf("second request tools = %v, want write retained", secondTools)
 	}
 }
+
 func TestMaxIterationsReturnsTypedError(t *testing.T) {
 	provider := &scriptedStreamProvider{
 		responses: []*llm.CompletionResponse{{
