@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -104,7 +105,8 @@ func TestCmdModel_NoArgsShowsSetupPopup(t *testing.T) {
 
 func TestCmdModel_BuiltinPresetRequiresLogin(t *testing.T) {
 	app := newModelCommandTestApp()
-	t.Setenv("HOME", t.TempDir())
+	credentialsPathOverride = filepath.Join(t.TempDir(), "credentials.json")
+	t.Cleanup(func() { credentialsPathOverride = "" })
 
 	app.cmdModel([]string{"kimi-k2.5-free"})
 

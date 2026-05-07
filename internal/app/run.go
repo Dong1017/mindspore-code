@@ -227,6 +227,10 @@ func (a *Application) processInput(input string) {
 		return
 	}
 
+	if a.pathAuthorizer != nil && a.pathAuthorizer.HandleInput(trimmed) {
+		return
+	}
+
 	if a.permissionUI != nil && a.permissionUI.HandleInput(trimmed) {
 		return
 	}

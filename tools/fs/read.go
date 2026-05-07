@@ -9,17 +9,22 @@ import (
 	"strings"
 
 	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
+	"github.com/mindspore-lab/mindspore-cli/internal/pathpolicy"
 	"github.com/mindspore-lab/mindspore-cli/tools"
 )
 
 // ReadTool reads file contents.
 type ReadTool struct {
-	workDir string
+	resolver *pathpolicy.Resolver
 }
 
 // NewReadTool creates a new read tool.
 func NewReadTool(workDir string) *ReadTool {
-	return &ReadTool{workDir: workDir}
+	return NewReadToolWithResolver(newWorkspaceResolver(workDir))
+}
+
+func NewReadToolWithResolver(resolver *pathpolicy.Resolver) *ReadTool {
+	return &ReadTool{resolver: resolver}
 }
 
 // Name returns the tool name.
@@ -39,7 +44,7 @@ func (t *ReadTool) Schema() llm.ToolSchema {
 		Properties: map[string]llm.Property{
 			"path": {
 				Type:        "string",
-				Description: "Relative path to the file to read",
+				Description: "Path to the file to read. Relative paths resolve under the workspace; absolute paths require workspace or external_read_roots access",
 			},
 			"offset": {
 				Type:        "integer",
@@ -67,9 +72,12 @@ func (t *ReadTool) Execute(ctx context.Context, params json.RawMessage) (*tools.
 		return tools.ErrorResult(err), nil
 	}
 
-	fullPath, err := resolveSafePath(t.workDir, p.Path)
+	fullPath, denial, err := t.resolver.ResolveReadablePathForOperation("read", p.Path, pathpolicy.ResolveOptionsFromContext(ctx))
 	if err != nil {
 		return tools.ErrorResult(err), nil
+	}
+	if denial != nil {
+		return pathpolicy.NewPathDenialResult(denial), nil
 	}
 
 	// Check if file exists

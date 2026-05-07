@@ -19,6 +19,7 @@ import (
 	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
 	"github.com/mindspore-lab/mindspore-cli/integrations/skills"
 	issuepkg "github.com/mindspore-lab/mindspore-cli/internal/issues"
+	"github.com/mindspore-lab/mindspore-cli/internal/pathpolicy"
 	projectpkg "github.com/mindspore-lab/mindspore-cli/internal/project"
 	itrain "github.com/mindspore-lab/mindspore-cli/internal/train"
 	"github.com/mindspore-lab/mindspore-cli/internal/version"
@@ -54,6 +55,7 @@ type Application struct {
 	ctxManager              *agentctx.Manager
 	permService             permission.PermissionService
 	permissionUI            *PermissionPromptUI
+	pathAuthorizer          *PathAuthorizer
 	permissionSettingsIssue *permissionSettingsIssue
 	session                 *session.Session
 	replayBacklog           []model.Event
@@ -209,7 +211,9 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		}
 	}
 
-	toolRegistry := initTools(config, workDir)
+	pathPolicy := pathpolicy.NewPathPolicy(workDir, config.Filesystem.ExternalReadRoots, fs.BuiltinReadRoots())
+	pathResolver := pathpolicy.NewResolver(pathPolicy)
+	toolRegistry := initTools(config, workDir, pathResolver)
 
 	// Skills: embedded skills are extracted next to the executable,
 	// user-installed skills in ~/.mscli/skills/ override them,
@@ -357,6 +361,8 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 			}
 		}
 	}
+	pathAuthorizer := NewPathAuthorizer(eventCh, pathPolicy, configs.SaveUserExternalReadRoots)
+	engine.SetPathAuthorizer(pathAuthorizer)
 	engine.SetPermissionService(permService)
 
 	app := &Application{
@@ -371,6 +377,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		ctxManager:              ctxManager,
 		permService:             permService,
 		permissionUI:            permissionUI,
+		pathAuthorizer:          pathAuthorizer,
 		permissionSettingsIssue: permSettingsIssue,
 		session:                 runtimeSession,
 		replayBacklog:           replayBacklog,
@@ -866,14 +873,18 @@ func (a *Application) emitModelSetupPopup(canEscape bool) {
 	}
 }
 
-func initTools(cfg *configs.Config, workDir string) *tools.Registry {
+func initTools(cfg *configs.Config, workDir string, resolvers ...*pathpolicy.Resolver) *tools.Registry {
 	registry := tools.NewRegistry()
+	pathResolver := pathpolicy.NewResolver(pathpolicy.NewPathPolicy(workDir, cfg.Filesystem.ExternalReadRoots, fs.BuiltinReadRoots()))
+	if len(resolvers) > 0 && resolvers[0] != nil {
+		pathResolver = resolvers[0]
+	}
 
-	registry.MustRegister(fs.NewReadTool(workDir))
-	registry.MustRegister(fs.NewWriteTool(workDir))
-	registry.MustRegister(fs.NewEditTool(workDir))
-	registry.MustRegister(fs.NewGrepTool(workDir))
-	registry.MustRegister(fs.NewGlobTool(workDir))
+	registry.MustRegister(fs.NewReadToolWithResolver(pathResolver))
+	registry.MustRegister(fs.NewWriteToolWithResolver(pathResolver))
+	registry.MustRegister(fs.NewEditToolWithResolver(pathResolver))
+	registry.MustRegister(fs.NewGrepToolWithResolver(pathResolver))
+	registry.MustRegister(fs.NewGlobToolWithResolver(pathResolver))
 
 	shellRunner := rshell.NewRunner(rshell.Config{
 		WorkDir:        workDir,

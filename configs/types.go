@@ -16,6 +16,7 @@ type Config struct {
 	Context       ContextConfig                `yaml:"context"`
 	Memory        MemoryConfig                 `yaml:"memory"`
 	Execution     ExecutionConfig              `yaml:"execution"`
+	Filesystem    FilesystemConfig             `yaml:"filesystem"`
 	Server        RemoteConfig                 `yaml:"server"`
 }
 
@@ -114,6 +115,11 @@ type ExecutionConfig struct {
 	Docker         DockerConfig `yaml:"docker,omitempty"`
 }
 
+// FilesystemConfig holds filesystem access policy configuration.
+type FilesystemConfig struct {
+	ExternalReadRoots []string `yaml:"external_read_roots,omitempty"`
+}
+
 // DockerConfig holds the Docker execution configuration.
 type DockerConfig struct {
 	Image   string            `yaml:"image"`
@@ -182,6 +188,7 @@ func DefaultConfig() *Config {
 				Env:     make(map[string]string),
 			},
 		},
+		Filesystem: FilesystemConfig{},
 	}
 	cfg.normalize()
 	return cfg
@@ -266,6 +273,10 @@ func (c *Config) Merge(other *Config) {
 	}
 	if other.Context.CompactionThreshold != 0 {
 		c.Context.CompactionThreshold = other.Context.CompactionThreshold
+	}
+
+	if len(other.Filesystem.ExternalReadRoots) > 0 {
+		c.Filesystem.ExternalReadRoots = append([]string(nil), other.Filesystem.ExternalReadRoots...)
 	}
 }
 

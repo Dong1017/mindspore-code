@@ -8,17 +8,22 @@ import (
 	"strings"
 
 	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
+	"github.com/mindspore-lab/mindspore-cli/internal/pathpolicy"
 	"github.com/mindspore-lab/mindspore-cli/tools"
 )
 
 // EditTool edits file contents by replacing text.
 type EditTool struct {
-	workDir string
+	resolver *pathpolicy.Resolver
 }
 
 // NewEditTool creates a new edit tool.
 func NewEditTool(workDir string) *EditTool {
-	return &EditTool{workDir: workDir}
+	return NewEditToolWithResolver(newWorkspaceResolver(workDir))
+}
+
+func NewEditToolWithResolver(resolver *pathpolicy.Resolver) *EditTool {
+	return &EditTool{resolver: resolver}
 }
 
 // Name returns the tool name.
@@ -38,7 +43,7 @@ func (t *EditTool) Schema() llm.ToolSchema {
 		Properties: map[string]llm.Property{
 			"path": {
 				Type:        "string",
-				Description: "Relative path to the file to edit",
+				Description: "Path to the file to edit. Sprint 1 allows workspace paths only for edits",
 			},
 			"old_string": {
 				Type:        "string",
@@ -66,9 +71,12 @@ func (t *EditTool) Execute(ctx context.Context, params json.RawMessage) (*tools.
 		return tools.ErrorResult(err), nil
 	}
 
-	fullPath, err := resolveSafePath(t.workDir, p.Path)
+	fullPath, denial, err := t.resolver.ResolveWritablePathForOperation("edit", p.Path, pathpolicy.ResolveOptionsFromContext(ctx))
 	if err != nil {
 		return tools.ErrorResult(err), nil
+	}
+	if denial != nil {
+		return pathpolicy.NewPathDenialResult(denial), nil
 	}
 
 	// Read existing file

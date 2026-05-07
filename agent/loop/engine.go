@@ -12,6 +12,7 @@ import (
 	ctxmanager "github.com/mindspore-lab/mindspore-cli/agent/context"
 	"github.com/mindspore-lab/mindspore-cli/configs"
 	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
+	"github.com/mindspore-lab/mindspore-cli/internal/pathpolicy"
 	"github.com/mindspore-lab/mindspore-cli/permission"
 	"github.com/mindspore-lab/mindspore-cli/tools"
 )
@@ -28,13 +29,14 @@ type EngineConfig struct {
 
 // Engine runs the ReAct loop: LLM → tool call → LLM → done.
 type Engine struct {
-	config      EngineConfig
-	provider    llm.Provider
-	tools       *tools.Registry
-	ctxManager  *ctxmanager.Manager
-	permission  permission.PermissionService
-	recorder    *TrajectoryRecorder
-	debugDumper *llm.DebugDumper
+	config         EngineConfig
+	provider       llm.Provider
+	tools          *tools.Registry
+	ctxManager     *ctxmanager.Manager
+	permission     permission.PermissionService
+	pathAuthorizer PathAuthorizer
+	recorder       *TrajectoryRecorder
+	debugDumper    *llm.DebugDumper
 }
 
 // TrajectoryRecorder records runtime conversation events for persistence.
@@ -95,6 +97,10 @@ func (e *Engine) SetContextManager(cm *ctxmanager.Manager) {
 // SetPermissionService sets the permission service.
 func (e *Engine) SetPermissionService(ps permission.PermissionService) {
 	e.permission = ps
+}
+
+func (e *Engine) SetPathAuthorizer(authorizer PathAuthorizer) {
+	e.pathAuthorizer = authorizer
 }
 
 // SetTrajectoryRecorder records runtime conversation events for persistence.
@@ -490,15 +496,7 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 	ex.addEvent(startEv)
 
 	// Execute
-	var result *tools.Result
-	streamingTool, canStream := tool.(tools.StreamingTool)
-	if canStream {
-		result, err = streamingTool.ExecuteStream(ctx, tc.Function.Arguments, func(update tools.StreamEvent) {
-			ex.addStreamingToolEvent(toolName, tc.ID, update)
-		})
-	} else {
-		result, err = tool.Execute(ctx, tc.Function.Arguments)
-	}
+	result, err := ex.executeTool(ctx, tool, toolName, tc.ID, tc.Function.Arguments)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 			if interruptErr := ex.handleInterruptedToolCall(tc, ""); interruptErr != nil {
@@ -521,7 +519,15 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 		return nil
 	}
 
-	if result.Error != nil {
+	if result != nil && result.Error != nil {
+		if handled, err := ex.handlePathDenial(ctx, tc, tool, toolName, result); err != nil {
+			return err
+		} else if handled {
+			return nil
+		}
+		if result.Error == nil {
+			goto toolSuccess
+		}
 		if errors.Is(result.Error, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 			if interruptErr := ex.handleInterruptedToolCall(tc, result.Content); interruptErr != nil {
 				return interruptErr
@@ -541,6 +547,11 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 		}
 		ex.addEvent(NewEvent(EventToolError, fmt.Sprintf("Tool %s failed: %s", toolName, errMsg)))
 		return nil
+	}
+
+toolSuccess:
+	if result == nil {
+		result = tools.StringResult("")
 	}
 	if errors.Is(ctx.Err(), context.Canceled) {
 		if interruptErr := ex.handleInterruptedToolCall(tc, result.Content); interruptErr != nil {
@@ -568,6 +579,72 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 	}
 	ex.addToolEvent(toolName, tc.ID, result)
 	return nil
+}
+
+func (ex *executor) executeTool(ctx context.Context, tool tools.Tool, toolName, toolCallID string, args json.RawMessage) (*tools.Result, error) {
+	if streamingTool, canStream := tool.(tools.StreamingTool); canStream {
+		return streamingTool.ExecuteStream(ctx, args, func(update tools.StreamEvent) {
+			ex.addStreamingToolEvent(toolName, toolCallID, update)
+		})
+	}
+	return tool.Execute(ctx, args)
+}
+
+func (ex *executor) handlePathDenial(ctx context.Context, tc llm.ToolCall, tool tools.Tool, toolName string, result *tools.Result) (bool, error) {
+	denial, ok := pathpolicy.ExtractPathDenial(result)
+	if !ok || ex.engine.pathAuthorizer == nil {
+		return false, nil
+	}
+	decision, err := ex.engine.pathAuthorizer.RequestPathAuthorization(ctx, denial)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+			return false, context.Canceled
+		}
+		return false, err
+	}
+	if decision.Scope == PathAuthorizationDeny {
+		return true, nil
+	}
+	root := strings.TrimSpace(decision.Root)
+	if root == "" {
+		return true, nil
+	}
+	if decision.Mode != "" && decision.Mode != "read" {
+		return true, nil
+	}
+
+	retryCtx := pathpolicy.ContextWithResolveOptions(ctx, pathpolicy.ResolveOptions{TemporaryReadRoots: []string{root}})
+	retryResult, err := ex.executeTool(retryCtx, tool, toolName, tc.ID, tc.Function.Arguments)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+			if interruptErr := ex.handleInterruptedToolCall(tc, ""); interruptErr != nil {
+				return true, interruptErr
+			}
+			return true, context.Canceled
+		}
+		errMsg := fmt.Sprintf("Tool execution error: %v", err)
+		notice, addErr := ex.addToolResultWithFallback(ctx, tc.ID, errMsg)
+		if addErr != nil {
+			return true, addErr
+		}
+		if persistErr := ex.persistSnapshot(); persistErr != nil {
+			return true, persistErr
+		}
+		if noticeErr := ex.emitContextCompactionNotice(notice); noticeErr != nil {
+			return true, noticeErr
+		}
+		ex.addEvent(NewEvent(EventToolError, errMsg))
+		return true, nil
+	}
+	if retryResult == nil {
+		retryResult = tools.StringResult("")
+	}
+	if retryResult.Error != nil {
+		*result = *retryResult
+		return false, nil
+	}
+	*result = *retryResult
+	return false, nil
 }
 
 func (ex *executor) handleInterruptedToolCall(tc llm.ToolCall, partialOutput string) error {
