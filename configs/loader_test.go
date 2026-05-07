@@ -29,7 +29,6 @@ func TestLoadWithEnv_UsesDefaultsAndEnvOverrides(t *testing.T) {
 	t.Setenv("MSCLI_TEMPERATURE", "0.2")
 	t.Setenv("MSCLI_MAX_TOKENS", "4096")
 	t.Setenv("MSCLI_MAX_ITERATIONS", "7")
-	t.Setenv("MSCLI_MAX_RESEARCH_TOOL_CALLS", "3")
 	t.Setenv("MSCLI_CONTEXT_WINDOW", "16000")
 	t.Setenv("MSCLI_UI_ENABLED", "false")
 
@@ -67,12 +66,6 @@ func TestLoadWithEnv_UsesDefaultsAndEnvOverrides(t *testing.T) {
 	}
 	if got, want := *cfg.Request.MaxIterations, 7; got != want {
 		t.Fatalf("request.max_iterations = %d, want %d", got, want)
-	}
-	if cfg.Request.MaxResearchToolCalls == nil {
-		t.Fatal("request.max_research_tool_calls = nil, want value")
-	}
-	if got, want := *cfg.Request.MaxResearchToolCalls, 3; got != want {
-		t.Fatalf("request.max_research_tool_calls = %d, want %d", got, want)
 	}
 	if got, want := cfg.Context.Window, 16000; got != want {
 		t.Fatalf("context.window = %d, want %d", got, want)
@@ -120,12 +113,6 @@ func TestLoadWithEnv_IgnoresConfigFiles(t *testing.T) {
 	if got, want := *cfg.Request.MaxIterations, DefaultRequestMaxIterations; got != want {
 		t.Fatalf("request.max_iterations = %d, want %d", got, want)
 	}
-	if cfg.Request.MaxResearchToolCalls == nil {
-		t.Fatal("request.max_research_tool_calls = nil, want default value")
-	}
-	if got, want := *cfg.Request.MaxResearchToolCalls, DefaultRequestMaxResearchToolCalls; got != want {
-		t.Fatalf("request.max_research_tool_calls = %d, want %d", got, want)
-	}
 }
 
 func TestApplyEnvOverrides_OnlyMSCLIVariables(t *testing.T) {
@@ -167,34 +154,6 @@ func TestLoadWithEnv_RejectsNegativeMaxIterationsFromEnv(t *testing.T) {
 	_, err := LoadWithEnv()
 	if err == nil {
 		t.Fatal("LoadWithEnv() error = nil, want validation error for negative max_iterations")
-	}
-}
-
-func TestLoadWithEnv_RejectsNegativeMaxResearchToolCallsFromEnv(t *testing.T) {
-	clearEnv(t)
-	t.Setenv("MSCLI_MAX_RESEARCH_TOOL_CALLS", "-1")
-
-	_, err := LoadWithEnv()
-	if err == nil {
-		t.Fatal("LoadWithEnv() error = nil, want validation error for negative max_research_tool_calls")
-	}
-}
-
-func TestLoadWithEnv_AllowsZeroMaxResearchToolCallsFromEnv(t *testing.T) {
-	clearEnv(t)
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("MSCLI_MAX_RESEARCH_TOOL_CALLS", "0")
-
-	cfg, err := LoadWithEnv()
-	if err != nil {
-		t.Fatalf("LoadWithEnv() error = %v", err)
-	}
-	if cfg.Request.MaxResearchToolCalls == nil {
-		t.Fatal("request.max_research_tool_calls = nil, want value")
-	}
-	if got, want := *cfg.Request.MaxResearchToolCalls, 0; got != want {
-		t.Fatalf("request.max_research_tool_calls = %d, want %d", got, want)
 	}
 }
 
@@ -242,7 +201,6 @@ func clearEnv(t *testing.T) {
 		"MSCLI_TEMPERATURE",
 		"MSCLI_MAX_TOKENS",
 		"MSCLI_MAX_ITERATIONS",
-		"MSCLI_MAX_RESEARCH_TOOL_CALLS",
 		"MSCLI_TIMEOUT",
 		"MSCLI_CONTEXT_WINDOW",
 		"MSCLI_CONTEXT_RESERVE",

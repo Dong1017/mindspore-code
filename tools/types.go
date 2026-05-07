@@ -24,6 +24,21 @@ type Tool interface {
 	Execute(ctx context.Context, params json.RawMessage) (*Result, error)
 }
 
+type ToolClass string
+
+const (
+	ToolClassExploration      ToolClass = "exploration"
+	ToolClassContextExpansion ToolClass = "context_expansion"
+	ToolClassMutation         ToolClass = "mutation"
+	ToolClassVerification     ToolClass = "verification"
+	ToolClassInteraction      ToolClass = "interaction"
+	ToolClassExternalEffect   ToolClass = "external_effect"
+)
+
+type ToolMetadata struct {
+	Classes []ToolClass
+}
+
 // StreamEventType describes an incremental execution update from a streaming tool.
 type StreamEventType string
 

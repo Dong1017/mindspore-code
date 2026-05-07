@@ -4,16 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
-	"github.com/mindspore-lab/mindspore-cli/permission"
 	"github.com/mindspore-lab/mindspore-cli/tools"
 )
 
-func TestResearchBudgetDisablesResearchToolsOnNextRequest(t *testing.T) {
+func TestFiniteMaxIterationsDoesNotPreemptivelyDisableResearchTools(t *testing.T) {
 	args, err := json.Marshal(map[string]string{"path": "README.md"})
 	if err != nil {
 		t.Fatalf("marshal args: %v", err)
@@ -44,9 +42,8 @@ func TestResearchBudgetDisablesResearchToolsOnNextRequest(t *testing.T) {
 	registry.MustRegister(stubTool{name: "write", content: "wrote"})
 
 	engine := NewEngine(EngineConfig{
-		MaxIterations:        2,
-		MaxResearchToolCalls: 1,
-		ContextWindow:        4096,
+		MaxIterations: 2,
+		ContextWindow: 4096,
 	}, provider, registry)
 
 	_, err = engine.RunWithContext(context.Background(), Task{Description: "review"})
@@ -62,22 +59,14 @@ func TestResearchBudgetDisablesResearchToolsOnNextRequest(t *testing.T) {
 		t.Fatalf("first request tools = %v, want read and write", firstTools)
 	}
 	secondTools := toolNames(provider.requests[1].Tools)
-	if contains(secondTools, "read") {
-		t.Fatalf("second request tools = %v, want read filtered", secondTools)
-	}
-	if !contains(secondTools, "write") {
-		t.Fatalf("second request tools = %v, want write retained", secondTools)
+	if !contains(secondTools, "read") || !contains(secondTools, "write") {
+		t.Fatalf("second request tools = %v, want read and write retained before explicit gating", secondTools)
 	}
 
-	foundGuidance := false
 	for _, msg := range provider.requests[1].Messages {
 		if msg.Role == "system" && strings.Contains(msg.Content, "Research tools are disabled") {
-			foundGuidance = true
-			break
+			t.Fatalf("second request message = %#v, want no research-disabled guidance", msg)
 		}
-	}
-	if !foundGuidance {
-		t.Fatalf("second request messages = %#v, want research-disabled guidance", provider.requests[1].Messages)
 	}
 	for _, msg := range engine.ctxManager.GetMessages() {
 		if strings.Contains(msg.Content, "Research tools are disabled") {
@@ -86,7 +75,7 @@ func TestResearchBudgetDisablesResearchToolsOnNextRequest(t *testing.T) {
 	}
 }
 
-func TestResearchBudgetZeroLeavesResearchToolsEnabled(t *testing.T) {
+func TestUnlimitedIterationsLeaveResearchToolsEnabled(t *testing.T) {
 	provider := &scriptedStreamProvider{
 		responses: []*llm.CompletionResponse{
 			{
@@ -112,9 +101,8 @@ func TestResearchBudgetZeroLeavesResearchToolsEnabled(t *testing.T) {
 	registry.MustRegister(stubTool{name: "write", content: "wrote"})
 
 	engine := NewEngine(EngineConfig{
-		MaxIterations:        2,
-		MaxResearchToolCalls: 0,
-		ContextWindow:        4096,
+		MaxIterations: 0,
+		ContextWindow: 4096,
 	}, provider, registry)
 
 	_, err := engine.RunWithContext(context.Background(), Task{Description: "review"})
@@ -135,24 +123,12 @@ func TestResearchBudgetZeroLeavesResearchToolsEnabled(t *testing.T) {
 	}
 }
 
-func TestResearchToolClassification(t *testing.T) {
-	for _, name := range []string{"read", "grep", "glob", "shell", "load_skill"} {
-		if !isResearchTool(name) {
-			t.Fatalf("isResearchTool(%q) = false, want true", name)
-		}
-	}
-	for _, name := range []string{"write", "edit"} {
-		if isResearchTool(name) {
-			t.Fatalf("isResearchTool(%q) = true, want false", name)
-		}
-	}
-}
-
 func TestDisableResearchToolsFiltersByFunctionName(t *testing.T) {
 	provider := &captureProvider{}
 	registry := tools.NewRegistry()
 	registry.MustRegister(stubTool{name: "read", content: "file contents"})
 	registry.MustRegister(stubTool{name: "write", content: "wrote"})
+	registry.MustRegister(stubTool{name: "plain", content: "plain"})
 
 	engine := NewEngine(EngineConfig{MaxIterations: 1, ContextWindow: 4096}, provider, registry)
 	_, err := engine.RunWithContext(context.Background(), Task{
@@ -169,71 +145,11 @@ func TestDisableResearchToolsFiltersByFunctionName(t *testing.T) {
 	if contains(tools, "read") {
 		t.Fatalf("provider tools = %v, want read filtered by function name", tools)
 	}
+	if contains(tools, "plain") {
+		t.Fatalf("provider tools = %v, want unclassified tool filtered", tools)
+	}
 	if !contains(tools, "write") {
 		t.Fatalf("provider tools = %v, want write retained", tools)
-	}
-}
-
-func TestResearchBudgetExceededByBatchDisablesResearchToolsOnNextRequest(t *testing.T) {
-	var readCalls int
-	var grepCalls int
-	provider := &scriptedStreamProvider{
-		responses: []*llm.CompletionResponse{
-			{
-				ToolCalls: []llm.ToolCall{
-					{
-						ID:   "call-read-1",
-						Type: "function",
-						Function: llm.ToolCallFunc{
-							Name:      "read",
-							Arguments: json.RawMessage(`{"path":"README.md"}`),
-						},
-					},
-					{
-						ID:   "call-grep-1",
-						Type: "function",
-						Function: llm.ToolCallFunc{
-							Name:      "grep",
-							Arguments: json.RawMessage(`{"pattern":"hello"}`),
-						},
-					},
-				},
-				FinishReason: llm.FinishToolCalls,
-			},
-			{
-				Content:      "done",
-				FinishReason: llm.FinishStop,
-			},
-		},
-	}
-
-	registry := tools.NewRegistry()
-	registry.MustRegister(countingStubTool{stubTool: stubTool{name: "read", content: "file contents"}, count: &readCalls})
-	registry.MustRegister(countingStubTool{stubTool: stubTool{name: "grep", content: "matches"}, count: &grepCalls})
-	registry.MustRegister(stubTool{name: "write", content: "wrote"})
-
-	engine := NewEngine(EngineConfig{
-		MaxIterations:        2,
-		MaxResearchToolCalls: 1,
-		ContextWindow:        4096,
-	}, provider, registry)
-
-	_, err := engine.RunWithContext(context.Background(), Task{Description: "review"})
-	if err != nil {
-		t.Fatalf("RunWithContext error = %v", err)
-	}
-	if readCalls != 1 || grepCalls != 1 {
-		t.Fatalf("executed read=%d grep=%d, want both calls executed once", readCalls, grepCalls)
-	}
-	if len(provider.requests) != 2 {
-		t.Fatalf("provider requests = %d, want 2", len(provider.requests))
-	}
-	secondTools := toolNames(provider.requests[1].Tools)
-	if contains(secondTools, "read") || contains(secondTools, "grep") {
-		t.Fatalf("second request tools = %v, want research tools filtered after batch", secondTools)
-	}
-	if !contains(secondTools, "write") {
-		t.Fatalf("second request tools = %v, want write retained", secondTools)
 	}
 }
 
@@ -302,103 +218,6 @@ func TestDisableResearchToolsSendsNilToolsWhenNoToolsRemain(t *testing.T) {
 	}
 }
 
-func TestResearchToolCallCountsWhenExecutionFails(t *testing.T) {
-	args, err := json.Marshal(map[string]string{"path": "README.md"})
-	if err != nil {
-		t.Fatalf("marshal args: %v", err)
-	}
-
-	provider := &scriptedStreamProvider{
-		responses: []*llm.CompletionResponse{
-			{
-				ToolCalls: []llm.ToolCall{{
-					ID:   "call-load-skill-1",
-					Type: "function",
-					Function: llm.ToolCallFunc{
-						Name:      "load_skill",
-						Arguments: args,
-					},
-				}},
-				FinishReason: llm.FinishToolCalls,
-			},
-			{
-				Content:      "done",
-				FinishReason: llm.FinishStop,
-			},
-		},
-	}
-
-	registry := tools.NewRegistry()
-	registry.MustRegister(stubTool{name: "load_skill", content: "skill"})
-	registry.MustRegister(stubTool{name: "write", content: "wrote"})
-
-	engine := NewEngine(EngineConfig{
-		MaxIterations:        2,
-		MaxResearchToolCalls: 1,
-		ContextWindow:        4096,
-	}, provider, registry)
-	engine.SetPermissionService(denyPermissionService{})
-
-	_, err = engine.RunWithContext(context.Background(), Task{Description: "review"})
-	if err != nil {
-		t.Fatalf("RunWithContext error = %v", err)
-	}
-	if len(provider.requests) != 2 {
-		t.Fatalf("provider requests = %d, want 2", len(provider.requests))
-	}
-	secondTools := toolNames(provider.requests[1].Tools)
-	if contains(secondTools, "load_skill") {
-		t.Fatalf("second request tools = %v, want load_skill filtered after denied attempt", secondTools)
-	}
-}
-
-func TestResearchToolCallCountsWhenToolExecutionErrors(t *testing.T) {
-	provider := &scriptedStreamProvider{
-		responses: []*llm.CompletionResponse{
-			{
-				ToolCalls: []llm.ToolCall{{
-					ID:   "call-read-1",
-					Type: "function",
-					Function: llm.ToolCallFunc{
-						Name:      "read",
-						Arguments: json.RawMessage(`{"path":"README.md"}`),
-					},
-				}},
-				FinishReason: llm.FinishToolCalls,
-			},
-			{
-				Content:      "done",
-				FinishReason: llm.FinishStop,
-			},
-		},
-	}
-
-	registry := tools.NewRegistry()
-	registry.MustRegister(failingStubTool{stubTool: stubTool{name: "read"}})
-	registry.MustRegister(stubTool{name: "write", content: "wrote"})
-
-	engine := NewEngine(EngineConfig{
-		MaxIterations:        2,
-		MaxResearchToolCalls: 1,
-		ContextWindow:        4096,
-	}, provider, registry)
-
-	_, err := engine.RunWithContext(context.Background(), Task{Description: "review"})
-	if err != nil {
-		t.Fatalf("RunWithContext error = %v", err)
-	}
-	if len(provider.requests) != 2 {
-		t.Fatalf("provider requests = %d, want 2", len(provider.requests))
-	}
-	secondTools := toolNames(provider.requests[1].Tools)
-	if contains(secondTools, "read") {
-		t.Fatalf("second request tools = %v, want read filtered after tool execution error", secondTools)
-	}
-	if !contains(secondTools, "write") {
-		t.Fatalf("second request tools = %v, want write retained", secondTools)
-	}
-}
-
 func TestMaxIterationsReturnsTypedError(t *testing.T) {
 	provider := &scriptedStreamProvider{
 		responses: []*llm.CompletionResponse{{
@@ -426,24 +245,6 @@ func TestMaxIterationsReturnsTypedError(t *testing.T) {
 	}
 }
 
-type failingStubTool struct {
-	stubTool
-}
-
-func (t failingStubTool) Execute(context.Context, json.RawMessage) (*tools.Result, error) {
-	return nil, fmt.Errorf("boom")
-}
-
-type countingStubTool struct {
-	stubTool
-	count *int
-}
-
-func (t countingStubTool) Execute(ctx context.Context, params json.RawMessage) (*tools.Result, error) {
-	(*t.count)++
-	return t.stubTool.Execute(ctx, params)
-}
-
 func toolNames(tools []llm.Tool) []string {
 	names := make([]string, 0, len(tools))
 	for _, tool := range tools {
@@ -460,33 +261,3 @@ func contains(values []string, target string) bool {
 	}
 	return false
 }
-
-type denyPermissionService struct{}
-
-func (denyPermissionService) Request(context.Context, string, string, string) (bool, error) {
-	return false, nil
-}
-
-func (denyPermissionService) Check(string, string) permission.PermissionLevel {
-	return permission.PermissionDeny
-}
-
-func (denyPermissionService) CheckCommand(string) permission.PermissionLevel {
-	return permission.PermissionDeny
-}
-
-func (denyPermissionService) CheckPath(string) permission.PermissionLevel {
-	return permission.PermissionDeny
-}
-
-func (denyPermissionService) Grant(string, permission.PermissionLevel) {}
-
-func (denyPermissionService) GrantCommand(string, permission.PermissionLevel) {}
-
-func (denyPermissionService) GrantPath(string, permission.PermissionLevel) {}
-
-func (denyPermissionService) Revoke(string) {}
-
-func (denyPermissionService) RevokeCommand(string) {}
-
-func (denyPermissionService) RevokePath(string) {}

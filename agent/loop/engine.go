@@ -17,13 +17,12 @@ import (
 
 // EngineConfig holds engine configuration.
 type EngineConfig struct {
-	MaxIterations        int
-	MaxResearchToolCalls int
-	ContextWindow        int
-	MaxTokens            *int
-	Temperature          *float32
-	TimeoutPerTurn       time.Duration
-	SystemPrompt         string
+	MaxIterations  int
+	ContextWindow  int
+	MaxTokens      *int
+	Temperature    *float32
+	TimeoutPerTurn time.Duration
+	SystemPrompt   string
 }
 
 var ErrMaxIterations = errors.New("maximum iterations exceeded")
@@ -143,14 +142,13 @@ func (e *Engine) runWithContext(ctx context.Context, task Task, sink func(Event)
 
 // executor manages a single ReAct loop run.
 type executor struct {
-	engine            *Engine
-	task              Task
-	events            []Event
-	iterCount         int
-	researchToolCalls int
-	startTime         time.Time
-	totalUsage        llm.Usage
-	sink              func(Event)
+	engine     *Engine
+	task       Task
+	events     []Event
+	iterCount  int
+	startTime  time.Time
+	totalUsage llm.Usage
+	sink       func(Event)
 
 	responsesPreviousID string
 	responsesFollowup   []llm.Message
@@ -264,40 +262,31 @@ func (ex *executor) callLLM(ctx context.Context) (*llm.CompletionResponse, error
 }
 
 func (ex *executor) filteredTools() []llm.Tool {
-	all := ex.engine.tools.ToLLMTools()
 	if !ex.task.DisableResearchTools {
-		return all
+		return ex.engine.tools.ToLLMTools()
 	}
 
-	tools := make([]llm.Tool, 0, len(all))
-	for _, tool := range all {
-		if !isResearchTool(tool.Function.Name) {
-			tools = append(tools, tool)
+	filtered := ex.engine.tools.ToLLMToolsFiltered(func(_ tools.Tool, metadata tools.ToolMetadata) bool {
+		if len(metadata.Classes) == 0 {
+			return false
 		}
-	}
-	if len(tools) == 0 {
+		return !hasToolClass(metadata, tools.ToolClassExploration) && !hasToolClass(metadata, tools.ToolClassContextExpansion)
+	})
+	if len(filtered) == 0 {
 		return nil
 	}
-	return tools
+	return filtered
 }
 
-func isResearchTool(name string) bool {
-	switch name {
-	case "read", "grep", "glob", "shell", "load_skill":
-		return true
-	default:
-		return false
+func hasToolClass(metadata tools.ToolMetadata, class tools.ToolClass) bool {
+	for _, current := range metadata.Classes {
+		if current == class {
+			return true
+		}
 	}
+	return false
 }
 
-func (ex *executor) maybeDisableResearchTools() {
-	if ex.task.DisableResearchTools || ex.engine.config.MaxResearchToolCalls <= 0 {
-		return
-	}
-	if ex.researchToolCalls >= ex.engine.config.MaxResearchToolCalls {
-		ex.task.DisableResearchTools = true
-	}
-}
 func (ex *executor) sanitizeToolPairsBeforeRequest() {
 	if ex.engine == nil || ex.engine.ctxManager == nil {
 		return
@@ -462,12 +451,6 @@ func (ex *executor) handleResponse(ctx context.Context, resp *llm.CompletionResp
 	}
 
 	if len(resp.ToolCalls) > 0 {
-		for _, tc := range resp.ToolCalls {
-			if isResearchTool(tc.Function.Name) {
-				ex.researchToolCalls++
-			}
-		}
-		ex.maybeDisableResearchTools()
 		for _, tc := range resp.ToolCalls {
 			if err := ex.executeToolCall(ctx, tc); err != nil {
 				return false, err
