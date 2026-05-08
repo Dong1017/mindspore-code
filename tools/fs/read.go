@@ -65,6 +65,8 @@ type readParams struct {
 	Limit  int    `json:"limit"`
 }
 
+const emptyFilePlaceholder = "(file is empty)"
+
 // Execute executes the read tool.
 func (t *ReadTool) Execute(ctx context.Context, params json.RawMessage) (*tools.Result, error) {
 	var p readParams
@@ -110,8 +112,8 @@ func (t *ReadTool) Execute(ctx context.Context, params json.RawMessage) (*tools.
 		summary = fmt.Sprintf("%d lines (offset=%d, limit=%d)", lines, p.Offset, p.Limit)
 	}
 
-	if strings.TrimSpace(content) == "" {
-		content = "(file is empty)"
+	if content == "" {
+		content = emptyFilePlaceholder
 	}
 
 	return tools.StringResultWithSummary(content, summary), nil

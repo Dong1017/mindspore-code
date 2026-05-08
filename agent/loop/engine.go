@@ -286,8 +286,8 @@ func (ex *executor) sanitizeToolPairsBeforeRequest() {
 	messages := ex.engine.ctxManager.GetNonSystemMessages()
 	valid := validToolCallIDs(messages)
 	sanitized, report := sanitizeMessagesForValidToolCallIDs(messages, valid)
-	ex.engine.ctxManager.SetNonSystemMessages(sanitized)
 	if report.changed() {
+		ex.engine.ctxManager.SetNonSystemMessages(sanitized)
 		valid = validToolCallIDs(sanitized)
 	}
 
@@ -297,12 +297,14 @@ func (ex *executor) sanitizeToolPairsBeforeRequest() {
 		if len(ex.responsesFollowup) == 0 {
 			ex.responsesPreviousID = ""
 		}
-		if !report.changed() && followupReport.changed() {
+		if !report.removedPairs() && followupReport.removedPairs() {
 			report = followupReport
+		} else if followupReport.normalizedToolResults > 0 {
+			report.normalizedToolResults += followupReport.normalizedToolResults
 		}
 	}
 
-	if !report.changed() {
+	if !report.removedPairs() {
 		return
 	}
 

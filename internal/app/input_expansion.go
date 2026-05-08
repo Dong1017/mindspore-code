@@ -16,8 +16,6 @@ import (
 
 var atFilePathPattern = regexp.MustCompile(`^[A-Za-z0-9.:_/\\-]+$`)
 
-const internalInputExpansionActionPrefix = "\x00input-expansion:"
-
 type pendingInputExpansion struct {
 	denial *pathpolicy.PathDenial
 	resume func(pathpolicy.ResolveOptions)
@@ -187,11 +185,8 @@ func (a *Application) applyInputExpansionDecision(decision loop.PathAuthorizatio
 	if pending.resume == nil {
 		return
 	}
+	// Resume directly so chat and slash-command continuations keep their original dispatch path.
 	pending.resume(pathpolicy.ResolveOptions{TemporaryReadRoots: []string{decision.Root}})
-}
-
-func (a *Application) handlePendingInputExpansionDecision(input string) bool {
-	return strings.HasPrefix(input, internalInputExpansionActionPrefix)
 }
 
 func (a *Application) processExpandedInput(expanded string) {

@@ -228,14 +228,6 @@ func (a *Application) processInput(input string) {
 		return
 	}
 
-	if a.handlePendingInputExpansionDecision(trimmed) {
-		return
-	}
-
-	if strings.HasPrefix(trimmed, internalInputExpansionActionPrefix) {
-		return
-	}
-
 	if a.pathAuthorizer != nil && a.pathAuthorizer.HandleInput(trimmed) {
 		return
 	}
