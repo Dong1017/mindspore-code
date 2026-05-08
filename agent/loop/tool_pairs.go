@@ -177,6 +177,7 @@ func sanitizeMessagesForValidToolCallIDs(messages []llm.Message, valid map[strin
 				removedIDs[id] = struct{}{}
 				continue
 			}
+			msg.Content = normalizeToolResultContent(msg.Content)
 			sanitized = append(sanitized, msg)
 
 		default:

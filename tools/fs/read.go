@@ -110,6 +110,10 @@ func (t *ReadTool) Execute(ctx context.Context, params json.RawMessage) (*tools.
 		summary = fmt.Sprintf("%d lines (offset=%d, limit=%d)", lines, p.Offset, p.Limit)
 	}
 
+	if strings.TrimSpace(content) == "" {
+		content = "(file is empty)"
+	}
+
 	return tools.StringResultWithSummary(content, summary), nil
 }
 

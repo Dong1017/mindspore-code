@@ -286,8 +286,8 @@ func (ex *executor) sanitizeToolPairsBeforeRequest() {
 	messages := ex.engine.ctxManager.GetNonSystemMessages()
 	valid := validToolCallIDs(messages)
 	sanitized, report := sanitizeMessagesForValidToolCallIDs(messages, valid)
+	ex.engine.ctxManager.SetNonSystemMessages(sanitized)
 	if report.changed() {
-		ex.engine.ctxManager.SetNonSystemMessages(sanitized)
 		valid = validToolCallIDs(sanitized)
 	}
 
@@ -845,7 +845,17 @@ func (ex *executor) emitContextCompactionNotice(notice *contextCompactionNotice)
 	return nil
 }
 
+const emptyToolResultPlaceholder = "(tool completed with empty output)"
+
+func normalizeToolResultContent(content string) string {
+	if strings.TrimSpace(content) == "" {
+		return emptyToolResultPlaceholder
+	}
+	return content
+}
+
 func (ex *executor) addToolResult(ctx context.Context, callID, content string) (*contextCompactionNotice, error) {
+	content = normalizeToolResultContent(content)
 	msg := llm.NewToolMessage(callID, content)
 	notice, err := ex.addContextMessage(ctx, msg)
 	if err != nil {

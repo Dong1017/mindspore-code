@@ -346,8 +346,6 @@ func TestProcessInputExternalAtFilePromptsAndRetriesAfterApproval(t *testing.T) 
 	}
 
 	app.processInput("1")
-	decision := drainUntilEventType(t, app, model.UserInput)
-	app.processInput(decision.Message)
 	drainUntilEventType(t, app, model.AgentReply)
 	msgs := app.ctxManager.GetNonSystemMessages()
 	if !containsUserMessage(msgs, `[file path="`+filepath.ToSlash(filepath.Join(external, "ctx.txt"))+`"]`) {

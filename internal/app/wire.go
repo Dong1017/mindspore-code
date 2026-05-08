@@ -57,6 +57,7 @@ type Application struct {
 	permissionUI            *PermissionPromptUI
 	pathResolver            *pathpolicy.Resolver
 	pathAuthorizer          *PathAuthorizer
+	inputExpansionMu        sync.Mutex
 	pendingInputExpansion   *pendingInputExpansion
 	permissionSettingsIssue *permissionSettingsIssue
 	session                 *session.Session

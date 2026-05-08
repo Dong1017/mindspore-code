@@ -159,49 +159,39 @@ func (a *Application) requestInputExpansionAuthorization(denial *pathpolicy.Path
 		a.emitInputExpansionError(pathpolicy.NewPathDenialError(denial))
 		return
 	}
+	a.inputExpansionMu.Lock()
 	a.pendingInputExpansion = &pendingInputExpansion{denial: denial, resume: resume}
+	a.inputExpansionMu.Unlock()
 	go func() {
 		decision, err := a.pathAuthorizer.RequestPathAuthorization(context.Background(), denial)
 		if err != nil {
 			a.EventCh <- model.Event{Type: model.ToolError, Message: err.Error()}
 			return
 		}
-		a.EventCh <- model.Event{Type: model.UserInput, Message: pendingInputExpansionToken(decision)}
+		a.applyInputExpansionDecision(decision)
 	}()
 }
 
-func pendingInputExpansionToken(decision loop.PathAuthorizationDecision) string {
-	return internalInputExpansionActionPrefix + string(decision.Scope) + "\x00" + decision.Root
-}
-
-func parsePendingInputExpansionToken(input string) (loop.PathAuthorizationDecision, bool) {
-	payload := strings.TrimPrefix(input, internalInputExpansionActionPrefix)
-	parts := strings.SplitN(payload, "\x00", 2)
-	if len(parts) != 2 {
-		return loop.PathAuthorizationDecision{}, false
-	}
-	return loop.PathAuthorizationDecision{Scope: loop.PathAuthorizationScope(parts[0]), Root: parts[1], Mode: loop.PathAuthorizationModeRead}, true
-}
-
-func (a *Application) handlePendingInputExpansionDecision(input string) bool {
-	if !strings.HasPrefix(input, internalInputExpansionActionPrefix) {
-		return false
-	}
-	decision, ok := parsePendingInputExpansionToken(input)
+func (a *Application) applyInputExpansionDecision(decision loop.PathAuthorizationDecision) {
+	a.inputExpansionMu.Lock()
 	pending := a.pendingInputExpansion
 	a.pendingInputExpansion = nil
-	if !ok || pending == nil {
-		return true
+	a.inputExpansionMu.Unlock()
+	if pending == nil {
+		return
 	}
 	if decision.Scope == loop.PathAuthorizationDeny || strings.TrimSpace(decision.Root) == "" {
 		a.emitInputExpansionError(pathpolicy.NewPathDenialError(pending.denial))
-		return true
+		return
 	}
 	if pending.resume == nil {
-		return true
+		return
 	}
 	pending.resume(pathpolicy.ResolveOptions{TemporaryReadRoots: []string{decision.Root}})
-	return true
+}
+
+func (a *Application) handlePendingInputExpansionDecision(input string) bool {
+	return strings.HasPrefix(input, internalInputExpansionActionPrefix)
 }
 
 func (a *Application) processExpandedInput(expanded string) {
