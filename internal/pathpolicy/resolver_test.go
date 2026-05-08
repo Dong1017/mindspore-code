@@ -2,6 +2,7 @@ package pathpolicy
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -94,6 +95,80 @@ func TestResolveWritablePathRejectsExternalReadRoot(t *testing.T) {
 	}
 	if denial == nil || denial.Kind != string(DenialKindExternalWrite) {
 		t.Fatalf("denial = %#v, want external write denial", denial)
+	}
+}
+
+func TestResolveReadablePathRejectsWorkspaceSymlinkEscape(t *testing.T) {
+	workDir := t.TempDir()
+	external := t.TempDir()
+	if err := os.WriteFile(filepath.Join(external, "outside.txt"), []byte("outside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(workDir, "link")
+	if err := os.Symlink(external, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	resolver := NewResolver(NewPathPolicy(workDir, nil, nil))
+
+	got, denial, err := resolver.ResolveReadablePath(filepath.Join("link", "outside.txt"), ResolveOptions{})
+	if err != nil {
+		t.Fatalf("ResolveReadablePath error = %v", err)
+	}
+	if got != "" || denial == nil || denial.Kind != string(DenialKindExternalRead) {
+		t.Fatalf("symlink escape got=%q denial=%#v, want external read denial", got, denial)
+	}
+}
+
+func TestResolveWritablePathRejectsWorkspaceSymlinkEscape(t *testing.T) {
+	workDir := t.TempDir()
+	external := t.TempDir()
+	link := filepath.Join(workDir, "link")
+	if err := os.Symlink(external, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	resolver := NewResolver(NewPathPolicy(workDir, nil, nil))
+
+	got, denial, err := resolver.ResolveWritablePath(filepath.Join("link", "new.txt"), ResolveOptions{})
+	if err != nil {
+		t.Fatalf("ResolveWritablePath error = %v", err)
+	}
+	if got != "" || denial == nil || denial.Kind != string(DenialKindExternalWrite) {
+		t.Fatalf("symlink escape got=%q denial=%#v, want external write denial", got, denial)
+	}
+}
+
+func TestResolveReadablePathRejectsExternalRootSymlinkEscape(t *testing.T) {
+	workDir := t.TempDir()
+	allowed := t.TempDir()
+	external := t.TempDir()
+	if err := os.WriteFile(filepath.Join(external, "outside.txt"), []byte("outside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(allowed, "link")
+	if err := os.Symlink(external, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	resolver := NewResolver(NewPathPolicy(workDir, []string{allowed}, nil))
+
+	got, denial, err := resolver.ResolveReadablePath(filepath.Join(link, "outside.txt"), ResolveOptions{})
+	if err != nil {
+		t.Fatalf("ResolveReadablePath error = %v", err)
+	}
+	if got != "" || denial == nil || denial.Kind != string(DenialKindExternalRead) {
+		t.Fatalf("external root symlink escape got=%q denial=%#v, want external read denial", got, denial)
+	}
+}
+
+func TestResolveReadablePathRejectsRelativeEscapeWithoutAuthorization(t *testing.T) {
+	workDir := t.TempDir()
+	resolver := NewResolver(NewPathPolicy(workDir, nil, nil))
+
+	got, denial, err := resolver.ResolveReadablePath("../../outside.txt", ResolveOptions{})
+	if err == nil {
+		t.Fatal("ResolveReadablePath error = nil, want relative escape error")
+	}
+	if got != "" || denial != nil {
+		t.Fatalf("relative escape got=%q denial=%#v, want direct error without denial", got, denial)
 	}
 }
 

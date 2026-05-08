@@ -647,6 +647,34 @@ func TestTextInputReplacesOnlyCurrentTokenWhenApplyingFileSuggestion(t *testing.
 	}
 }
 
+func TestTextInputShowsExternalReadAuthorizationHintForAbsoluteAtPath(t *testing.T) {
+	root := t.TempDir()
+	writeSuggestionFile(t, root, "ctx.txt")
+	external := filepath.Join(t.TempDir(), "external.md")
+
+	input := NewTextInput().WithFileSuggestions(root)
+	input.Model.SetValue("read @" + external)
+	input.Model.SetCursor(len([]rune(input.Value())))
+	input.updateSuggestions()
+
+	if !input.HasSuggestions() {
+		t.Fatal("expected external read authorization suggestion")
+	}
+	if got := len(input.suggestionItems); got != 1 {
+		t.Fatalf("expected one external authorization suggestion, got %d", got)
+	}
+	item := input.suggestionItems[0]
+	if item.Display != "Authorize external read access" {
+		t.Fatalf("expected authorization action, got %q", item.Display)
+	}
+	if item.Description != externalReadHint {
+		t.Fatalf("expected external read hint, got %q", item.Description)
+	}
+	if item.Value != external {
+		t.Fatalf("expected external path value, got %q", item.Value)
+	}
+}
+
 func TestTextInputLeavesInvalidAtFormsWithoutSuggestions(t *testing.T) {
 	root := t.TempDir()
 	writeSuggestionFile(t, root, "ctx.txt")

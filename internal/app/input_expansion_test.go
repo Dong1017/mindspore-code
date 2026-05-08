@@ -357,6 +357,38 @@ func TestProcessInputExternalAtFilePromptsAndRetriesAfterApproval(t *testing.T) 
 		t.Fatalf("expected external file content not to be inlined, got %#v", msgs)
 	}
 }
+func TestExpandInputTextExpandsQuotedAtPathWithSpaces(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "dir with spaces/ctx file.md", "context")
+
+	app := &Application{WorkDir: root}
+	got, err := app.expandInputText(`read @"dir with spaces/ctx file.md"`)
+	if err != nil {
+		t.Fatalf("expandInputText returned error: %v", err)
+	}
+	if !strings.Contains(got, `[file path="`+filepath.ToSlash(filepath.Join(root, "dir with spaces", "ctx file.md"))+`"]`) {
+		t.Fatalf("expected quoted @file path to expand, got %q", got)
+	}
+}
+
+func TestExpandInputTextRelativeEscapeDoesNotPromptForAuthorization(t *testing.T) {
+	root := t.TempDir()
+	policy := pathpolicy.NewPathPolicy(root, nil, nil)
+	app := &Application{
+		WorkDir:      root,
+		EventCh:      make(chan model.Event, 4),
+		pathResolver: pathpolicy.NewResolver(policy),
+	}
+
+	_, err := app.expandInputText("read @../../outside.txt")
+	if err == nil || !strings.Contains(err.Error(), "path escapes working directory") {
+		t.Fatalf("expected direct relative escape error, got %v", err)
+	}
+	if app.tryAuthorizeInputExpansion(err, nil) {
+		t.Fatal("relative escape should not be treated as authorizable")
+	}
+}
+
 func containsUserMessage(msgs []llm.Message, needle string) bool {
 	for _, msg := range msgs {
 		if msg.Role == "user" && strings.Contains(msg.Content, needle) {

@@ -14,6 +14,7 @@ import (
 	agentctx "github.com/mindspore-lab/mindspore-cli/agent/context"
 	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
 	issuepkg "github.com/mindspore-lab/mindspore-cli/internal/issues"
+	"github.com/mindspore-lab/mindspore-cli/internal/pathpolicy"
 	projectpkg "github.com/mindspore-lab/mindspore-cli/internal/project"
 	"github.com/mindspore-lab/mindspore-cli/permission"
 	"github.com/mindspore-lab/mindspore-cli/ui/model"
@@ -61,12 +62,7 @@ func (a *Application) handleCommand(input string) {
 	case "/logout":
 		a.cmdLogout()
 	case "/feedback":
-		expanded, err := a.expandReportInput(cmd.Remainder)
-		if err != nil {
-			a.emitInputExpansionError(err)
-			return
-		}
-		a.cmdFeedback(expanded)
+		a.handleExpandableCommand(cmd.Remainder, a.expandReportInputWithOptions, a.cmdFeedback)
 	case "/issues":
 		a.cmdIssues(args)
 	case "/__issue_detail":
@@ -76,40 +72,15 @@ func (a *Application) handleCommand(input string) {
 	case "/__issue_claim":
 		a.cmdIssueClaim(args)
 	case "/diagnose":
-		expanded, err := a.expandIssueCommandInput(cmd.Remainder)
-		if err != nil {
-			a.emitInputExpansionError(err)
-			return
-		}
-		a.cmdDiagnose(expanded)
+		a.handleExpandableCommand(cmd.Remainder, a.expandIssueCommandInputWithOptions, a.cmdDiagnose)
 	case "/fix":
-		expanded, err := a.expandIssueCommandInput(cmd.Remainder)
-		if err != nil {
-			a.emitInputExpansionError(err)
-			return
-		}
-		a.cmdFix(expanded)
+		a.handleExpandableCommand(cmd.Remainder, a.expandIssueCommandInputWithOptions, a.cmdFix)
 	case "/migrate":
-		expanded, err := a.expandIssueCommandInput(cmd.Remainder)
-		if err != nil {
-			a.emitInputExpansionError(err)
-			return
-		}
-		a.cmdMigrate(expanded)
+		a.handleExpandableCommand(cmd.Remainder, a.expandIssueCommandInputWithOptions, a.cmdMigrate)
 	case "/integrate":
-		expanded, err := a.expandIssueCommandInput(cmd.Remainder)
-		if err != nil {
-			a.emitInputExpansionError(err)
-			return
-		}
-		a.cmdIntegrate(expanded)
+		a.handleExpandableCommand(cmd.Remainder, a.expandIssueCommandInputWithOptions, a.cmdIntegrate)
 	case "/preflight":
-		expanded, err := a.expandInputText(cmd.Remainder)
-		if err != nil {
-			a.emitInputExpansionError(err)
-			return
-		}
-		a.cmdPreflight(expanded)
+		a.handleExpandableCommand(cmd.Remainder, a.expandInputTextWithOptions, a.cmdPreflight)
 	case "/now":
 		a.cmdNow()
 	case "/skill":
@@ -139,6 +110,25 @@ func (a *Application) handleCommand(input string) {
 	}
 }
 
+func (a *Application) handleExpandableCommand(raw string, expand func(string, pathpolicy.ResolveOptions) (string, error), run func(string)) {
+	expanded, err := expand(raw, pathpolicy.ResolveOptions{})
+	if err != nil {
+		if a.tryAuthorizeInputExpansion(err, func(opts pathpolicy.ResolveOptions) {
+			expanded, retryErr := expand(raw, opts)
+			if retryErr != nil {
+				a.emitInputExpansionError(retryErr)
+				return
+			}
+			run(expanded)
+		}) {
+			return
+		}
+		a.emitInputExpansionError(err)
+		return
+	}
+	run(expanded)
+}
+
 func (a *Application) handleRawSkillCommand(rawInput string) error {
 	if strings.TrimSpace(rawInput) == "" {
 		a.cmdSkill(nil)
@@ -151,15 +141,28 @@ func (a *Application) handleRawSkillCommand(rawInput string) error {
 		return nil
 	}
 
-	if request != "" {
-		expanded, err := a.expandInputText(request)
-		if err != nil {
-			return err
-		}
-		request = expanded
+	run := func(expanded string) {
+		a.runLoadedSkillCommand(skillName, expanded)
 	}
-
-	a.runLoadedSkillCommand(skillName, request)
+	if request == "" {
+		run("")
+		return nil
+	}
+	expanded, err := a.expandInputTextWithOptions(request, pathpolicy.ResolveOptions{})
+	if err != nil {
+		if a.tryAuthorizeInputExpansion(err, func(opts pathpolicy.ResolveOptions) {
+			expanded, retryErr := a.expandInputTextWithOptions(request, opts)
+			if retryErr != nil {
+				a.emitInputExpansionError(retryErr)
+				return
+			}
+			run(expanded)
+		}) {
+			return nil
+		}
+		return err
+	}
+	run(expanded)
 	return nil
 }
 
@@ -177,15 +180,28 @@ func (a *Application) handleSkillAliasCommand(commandName, rawRemainder string) 
 	}
 
 	request := strings.TrimSpace(rawRemainder)
-	if request != "" {
-		expanded, err := a.expandInputText(request)
-		if err != nil {
-			return true, err
-		}
-		request = expanded
+	run := func(expanded string) {
+		a.runLoadedSkillCommand(skillName, expanded)
 	}
-
-	a.runLoadedSkillCommand(skillName, request)
+	if request == "" {
+		run("")
+		return true, nil
+	}
+	expanded, err := a.expandInputTextWithOptions(request, pathpolicy.ResolveOptions{})
+	if err != nil {
+		if a.tryAuthorizeInputExpansion(err, func(opts pathpolicy.ResolveOptions) {
+			expanded, retryErr := a.expandInputTextWithOptions(request, opts)
+			if retryErr != nil {
+				a.emitInputExpansionError(retryErr)
+				return
+			}
+			run(expanded)
+		}) {
+			return true, nil
+		}
+		return true, err
+	}
+	run(expanded)
 	return true, nil
 }
 

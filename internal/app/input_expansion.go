@@ -19,12 +19,22 @@ var atFilePathPattern = regexp.MustCompile(`^[A-Za-z0-9.:_/\\-]+$`)
 const internalInputExpansionActionPrefix = "\x00input-expansion:"
 
 type pendingInputExpansion struct {
-	rawInput string
-	denial   *pathpolicy.PathDenial
+	denial *pathpolicy.PathDenial
+	resume func(pathpolicy.ResolveOptions)
 }
 
 func (a *Application) expandInputText(text string) (string, error) {
 	return a.expandAtFiles(text)
+}
+
+func (a *Application) expandInputTextWithOptions(text string, opts pathpolicy.ResolveOptions) (string, error) {
+	workDir := ""
+	var resolver *pathpolicy.Resolver
+	if a != nil {
+		workDir = a.WorkDir
+		resolver = a.pathResolver
+	}
+	return expandAtFilesWithOptions(workDir, text, resolver, opts)
 }
 
 func (a *Application) expandAtFiles(text string) (string, error) {
@@ -48,8 +58,18 @@ func expandAtFilesWithOptions(workDir, text string, resolver *pathpolicy.Resolve
 		r := rune(text[i])
 		if r < utf8RuneSelf && !isASCIIWhitespace(byte(r)) {
 			j := i + 1
-			for j < len(text) && !isASCIIWhitespace(text[j]) {
+			if text[i] == '@' && j < len(text) && text[j] == '"' {
 				j++
+				for j < len(text) && text[j] != '"' {
+					j++
+				}
+				if j < len(text) {
+					j++
+				}
+			} else {
+				for j < len(text) && !isASCIIWhitespace(text[j]) {
+					j++
+				}
 			}
 			token := text[i:j]
 			replaced, err := replaceAtFileToken(workDir, token, resolver, opts)
@@ -99,7 +119,9 @@ func replaceAtFileToken(workDir, token string, resolver *pathpolicy.Resolver, op
 	}
 
 	path := token[1:]
-	if !atFilePathPattern.MatchString(path) {
+	if strings.HasPrefix(path, `"`) && strings.HasSuffix(path, `"`) && len(path) >= 2 {
+		path = strings.TrimSuffix(strings.TrimPrefix(path, `"`), `"`)
+	} else if !atFilePathPattern.MatchString(path) {
 		return token, nil
 	}
 
@@ -132,12 +154,12 @@ func formatExpandedFilePath(path string) string {
 	return `[file path="` + filepath.ToSlash(filepath.Clean(path)) + `"]`
 }
 
-func (a *Application) requestInputExpansionAuthorization(rawInput string, denial *pathpolicy.PathDenial) {
+func (a *Application) requestInputExpansionAuthorization(denial *pathpolicy.PathDenial, resume func(pathpolicy.ResolveOptions)) {
 	if a == nil || a.pathAuthorizer == nil || denial == nil {
 		a.emitInputExpansionError(pathpolicy.NewPathDenialError(denial))
 		return
 	}
-	a.pendingInputExpansion = &pendingInputExpansion{rawInput: rawInput, denial: denial}
+	a.pendingInputExpansion = &pendingInputExpansion{denial: denial, resume: resume}
 	go func() {
 		decision, err := a.pathAuthorizer.RequestPathAuthorization(context.Background(), denial)
 		if err != nil {
@@ -175,12 +197,10 @@ func (a *Application) handlePendingInputExpansionDecision(input string) bool {
 		a.emitInputExpansionError(pathpolicy.NewPathDenialError(pending.denial))
 		return true
 	}
-	expanded, err := expandAtFilesWithOptions(a.WorkDir, strings.TrimSpace(pending.rawInput), a.pathResolver, pathpolicy.ResolveOptions{TemporaryReadRoots: []string{decision.Root}})
-	if err != nil {
-		a.emitInputExpansionError(err)
+	if pending.resume == nil {
 		return true
 	}
-	a.processExpandedInput(expanded)
+	pending.resume(pathpolicy.ResolveOptions{TemporaryReadRoots: []string{decision.Root}})
 	return true
 }
 
@@ -189,12 +209,12 @@ func (a *Application) processExpandedInput(expanded string) {
 	go a.runTask(expanded)
 }
 
-func (a *Application) tryAuthorizeInputExpansion(rawInput string, err error) bool {
+func (a *Application) tryAuthorizeInputExpansion(err error, resume func(pathpolicy.ResolveOptions)) bool {
 	denial, ok := pathpolicy.ExtractPathDenialFromError(err)
 	if !ok {
 		return false
 	}
-	a.requestInputExpansionAuthorization(rawInput, denial)
+	a.requestInputExpansionAuthorization(denial, resume)
 	return true
 }
 
@@ -234,13 +254,13 @@ func splitFirstToken(input string) (string, string) {
 	return trimmed, ""
 }
 
-func (a *Application) expandIssueCommandInput(rawInput string) (string, error) {
+func (a *Application) expandIssueCommandInputWithOptions(rawInput string, opts pathpolicy.ResolveOptions) (string, error) {
 	first, remainder := splitFirstToken(rawInput)
 	if first == "" {
 		return strings.TrimSpace(rawInput), nil
 	}
 	if !looksLikeIssueKey(first) {
-		return a.expandInputText(strings.TrimSpace(rawInput))
+		return a.expandInputTextWithOptions(strings.TrimSpace(rawInput), opts)
 	}
 	if _, err := parseIssueRef(first); err != nil {
 		return strings.TrimSpace(rawInput), nil
@@ -248,7 +268,23 @@ func (a *Application) expandIssueCommandInput(rawInput string) (string, error) {
 	if remainder == "" {
 		return first, nil
 	}
-	expanded, err := a.expandInputText(remainder)
+	expanded, err := a.expandInputTextWithOptions(remainder, opts)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(first + " " + expanded), nil
+}
+
+func (a *Application) expandIssueCommandInput(rawInput string) (string, error) {
+	return a.expandIssueCommandInputWithOptions(rawInput, pathpolicy.ResolveOptions{})
+}
+
+func (a *Application) expandReportInputWithOptions(rawInput string, opts pathpolicy.ResolveOptions) (string, error) {
+	first, remainder := splitFirstToken(rawInput)
+	if first == "" || remainder == "" {
+		return strings.TrimSpace(rawInput), nil
+	}
+	expanded, err := a.expandInputTextWithOptions(remainder, opts)
 	if err != nil {
 		return "", err
 	}
@@ -256,15 +292,7 @@ func (a *Application) expandIssueCommandInput(rawInput string) (string, error) {
 }
 
 func (a *Application) expandReportInput(rawInput string) (string, error) {
-	first, remainder := splitFirstToken(rawInput)
-	if first == "" || remainder == "" {
-		return strings.TrimSpace(rawInput), nil
-	}
-	expanded, err := a.expandInputText(remainder)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(first + " " + expanded), nil
+	return a.expandReportInputWithOptions(rawInput, pathpolicy.ResolveOptions{})
 }
 
 func (a *Application) emitInputExpansionError(err error) {

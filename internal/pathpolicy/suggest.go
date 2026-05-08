@@ -52,7 +52,7 @@ func nearestGitRoot(path string) string {
 		if candidate == "." || candidate == "" {
 			return ""
 		}
-		if info, err := os.Stat(filepath.Join(candidate, ".git")); err == nil && info.IsDir() {
+		if info, err := os.Stat(filepath.Join(candidate, ".git")); err == nil && (info.IsDir() || info.Mode().IsRegular()) {
 			return candidate
 		}
 		parent := filepath.Dir(candidate)

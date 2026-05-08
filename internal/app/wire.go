@@ -506,7 +506,8 @@ func (a *Application) refreshEngineSessionBindings() {
 		a.ctxManager.SetTrajectoryPath(trajectoryPath)
 	}
 	a.Engine.SetLLMDebugDumper(a.llmDebugDumper)
-	a.Engine.SetTrajectoryRecorder(newTrajectoryRecorder(a.session, a.ctxManager, a.WorkDir, a.noteLiveLLMActivity))
+	a.Engine.SetPathAuthorizer(a.pathAuthorizer)
+	a.Engine.SetTrajectoryRecorder(newTrajectoryRecorder(a.session, a.ctxManager, a.WorkDir, a.pathResolver, a.noteLiveLLMActivity))
 }
 
 func (a *Application) dumpPreCompactSnapshot(snapshot agentctx.CompactSnapshot) error {
@@ -643,6 +644,7 @@ func (a *Application) SetProvider(providerName, modelName, apiKey string) error 
 	}
 	newEngine.SetContextManager(a.ctxManager)
 	newEngine.SetPermissionService(a.permService)
+	newEngine.SetPathAuthorizer(a.pathAuthorizer)
 
 	a.Engine = newEngine
 	a.provider = provider
@@ -667,7 +669,7 @@ func initProvider(cfg configs.ModelConfig, opts llm.ResolveOptions) (llm.Provide
 	return client, nil
 }
 
-func newTrajectoryRecorder(s *session.Session, cm *agentctx.Manager, workDir string, noteLiveLLMActivity func() error) *loop.TrajectoryRecorder {
+func newTrajectoryRecorder(s *session.Session, cm *agentctx.Manager, workDir string, resolver *pathpolicy.Resolver, noteLiveLLMActivity func() error) *loop.TrajectoryRecorder {
 	ensureSessionActive := func() error {
 		if noteLiveLLMActivity == nil {
 			return nil
@@ -727,11 +729,12 @@ func newTrajectoryRecorder(s *session.Session, cm *agentctx.Manager, workDir str
 			}
 			return s.AppendContextCompaction(trigger, beforeTokens, afterTokens, message)
 		},
-		PrepareFileMutation: func(tc llm.ToolCall) error {
+		PrepareFileMutation: func(ctx context.Context, tc llm.ToolCall) error {
 			if s == nil {
 				return nil
 			}
-			switch strings.TrimSpace(tc.Function.Name) {
+			toolName := strings.TrimSpace(tc.Function.Name)
+			switch toolName {
 			case "write", "edit":
 			default:
 				return nil
@@ -741,12 +744,15 @@ func newTrajectoryRecorder(s *session.Session, cm *agentctx.Manager, workDir str
 			if err != nil {
 				return err
 			}
-			if strings.TrimSpace(path) == "" {
+			if strings.TrimSpace(path) == "" || resolver == nil {
 				return nil
 			}
-			fullPath, err := fs.ResolveSafePath(workDir, path)
+			fullPath, denial, err := resolver.ResolveWritablePathForOperation(toolName, path, pathpolicy.ResolveOptionsFromContext(ctx))
 			if err != nil {
 				return err
+			}
+			if denial != nil {
+				return nil
 			}
 			return s.RecordFileMutation(path, fullPath)
 		},

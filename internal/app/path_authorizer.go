@@ -95,7 +95,9 @@ func (p *PathAuthorizer) HandleInput(input string) bool {
 		}
 		if decision.Scope == loop.PathAuthorizationPersistent {
 			p.addSessionRoot(decision.Root, mode)
-			p.savePersistentRoots(mode)
+			if err := p.savePersistentRoot(mode, decision.Root); err != nil {
+				p.eventCh <- model.Event{Type: model.ToolError, Message: fmt.Sprintf("Failed to persist external path authorization; access is allowed for this session only: %v", err)}
+			}
 		}
 		req.wait <- pathAuthorizationDecision{decision: decision}
 		return true
@@ -138,37 +140,44 @@ func (p *PathAuthorizer) addSessionRoot(root, mode string) {
 	p.policy.AddSessionReadRoot(root)
 }
 
-func (p *PathAuthorizer) savePersistentRoots(mode string) {
+func (p *PathAuthorizer) savePersistentRoot(mode, root string) error {
 	if p == nil || p.policy == nil {
-		return
-	}
-	if mode == loop.PathAuthorizationModeWrite {
-		if p.saveWrite != nil {
-			_ = p.saveWrite(snapshotConfigAndSessionRoots(p.policy.WriteRoots))
-		}
-		return
-	}
-	if p.saveRead != nil {
-		_ = p.saveRead(snapshotConfigAndSessionRoots(p.policy.ReadRoots))
-	}
-}
-
-func snapshotConfigAndSessionRoots(roots *pathpolicy.RootSet) []string {
-	if roots == nil {
 		return nil
 	}
+	if mode == loop.PathAuthorizationModeWrite {
+		if p.saveWrite == nil {
+			return nil
+		}
+		return p.saveWrite(snapshotConfigRootsWithRoot(p.policy.WriteRoots, root))
+	}
+	if p.saveRead == nil {
+		return nil
+	}
+	return p.saveRead(snapshotConfigRootsWithRoot(p.policy.ReadRoots, root))
+}
+
+func snapshotConfigRootsWithRoot(roots *pathpolicy.RootSet, root string) []string {
 	seen := map[string]bool{}
 	out := []string{}
-	for _, entry := range roots.Snapshot() {
-		if entry.Source != pathpolicy.RootSourceConfig && entry.Source != pathpolicy.RootSourceSession {
-			continue
+	if roots != nil {
+		for _, entry := range roots.Snapshot() {
+			if entry.Source != pathpolicy.RootSourceConfig {
+				continue
+			}
+			key := strings.ToLower(entry.Path)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, entry.Path)
 		}
-		key := strings.ToLower(entry.Path)
-		if seen[key] {
-			continue
+	}
+	root = pathpolicy.NormalizeInputPath(root)
+	if strings.TrimSpace(root) != "" {
+		key := strings.ToLower(root)
+		if !seen[key] {
+			out = append(out, root)
 		}
-		seen[key] = true
-		out = append(out, entry.Path)
 	}
 	return out
 }

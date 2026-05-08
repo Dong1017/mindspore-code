@@ -17,6 +17,7 @@ import (
 	"github.com/mindspore-lab/mindspore-cli/agent/loop"
 	"github.com/mindspore-lab/mindspore-cli/agent/session"
 	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
+	"github.com/mindspore-lab/mindspore-cli/internal/pathpolicy"
 	"github.com/mindspore-lab/mindspore-cli/internal/version"
 	"github.com/mindspore-lab/mindspore-cli/ui"
 	"github.com/mindspore-lab/mindspore-cli/ui/components"
@@ -252,7 +253,14 @@ func (a *Application) processInput(input string) {
 
 	expanded, err := a.expandInputText(trimmed)
 	if err != nil {
-		if a.tryAuthorizeInputExpansion(trimmed, err) {
+		if a.tryAuthorizeInputExpansion(err, func(opts pathpolicy.ResolveOptions) {
+			expanded, retryErr := a.expandInputTextWithOptions(trimmed, opts)
+			if retryErr != nil {
+				a.emitInputExpansionError(retryErr)
+				return
+			}
+			a.processExpandedInput(expanded)
+		}) {
 			return
 		}
 		a.emitInputExpansionError(err)

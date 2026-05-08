@@ -47,7 +47,7 @@ type TrajectoryRecorder struct {
 	RecordToolResult        func(llm.ToolCall, string) error
 	RecordSkillActivate     func(string) error
 	RecordContextCompaction func(trigger string, beforeTokens, afterTokens int, message string) error
-	PrepareFileMutation     func(llm.ToolCall) error
+	PrepareFileMutation     func(context.Context, llm.ToolCall) error
 	PersistSnapshot         func() error
 }
 
@@ -485,7 +485,7 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 	}
 
 	if ex.engine.recorder != nil && ex.engine.recorder.PrepareFileMutation != nil {
-		if err := ex.engine.recorder.PrepareFileMutation(tc); err != nil {
+		if err := ex.engine.recorder.PrepareFileMutation(ctx, tc); err != nil {
 			return err
 		}
 	}
@@ -603,18 +603,18 @@ func (ex *executor) handlePathDenial(ctx context.Context, tc llm.ToolCall, tool 
 		return false, err
 	}
 	if decision.Scope == PathAuthorizationDeny {
-		return true, nil
+		return true, ex.addPathAuthorizationDeniedResult(ctx, tc, toolName, denial)
 	}
 	root := strings.TrimSpace(decision.Root)
 	if root == "" {
-		return true, nil
+		return true, ex.addPathAuthorizationDeniedResult(ctx, tc, toolName, denial)
 	}
 	mode := decision.Mode
 	if mode == "" {
 		mode = PathAuthorizationModeRead
 	}
 	if mode != PathAuthorizationModeRead && mode != PathAuthorizationModeWrite {
-		return true, nil
+		return true, ex.addPathAuthorizationDeniedResult(ctx, tc, toolName, denial)
 	}
 
 	opts := pathpolicy.ResolveOptions{TemporaryReadRoots: []string{root}}
@@ -653,6 +653,28 @@ func (ex *executor) handlePathDenial(ctx context.Context, tc llm.ToolCall, tool 
 	}
 	*result = *retryResult
 	return false, nil
+}
+
+func (ex *executor) addPathAuthorizationDeniedResult(ctx context.Context, tc llm.ToolCall, toolName string, denial *pathpolicy.PathDenial) error {
+	message := "Path authorization denied."
+	if denial != nil {
+		message = denial.ErrorMessage()
+	}
+	notice, err := ex.addToolResultWithFallback(ctx, tc.ID, message)
+	if err != nil {
+		return err
+	}
+	if err := ex.persistSnapshot(); err != nil {
+		return err
+	}
+	if err := ex.emitContextCompactionNotice(notice); err != nil {
+		return err
+	}
+	ev := NewEvent(EventToolError, fmt.Sprintf("Tool %s failed: %s", toolName, message))
+	ev.ToolName = toolName
+	ev.ToolCallID = tc.ID
+	ex.addEvent(ev)
+	return nil
 }
 
 func (ex *executor) handleInterruptedToolCall(tc llm.ToolCall, partialOutput string) error {

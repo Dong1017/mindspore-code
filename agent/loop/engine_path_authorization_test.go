@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	ctxmanager "github.com/mindspore-lab/mindspore-cli/agent/context"
@@ -100,6 +101,49 @@ func TestExecuteToolCallRetriesPathDenialWithTemporaryReadRoot(t *testing.T) {
 	}
 }
 
+func TestExecuteToolCallWritesToolResultWhenPathAuthorizationDenied(t *testing.T) {
+	args, err := json.Marshal(map[string]string{"path": "/external/file.txt"})
+	if err != nil {
+		t.Fatalf("marshal args: %v", err)
+	}
+
+	tool := &pathDenialTool{}
+	registry := tools.NewRegistry()
+	registry.MustRegister(tool)
+
+	engine := NewEngine(EngineConfig{ContextWindow: 4096}, nil, registry)
+	engine.ctxManager = ctxmanager.NewManager(ctxmanager.ManagerConfig{ContextWindow: 4096, ReserveTokens: 100})
+	authorizer := &pathDenialAuthorizer{decision: PathAuthorizationDecision{Scope: PathAuthorizationDeny, Root: "/external", Mode: PathAuthorizationModeRead}}
+	engine.SetPathAuthorizer(authorizer)
+	engine.SetPermissionService(permission.NewNoOpPermissionService())
+
+	ex := &executor{engine: engine}
+	tc := llm.ToolCall{ID: "call-read-denied", Type: "function", Function: llm.ToolCallFunc{Name: "read", Arguments: args}}
+
+	if err := ex.executeToolCall(context.Background(), tc); err != nil {
+		t.Fatalf("executeToolCall() error = %v", err)
+	}
+	if got, want := authorizer.calls, 1; got != want {
+		t.Fatalf("authorizer calls = %d, want %d", got, want)
+	}
+	if got, want := tool.calls, 1; got != want {
+		t.Fatalf("tool calls = %d, want %d", got, want)
+	}
+	msgs := engine.ctxManager.GetNonSystemMessages()
+	if len(msgs) != 1 {
+		t.Fatalf("tool messages = %d, want 1", len(msgs))
+	}
+	if got := msgs[0].Content; !strings.Contains(got, "External path access denied") || !strings.Contains(got, "/external/file.txt") {
+		t.Fatalf("tool result = %q, want denial details", got)
+	}
+	if len(ex.events) == 0 {
+		t.Fatal("expected tool error event")
+	}
+	last := ex.events[len(ex.events)-1]
+	if last.Type != EventToolError || last.ToolCallID != tc.ID || last.ToolName != "read" {
+		t.Fatalf("last event = %#v, want tool error for denied read", last)
+	}
+}
 func TestExecuteToolCallRetriesPathDenialWithTemporaryWriteRoot(t *testing.T) {
 	args, err := json.Marshal(map[string]string{"path": "/external/file.txt"})
 	if err != nil {
