@@ -31,7 +31,6 @@ const (
 	minComposerRows       = 1
 	composerPrompt        = "❯ "
 	composerContinue      = "  "
-	externalReadHint      = "Type or paste an absolute path to request external read authorization."
 )
 
 type suggestionKind int
@@ -606,8 +605,8 @@ func (t TextInput) fileSuggestionItems(token string, _ tokenRange) ([]suggestion
 	if t.isExternalFileSuggestionPath(path) {
 		return []suggestionItem{{
 			Value:       path,
-			Display:     "Authorize external read access",
-			Description: externalReadHint,
+			Display:     "External file supported",
+			Description: "Submit to request authorization",
 			Kind:        suggestionKindFile,
 		}}, true
 	}

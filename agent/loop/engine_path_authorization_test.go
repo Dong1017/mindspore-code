@@ -163,8 +163,35 @@ func TestExecuteToolCallRetriesPathDenialWithTemporaryWriteRoot(t *testing.T) {
 	ex := &executor{engine: engine}
 	tc := llm.ToolCall{ID: "call-edit", Type: "function", Function: llm.ToolCallFunc{Name: "edit", Arguments: args}}
 
+	prepareCalls := 0
+	engine.SetTrajectoryRecorder(&TrajectoryRecorder{
+		PrepareFileMutation: func(ctx context.Context, got llm.ToolCall) error {
+			prepareCalls++
+			if got.ID != tc.ID {
+				t.Fatalf("prepared tool call ID = %q, want %q", got.ID, tc.ID)
+			}
+			opts := pathpolicy.ResolveOptionsFromContext(ctx)
+			switch prepareCalls {
+			case 1:
+				if len(opts.TemporaryWriteRoots) != 0 {
+					t.Fatalf("initial prepare write roots = %v, want none", opts.TemporaryWriteRoots)
+				}
+			case 2:
+				if got, want := opts.TemporaryWriteRoots, []string{"/external"}; len(got) != 1 || got[0] != want[0] {
+					t.Fatalf("retry prepare write roots = %v, want %v", got, want)
+				}
+			default:
+				t.Fatalf("PrepareFileMutation called %d times, want 2", prepareCalls)
+			}
+			return nil
+		},
+	})
+
 	if err := ex.executeToolCall(context.Background(), tc); err != nil {
 		t.Fatalf("executeToolCall() error = %v", err)
+	}
+	if got, want := prepareCalls, 2; got != want {
+		t.Fatalf("PrepareFileMutation calls = %d, want %d", got, want)
 	}
 	if got, want := authorizer.calls, 1; got != want {
 		t.Fatalf("authorizer calls = %d, want %d", got, want)

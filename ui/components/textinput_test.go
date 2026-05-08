@@ -658,17 +658,17 @@ func TestTextInputShowsExternalReadAuthorizationHintForAbsoluteAtPath(t *testing
 	input.updateSuggestions()
 
 	if !input.HasSuggestions() {
-		t.Fatal("expected external read authorization suggestion")
+		t.Fatal("expected external read authorization hint")
 	}
 	if got := len(input.suggestionItems); got != 1 {
-		t.Fatalf("expected one external authorization suggestion, got %d", got)
+		t.Fatalf("expected one external authorization hint, got %d", got)
 	}
 	item := input.suggestionItems[0]
-	if item.Display != "Authorize external read access" {
-		t.Fatalf("expected authorization action, got %q", item.Display)
+	if item.Display != "External file supported" {
+		t.Fatalf("expected hint display, got %q", item.Display)
 	}
-	if item.Description != externalReadHint {
-		t.Fatalf("expected external read hint, got %q", item.Description)
+	if item.Description != "Submit to request authorization" {
+		t.Fatalf("expected submit hint, got %q", item.Description)
 	}
 	if item.Value != external {
 		t.Fatalf("expected external path value, got %q", item.Value)

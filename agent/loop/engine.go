@@ -484,10 +484,8 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 		return nil
 	}
 
-	if ex.engine.recorder != nil && ex.engine.recorder.PrepareFileMutation != nil {
-		if err := ex.engine.recorder.PrepareFileMutation(ctx, tc); err != nil {
-			return err
-		}
+	if err := ex.prepareFileMutation(ctx, tc); err != nil {
+		return err
 	}
 
 	startEv := NewEvent(EventToolCallStart, describeToolCall(toolName, tc.Function.Arguments))
@@ -581,6 +579,13 @@ toolSuccess:
 	return nil
 }
 
+func (ex *executor) prepareFileMutation(ctx context.Context, tc llm.ToolCall) error {
+	if ex.engine.recorder == nil || ex.engine.recorder.PrepareFileMutation == nil {
+		return nil
+	}
+	return ex.engine.recorder.PrepareFileMutation(ctx, tc)
+}
+
 func (ex *executor) executeTool(ctx context.Context, tool tools.Tool, toolName, toolCallID string, args json.RawMessage) (*tools.Result, error) {
 	if streamingTool, canStream := tool.(tools.StreamingTool); canStream {
 		return streamingTool.ExecuteStream(ctx, args, func(update tools.StreamEvent) {
@@ -622,6 +627,9 @@ func (ex *executor) handlePathDenial(ctx context.Context, tc llm.ToolCall, tool 
 		opts = pathpolicy.ResolveOptions{TemporaryWriteRoots: []string{root}}
 	}
 	retryCtx := pathpolicy.ContextWithResolveOptions(ctx, opts)
+	if err := ex.prepareFileMutation(retryCtx, tc); err != nil {
+		return true, err
+	}
 	retryResult, err := ex.executeTool(retryCtx, tool, toolName, tc.ID, tc.Function.Arguments)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
