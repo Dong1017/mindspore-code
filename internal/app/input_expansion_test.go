@@ -10,6 +10,7 @@ import (
 	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
 	"github.com/mindspore-lab/mindspore-cli/integrations/skills"
 	issuepkg "github.com/mindspore-lab/mindspore-cli/internal/issues"
+	"github.com/mindspore-lab/mindspore-cli/internal/pathpolicy"
 	"github.com/mindspore-lab/mindspore-cli/internal/project"
 	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
@@ -305,6 +306,57 @@ func TestHandleCommandSkillAndAliasExpandOnlyRequestRemainder(t *testing.T) {
 	}
 }
 
+func TestExpandInputTextExternalAtFileUsesReadableResolver(t *testing.T) {
+	root := t.TempDir()
+	external := t.TempDir()
+	writeTestFile(t, external, "ctx.txt", "external context")
+	resolver := pathpolicy.NewResolver(pathpolicy.NewPathPolicy(root, []string{external}, nil))
+	app := &Application{WorkDir: root, pathResolver: resolver}
+
+	got, err := app.expandInputText("read @" + filepath.Join(external, "ctx.txt"))
+	if err != nil {
+		t.Fatalf("expandInputText returned error: %v", err)
+	}
+	if !strings.Contains(got, `[file path="`+filepath.ToSlash(filepath.Join(external, "ctx.txt"))+`"]`) {
+		t.Fatalf("expected external @file to be expanded, got %q", got)
+	}
+	if strings.Contains(got, "external context") {
+		t.Fatalf("expected external file content not to be inlined, got %q", got)
+	}
+}
+
+func TestProcessInputExternalAtFilePromptsAndRetriesAfterApproval(t *testing.T) {
+	root := t.TempDir()
+	external := t.TempDir()
+	writeTestFile(t, external, "ctx.txt", "external context")
+	policy := pathpolicy.NewPathPolicy(root, nil, nil)
+	app := &Application{
+		WorkDir:      root,
+		EventCh:      make(chan model.Event, 16),
+		llmReady:     false,
+		pathResolver: pathpolicy.NewResolver(policy),
+		ctxManager:   ctxmanager.NewManager(ctxmanager.ManagerConfig{ContextWindow: 24000, ReserveTokens: 4000}),
+	}
+	app.pathAuthorizer = NewPathAuthorizer(app.EventCh, policy, nil)
+
+	app.processInput("please read @" + filepath.Join(external, "ctx.txt"))
+	prompt := drainUntilEventType(t, app, model.PermissionPrompt)
+	if prompt.Permission == nil || prompt.Permission.Title != "External read access" {
+		t.Fatalf("expected external read prompt, got %#v", prompt.Permission)
+	}
+
+	app.processInput("1")
+	decision := drainUntilEventType(t, app, model.UserInput)
+	app.processInput(decision.Message)
+	drainUntilEventType(t, app, model.AgentReply)
+	msgs := app.ctxManager.GetNonSystemMessages()
+	if !containsUserMessage(msgs, `[file path="`+filepath.ToSlash(filepath.Join(external, "ctx.txt"))+`"]`) {
+		t.Fatalf("expected approved external @file to be recorded, got %#v", msgs)
+	}
+	if containsUserMessage(msgs, "external context") {
+		t.Fatalf("expected external file content not to be inlined, got %#v", msgs)
+	}
+}
 func containsUserMessage(msgs []llm.Message, needle string) bool {
 	for _, msg := range msgs {
 		if msg.Role == "user" && strings.Contains(msg.Content, needle) {

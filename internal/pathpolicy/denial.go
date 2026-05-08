@@ -39,6 +39,29 @@ func NewPathDenialResult(denial *PathDenial) *tools.Result {
 	}
 }
 
+type PathDenialError struct {
+	Denial *PathDenial
+}
+
+func (e *PathDenialError) Error() string {
+	if e == nil || e.Denial == nil {
+		return ErrExternalPathDenied.Error()
+	}
+	return e.Denial.ErrorMessage()
+}
+
+func NewPathDenialError(denial *PathDenial) error {
+	return &PathDenialError{Denial: denial}
+}
+
+func ExtractPathDenialFromError(err error) (*PathDenial, bool) {
+	var denialErr *PathDenialError
+	if !errors.As(err, &denialErr) || denialErr == nil || denialErr.Denial == nil {
+		return nil, false
+	}
+	return denialErr.Denial, true
+}
+
 func ExtractPathDenial(result *tools.Result) (*PathDenial, bool) {
 	if result == nil || result.Meta == nil {
 		return nil, false

@@ -55,7 +55,9 @@ type Application struct {
 	ctxManager              *agentctx.Manager
 	permService             permission.PermissionService
 	permissionUI            *PermissionPromptUI
+	pathResolver            *pathpolicy.Resolver
 	pathAuthorizer          *PathAuthorizer
+	pendingInputExpansion   *pendingInputExpansion
 	permissionSettingsIssue *permissionSettingsIssue
 	session                 *session.Session
 	replayBacklog           []model.Event
@@ -377,6 +379,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		ctxManager:              ctxManager,
 		permService:             permService,
 		permissionUI:            permissionUI,
+		pathResolver:            pathResolver,
 		pathAuthorizer:          pathAuthorizer,
 		permissionSettingsIssue: permSettingsIssue,
 		session:                 runtimeSession,

@@ -227,6 +227,10 @@ func (a *Application) processInput(input string) {
 		return
 	}
 
+	if a.handlePendingInputExpansionDecision(trimmed) {
+		return
+	}
+
 	if a.pathAuthorizer != nil && a.pathAuthorizer.HandleInput(trimmed) {
 		return
 	}
@@ -248,12 +252,13 @@ func (a *Application) processInput(input string) {
 
 	expanded, err := a.expandInputText(trimmed)
 	if err != nil {
+		if a.tryAuthorizeInputExpansion(trimmed, err) {
+			return
+		}
 		a.emitInputExpansionError(err)
 		return
 	}
-	a.EventCh <- model.Event{Type: model.UserInput, Message: expanded}
-
-	go a.runTask(expanded)
+	a.processExpandedInput(expanded)
 }
 
 func (a *Application) handlePermissionSettingsPromptInput(input string) {
