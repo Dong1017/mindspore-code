@@ -609,11 +609,19 @@ func (ex *executor) handlePathDenial(ctx context.Context, tc llm.ToolCall, tool 
 	if root == "" {
 		return true, nil
 	}
-	if decision.Mode != "" && decision.Mode != "read" {
+	mode := decision.Mode
+	if mode == "" {
+		mode = PathAuthorizationModeRead
+	}
+	if mode != PathAuthorizationModeRead && mode != PathAuthorizationModeWrite {
 		return true, nil
 	}
 
-	retryCtx := pathpolicy.ContextWithResolveOptions(ctx, pathpolicy.ResolveOptions{TemporaryReadRoots: []string{root}})
+	opts := pathpolicy.ResolveOptions{TemporaryReadRoots: []string{root}}
+	if mode == PathAuthorizationModeWrite {
+		opts = pathpolicy.ResolveOptions{TemporaryWriteRoots: []string{root}}
+	}
+	retryCtx := pathpolicy.ContextWithResolveOptions(ctx, opts)
 	retryResult, err := ex.executeTool(retryCtx, tool, toolName, tc.ID, tc.Function.Arguments)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {

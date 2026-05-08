@@ -97,7 +97,7 @@ func TestLoadWithEnv_LoadsUserConfigAndIgnoresProjectConfig(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(userPath), 0755); err != nil {
 		t.Fatalf("mkdir user config dir: %v", err)
 	}
-	if err := os.WriteFile(userPath, []byte("filesystem:\n  external_read_roots:\n    - /tmp/external-read\n"), 0600); err != nil {
+	if err := os.WriteFile(userPath, []byte("filesystem:\n  external_read_roots:\n    - /tmp/external-read\n  external_write_roots:\n    - /tmp/external-write\n"), 0600); err != nil {
 		t.Fatalf("write user config: %v", err)
 	}
 
@@ -115,6 +115,9 @@ func TestLoadWithEnv_LoadsUserConfigAndIgnoresProjectConfig(t *testing.T) {
 	}
 	if got, want := cfg.Filesystem.ExternalReadRoots, []string{"/tmp/external-read"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("filesystem.external_read_roots = %v, want %v", got, want)
+	}
+	if got, want := cfg.Filesystem.ExternalWriteRoots, []string{"/tmp/external-write"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("filesystem.external_write_roots = %v, want %v", got, want)
 	}
 	if cfg.Request.MaxIterations == nil {
 		t.Fatal("request.max_iterations = nil, want default value")
@@ -220,6 +223,7 @@ func clearEnv(t *testing.T) {
 		"MSCLI_MEMORY_PATH",
 		"MSCLI_SERVER_URL",
 		"MSCLI_EXTERNAL_READ_ROOTS",
+		"MSCLI_EXTERNAL_WRITE_ROOTS",
 		"OPENAI_API_KEY",
 		"OPENAI_MODEL",
 		"OPENAI_BASE_URL",

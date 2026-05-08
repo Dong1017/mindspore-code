@@ -101,6 +101,9 @@ func ApplyEnvOverrides(cfg *Config) {
 	if roots := pathListEnv("MSCLI_EXTERNAL_READ_ROOTS"); len(roots) > 0 {
 		cfg.Filesystem.ExternalReadRoots = roots
 	}
+	if roots := pathListEnv("MSCLI_EXTERNAL_WRITE_ROOTS"); len(roots) > 0 {
+		cfg.Filesystem.ExternalWriteRoots = roots
+	}
 
 	// Context settings
 	if v := os.Getenv("MSCLI_CONTEXT_WINDOW"); v != "" {
@@ -159,7 +162,7 @@ func LoadUserConfig() (*Config, error) {
 	return &cfg, nil
 }
 
-func SaveUserExternalReadRoots(roots []string) error {
+func saveUserFilesystemRoots(readRoots, writeRoots []string) error {
 	path, err := UserConfigPath()
 	if err != nil {
 		return err
@@ -170,7 +173,12 @@ func SaveUserExternalReadRoots(roots []string) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	cfg.Filesystem.ExternalReadRoots = append([]string(nil), roots...)
+	if readRoots != nil {
+		cfg.Filesystem.ExternalReadRoots = append([]string(nil), readRoots...)
+	}
+	if writeRoots != nil {
+		cfg.Filesystem.ExternalWriteRoots = append([]string(nil), writeRoots...)
+	}
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshal user config: %w", err)
@@ -182,6 +190,14 @@ func SaveUserExternalReadRoots(roots []string) error {
 		return fmt.Errorf("write user config %q: %w", path, err)
 	}
 	return nil
+}
+
+func SaveUserExternalReadRoots(roots []string) error {
+	return saveUserFilesystemRoots(roots, nil)
+}
+
+func SaveUserExternalWriteRoots(roots []string) error {
+	return saveUserFilesystemRoots(nil, roots)
 }
 
 func pathListEnv(key string) []string {

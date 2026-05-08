@@ -73,6 +73,10 @@ type PathPolicy struct {
 }
 
 func NewPathPolicy(workDir string, readRoots []string, builtinReadRoots []string) *PathPolicy {
+	return NewPathPolicyWithWriteRoots(workDir, readRoots, nil, builtinReadRoots)
+}
+
+func NewPathPolicyWithWriteRoots(workDir string, readRoots []string, writeRoots []string, builtinReadRoots []string) *PathPolicy {
 	p := &PathPolicy{
 		WorkDir:          workDir,
 		ReadRoots:        NewRootSet(),
@@ -81,6 +85,9 @@ func NewPathPolicy(workDir string, readRoots []string, builtinReadRoots []string
 	}
 	for _, root := range readRoots {
 		p.ReadRoots.Add(root, RootSourceConfig)
+	}
+	for _, root := range writeRoots {
+		p.WriteRoots.Add(root, RootSourceConfig)
 	}
 	for _, root := range builtinReadRoots {
 		p.ReadRoots.Add(root, RootSourceBuiltin)
@@ -96,6 +103,16 @@ func (p *PathPolicy) AddSessionReadRoot(root string) {
 		p.ReadRoots = NewRootSet()
 	}
 	p.ReadRoots.Add(root, RootSourceSession)
+}
+
+func (p *PathPolicy) AddSessionWriteRoot(root string) {
+	if p == nil {
+		return
+	}
+	if p.WriteRoots == nil {
+		p.WriteRoots = NewRootSet()
+	}
+	p.WriteRoots.Add(root, RootSourceSession)
 }
 
 func samePath(a, b string) bool {

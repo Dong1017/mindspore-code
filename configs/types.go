@@ -117,7 +117,8 @@ type ExecutionConfig struct {
 
 // FilesystemConfig holds filesystem access policy configuration.
 type FilesystemConfig struct {
-	ExternalReadRoots []string `yaml:"external_read_roots,omitempty"`
+	ExternalReadRoots  []string `yaml:"external_read_roots,omitempty"`
+	ExternalWriteRoots []string `yaml:"external_write_roots,omitempty"`
 }
 
 // DockerConfig holds the Docker execution configuration.
@@ -277,6 +278,9 @@ func (c *Config) Merge(other *Config) {
 
 	if len(other.Filesystem.ExternalReadRoots) > 0 {
 		c.Filesystem.ExternalReadRoots = append([]string(nil), other.Filesystem.ExternalReadRoots...)
+	}
+	if len(other.Filesystem.ExternalWriteRoots) > 0 {
+		c.Filesystem.ExternalWriteRoots = append([]string(nil), other.Filesystem.ExternalWriteRoots...)
 	}
 }
 

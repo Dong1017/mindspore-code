@@ -60,7 +60,30 @@ func TestResolveReadablePathAllowsTemporaryReadRootFromOptions(t *testing.T) {
 		t.Fatalf("temporary external path = %q, want %q", got, want)
 	}
 }
-func TestResolveWritablePathIsWorkspaceOnlyInM1(t *testing.T) {
+func TestResolveWritablePathAllowsExternalWriteRootAndWriteRootAllowsRead(t *testing.T) {
+	workDir := t.TempDir()
+	external := t.TempDir()
+	resolver := NewResolver(NewPathPolicyWithWriteRoots(workDir, nil, []string{external}, nil))
+
+	writePath := filepath.Join(external, "file.txt")
+	got, denial, err := resolver.ResolveWritablePath(writePath, ResolveOptions{})
+	if err != nil || denial != nil {
+		t.Fatalf("external writable err=%v denial=%v", err, denial)
+	}
+	if got != writePath {
+		t.Fatalf("external writable path = %q, want %q", got, writePath)
+	}
+
+	got, denial, err = resolver.ResolveReadablePath(writePath, ResolveOptions{})
+	if err != nil || denial != nil {
+		t.Fatalf("write root readable err=%v denial=%v", err, denial)
+	}
+	if got != writePath {
+		t.Fatalf("write root readable path = %q, want %q", got, writePath)
+	}
+}
+
+func TestResolveWritablePathRejectsExternalReadRoot(t *testing.T) {
 	workDir := t.TempDir()
 	external := t.TempDir()
 	resolver := NewResolver(NewPathPolicy(workDir, []string{external}, nil))

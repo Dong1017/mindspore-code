@@ -21,19 +21,33 @@ type pendingPathAuthorizationRequest struct {
 }
 
 type PathAuthorizer struct {
-	mu       sync.Mutex
-	pending  *pendingPathAuthorizationRequest
-	eventCh  chan<- model.Event
-	policy   *pathpolicy.PathPolicy
-	saveRead func([]string) error
+	mu        sync.Mutex
+	pending   *pendingPathAuthorizationRequest
+	eventCh   chan<- model.Event
+	policy    *pathpolicy.PathPolicy
+	saveRead  func([]string) error
+	saveWrite func([]string) error
 }
 
 func NewPathAuthorizer(eventCh chan<- model.Event, policy *pathpolicy.PathPolicy, saveRead func([]string) error) *PathAuthorizer {
-	return &PathAuthorizer{eventCh: eventCh, policy: policy, saveRead: saveRead}
+	return NewPathAuthorizerWithWrite(eventCh, policy, saveRead, nil)
+}
+
+func NewPathAuthorizerWithWrite(eventCh chan<- model.Event, policy *pathpolicy.PathPolicy, saveRead func([]string) error, saveWrite func([]string) error) *PathAuthorizer {
+	return &PathAuthorizer{eventCh: eventCh, policy: policy, saveRead: saveRead, saveWrite: saveWrite}
 }
 
 func (p *PathAuthorizer) RequestPathAuthorization(ctx context.Context, denial *pathpolicy.PathDenial) (loop.PathAuthorizationDecision, error) {
-	if p == nil || denial == nil || denial.Kind != string(pathpolicy.DenialKindExternalRead) {
+	if p == nil || denial == nil {
+		return loop.PathAuthorizationDecision{Scope: loop.PathAuthorizationDeny}, nil
+	}
+	mode := loop.PathAuthorizationModeRead
+	switch denial.Kind {
+	case string(pathpolicy.DenialKindExternalRead):
+		mode = loop.PathAuthorizationModeRead
+	case string(pathpolicy.DenialKindExternalWrite):
+		mode = loop.PathAuthorizationModeWrite
+	default:
 		return loop.PathAuthorizationDecision{Scope: loop.PathAuthorizationDeny}, nil
 	}
 	root := strings.TrimSpace(denial.SuggestedRoot)
@@ -57,6 +71,9 @@ func (p *PathAuthorizer) RequestPathAuthorization(ctx context.Context, denial *p
 		p.clearPending(req)
 		return loop.PathAuthorizationDecision{}, ctx.Err()
 	case decision := <-req.wait:
+		if decision.decision.Mode == "" {
+			decision.decision.Mode = mode
+		}
 		return decision.decision, nil
 	}
 }
@@ -70,45 +87,32 @@ func (p *PathAuthorizer) HandleInput(input string) bool {
 		return false
 	}
 	root := strings.TrimSpace(req.denial.SuggestedRoot)
+	mode := pathAuthorizationMode(req.denial)
 	resolve := func(decision loop.PathAuthorizationDecision) bool {
 		p.clearPending(req)
-		if decision.Scope == loop.PathAuthorizationSession && p.policy != nil {
-			p.policy.AddSessionReadRoot(decision.Root)
+		if decision.Scope == loop.PathAuthorizationSession {
+			p.addSessionRoot(decision.Root, mode)
 		}
 		if decision.Scope == loop.PathAuthorizationPersistent {
-			if p.policy != nil {
-				p.policy.AddSessionReadRoot(decision.Root)
-			}
-			if p.saveRead != nil {
-				roots := []string{decision.Root}
-				if p.policy != nil && p.policy.ReadRoots != nil {
-					seen := map[string]bool{}
-					roots = roots[:0]
-					for _, entry := range p.policy.ReadRoots.Snapshot() {
-						if entry.Source == pathpolicy.RootSourceConfig || entry.Source == pathpolicy.RootSourceSession {
-							key := strings.ToLower(entry.Path)
-							if !seen[key] {
-								seen[key] = true
-								roots = append(roots, entry.Path)
-							}
-						}
-					}
-				}
-				_ = p.saveRead(roots)
-			}
+			p.addSessionRoot(decision.Root, mode)
+			p.savePersistentRoots(mode)
 		}
 		req.wait <- pathAuthorizationDecision{decision: decision}
 		return true
 	}
 	switch input {
 	case "1", "once", "y", "yes":
-		return resolve(loop.PathAuthorizationDecision{Scope: loop.PathAuthorizationOnce, Root: root, Mode: "read"})
+		return resolve(loop.PathAuthorizationDecision{Scope: loop.PathAuthorizationOnce, Root: root, Mode: mode})
 	case "2", "session", "allow_session":
-		return resolve(loop.PathAuthorizationDecision{Scope: loop.PathAuthorizationSession, Root: root, Mode: "read"})
+		return resolve(loop.PathAuthorizationDecision{Scope: loop.PathAuthorizationSession, Root: root, Mode: mode})
 	case "3", "always", "persistent":
-		return resolve(loop.PathAuthorizationDecision{Scope: loop.PathAuthorizationPersistent, Root: root, Mode: "read"})
+		if mode == loop.PathAuthorizationModeWrite {
+			p.eventCh <- model.Event{Type: model.PermissionPrompt, Message: "Please choose 1, 2, or 4. Persistent write access is not available yet.", Permission: pathAuthorizationPromptData(req.denial)}
+			return true
+		}
+		return resolve(loop.PathAuthorizationDecision{Scope: loop.PathAuthorizationPersistent, Root: root, Mode: mode})
 	case "4", "n", "no", "deny", "esc", "escape":
-		return resolve(loop.PathAuthorizationDecision{Scope: loop.PathAuthorizationDeny, Root: root, Mode: "read"})
+		return resolve(loop.PathAuthorizationDecision{Scope: loop.PathAuthorizationDeny, Root: root, Mode: mode})
 	default:
 		p.eventCh <- model.Event{Type: model.PermissionPrompt, Message: "Please choose 1, 2, 3, or 4.", Permission: pathAuthorizationPromptData(req.denial)}
 		return true
@@ -123,14 +127,108 @@ func (p *PathAuthorizer) clearPending(req *pendingPathAuthorizationRequest) {
 	p.mu.Unlock()
 }
 
+func (p *PathAuthorizer) addSessionRoot(root, mode string) {
+	if p == nil || p.policy == nil {
+		return
+	}
+	if mode == loop.PathAuthorizationModeWrite {
+		p.policy.AddSessionWriteRoot(root)
+		return
+	}
+	p.policy.AddSessionReadRoot(root)
+}
+
+func (p *PathAuthorizer) savePersistentRoots(mode string) {
+	if p == nil || p.policy == nil {
+		return
+	}
+	if mode == loop.PathAuthorizationModeWrite {
+		if p.saveWrite != nil {
+			_ = p.saveWrite(snapshotConfigAndSessionRoots(p.policy.WriteRoots))
+		}
+		return
+	}
+	if p.saveRead != nil {
+		_ = p.saveRead(snapshotConfigAndSessionRoots(p.policy.ReadRoots))
+	}
+}
+
+func snapshotConfigAndSessionRoots(roots *pathpolicy.RootSet) []string {
+	if roots == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	out := []string{}
+	for _, entry := range roots.Snapshot() {
+		if entry.Source != pathpolicy.RootSourceConfig && entry.Source != pathpolicy.RootSourceSession {
+			continue
+		}
+		key := strings.ToLower(entry.Path)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, entry.Path)
+	}
+	return out
+}
+
+func pathAuthorizationMode(denial *pathpolicy.PathDenial) string {
+	if denial != nil && denial.Kind == string(pathpolicy.DenialKindExternalWrite) {
+		return loop.PathAuthorizationModeWrite
+	}
+	return loop.PathAuthorizationModeRead
+}
+
+func pathAuthorizationOperation(denial *pathpolicy.PathDenial) string {
+	if strings.TrimSpace(denial.Operation) != "" {
+		return titlePathOperation(denial.Operation)
+	}
+	if pathAuthorizationMode(denial) == loop.PathAuthorizationModeWrite {
+		return "Write"
+	}
+	return "Read"
+}
+
+func pathAuthorizationTargetLabel(denial *pathpolicy.PathDenial) string {
+	if pathAuthorizationMode(denial) == loop.PathAuthorizationModeWrite {
+		return "Suggested external write root"
+	}
+	return "Suggested external read root"
+}
+func titlePathOperation(operation string) string {
+	operation = strings.TrimSpace(operation)
+	if operation == "" {
+		return ""
+	}
+	return strings.ToUpper(operation[:1]) + operation[1:]
+}
+
 func pathAuthorizationPromptMessage(denial *pathpolicy.PathDenial) string {
-	return fmt.Sprintf("Read wants to access a file outside the current workspace.\n\nCurrent workspace:\n  %s\n\nRequested file:\n  %s\n\nSuggested external read root:\n  %s\n\nAllow read-only access?\n  1. Allow once\n  2. Allow for this session\n  3. Always allow\n  4. Deny\n\nEsc to cancel", denial.WorkDir, denial.InputPath, denial.SuggestedRoot)
+	operation := pathAuthorizationOperation(denial)
+	if pathAuthorizationMode(denial) == loop.PathAuthorizationModeWrite {
+		return fmt.Sprintf("%s wants to modify a file outside the current workspace.\n\nCurrent workspace:\n  %s\n\nRequested file:\n  %s\n\n%s:\n  %s\n\nThis grants write access under the selected root.\nOnly approve if you trust this task.\n\nAllow write access?\n  1. Allow once\n  2. Allow for this session\n  4. Deny\n\nEsc to cancel", operation, denial.WorkDir, denial.InputPath, pathAuthorizationTargetLabel(denial), denial.SuggestedRoot)
+	}
+	return fmt.Sprintf("%s wants to access a file outside the current workspace.\n\nCurrent workspace:\n  %s\n\nRequested file:\n  %s\n\n%s:\n  %s\n\nAllow read-only access?\n  1. Allow once\n  2. Allow for this session\n  3. Always allow\n  4. Deny\n\nEsc to cancel", operation, denial.WorkDir, denial.InputPath, pathAuthorizationTargetLabel(denial), denial.SuggestedRoot)
 }
 
 func pathAuthorizationPromptData(denial *pathpolicy.PathDenial) *model.PermissionPromptData {
+	operation := pathAuthorizationOperation(denial)
+	if pathAuthorizationMode(denial) == loop.PathAuthorizationModeWrite {
+		return &model.PermissionPromptData{
+			Title:   "External write access",
+			Message: fmt.Sprintf("%s wants to modify a file outside the current workspace.\n\nCurrent workspace:\n  %s\n\nRequested file:\n  %s\n\n%s:\n  %s\n\nThis grants write access under the selected root.\nOnly approve if you trust this task.", operation, denial.WorkDir, denial.InputPath, pathAuthorizationTargetLabel(denial), denial.SuggestedRoot),
+			Options: []model.PermissionOption{
+				{Input: "1", Label: "1. Allow once"},
+				{Input: "2", Label: "2. Allow for this session"},
+				{Input: "4", Label: "4. Deny"},
+			},
+			DefaultIndex: 0,
+		}
+	}
 	return &model.PermissionPromptData{
 		Title:   "External read access",
-		Message: fmt.Sprintf("Read wants to access a file outside the current workspace.\n\nCurrent workspace:\n  %s\n\nRequested file:\n  %s\n\nSuggested external read root:\n  %s", denial.WorkDir, denial.InputPath, denial.SuggestedRoot),
+		Message: fmt.Sprintf("%s wants to access a file outside the current workspace.\n\nCurrent workspace:\n  %s\n\nRequested file:\n  %s\n\n%s:\n  %s", operation, denial.WorkDir, denial.InputPath, pathAuthorizationTargetLabel(denial), denial.SuggestedRoot),
 		Options: []model.PermissionOption{
 			{Input: "1", Label: "1. Allow once"},
 			{Input: "2", Label: "2. Allow for this session"},

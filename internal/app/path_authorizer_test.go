@@ -70,6 +70,32 @@ func TestPathAuthorizerHandleInputPersistentSavesConfigRoots(t *testing.T) {
 	}
 }
 
+func TestPathAuthorizerHandleInputWriteSessionAddsWriteRoot(t *testing.T) {
+	policy := pathpolicy.NewPathPolicy(t.TempDir(), nil, nil)
+	authorizer, events, denial := newPathAuthorizerForTest(policy, nil)
+	denial.Kind = string(pathpolicy.DenialKindExternalWrite)
+	denial.Operation = "edit"
+	decisionCh := requestPathAuthorizationForTest(t, authorizer, denial)
+	ev := requirePromptEvent(t, events)
+	if got, want := ev.Permission.Title, "External write access"; got != want {
+		t.Fatalf("prompt title = %q, want %q", got, want)
+	}
+	if got, want := len(ev.Permission.Options), 3; got != want {
+		t.Fatalf("write prompt options = %d, want %d", got, want)
+	}
+
+	if !authorizer.HandleInput("2") {
+		t.Fatal("HandleInput returned false, want true")
+	}
+	decision := requirePathDecision(t, decisionCh)
+	if got, want := decision.Mode, loop.PathAuthorizationModeWrite; got != want {
+		t.Fatalf("decision mode = %q, want %q", got, want)
+	}
+	resolved, pathDenial, err := pathpolicy.NewResolver(policy).ResolveWritablePath(denial.ResolvedPath, pathpolicy.ResolveOptions{})
+	if err != nil || pathDenial != nil {
+		t.Fatalf("session write root did not allow write: resolved=%q denial=%v err=%v", resolved, pathDenial, err)
+	}
+}
 func TestPathAuthorizerHandleInputDeny(t *testing.T) {
 	authorizer, events, denial := newPathAuthorizerForTest(nil, nil)
 	decisionCh := requestPathAuthorizationForTest(t, authorizer, denial)

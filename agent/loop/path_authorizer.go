@@ -21,6 +21,11 @@ type PathAuthorizationDecision struct {
 	Mode  string
 }
 
+const (
+	PathAuthorizationModeRead  = "read"
+	PathAuthorizationModeWrite = "write"
+)
+
 type PathAuthorizer interface {
 	RequestPathAuthorization(ctx context.Context, denial *pathpolicy.PathDenial) (PathAuthorizationDecision, error)
 }

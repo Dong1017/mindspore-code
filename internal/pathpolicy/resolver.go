@@ -107,7 +107,7 @@ func (r *Resolver) resolvePath(operation, denialKind, input string, opts Resolve
 	suggestion := SuggestRoot(fullAbs)
 	reason := "The path is outside the current workspace and is not in external_read_roots."
 	if !readable {
-		reason = "The path is outside the current workspace; external write roots are not enabled in this release."
+		reason = "The path is outside the current workspace and is not in external_write_roots."
 	}
 	return "", &PathDenial{
 		Kind:          denialKind,

@@ -211,7 +211,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		}
 	}
 
-	pathPolicy := pathpolicy.NewPathPolicy(workDir, config.Filesystem.ExternalReadRoots, fs.BuiltinReadRoots())
+	pathPolicy := pathpolicy.NewPathPolicyWithWriteRoots(workDir, config.Filesystem.ExternalReadRoots, config.Filesystem.ExternalWriteRoots, fs.BuiltinReadRoots())
 	pathResolver := pathpolicy.NewResolver(pathPolicy)
 	toolRegistry := initTools(config, workDir, pathResolver)
 
@@ -361,7 +361,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 			}
 		}
 	}
-	pathAuthorizer := NewPathAuthorizer(eventCh, pathPolicy, configs.SaveUserExternalReadRoots)
+	pathAuthorizer := NewPathAuthorizerWithWrite(eventCh, pathPolicy, configs.SaveUserExternalReadRoots, configs.SaveUserExternalWriteRoots)
 	engine.SetPathAuthorizer(pathAuthorizer)
 	engine.SetPermissionService(permService)
 
@@ -875,7 +875,7 @@ func (a *Application) emitModelSetupPopup(canEscape bool) {
 
 func initTools(cfg *configs.Config, workDir string, resolvers ...*pathpolicy.Resolver) *tools.Registry {
 	registry := tools.NewRegistry()
-	pathResolver := pathpolicy.NewResolver(pathpolicy.NewPathPolicy(workDir, cfg.Filesystem.ExternalReadRoots, fs.BuiltinReadRoots()))
+	pathResolver := pathpolicy.NewResolver(pathpolicy.NewPathPolicyWithWriteRoots(workDir, cfg.Filesystem.ExternalReadRoots, cfg.Filesystem.ExternalWriteRoots, fs.BuiltinReadRoots()))
 	if len(resolvers) > 0 && resolvers[0] != nil {
 		pathResolver = resolvers[0]
 	}
