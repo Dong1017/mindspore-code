@@ -1,0 +1,34 @@
+id: deprecated-card
+kind: known_issue
+title: Deprecated card
+problem:
+  problem_type: failure
+  stage: import
+  symptoms:
+    - Old import failure
+match:
+  keywords:
+    - old-runtime
+diagnosis:
+  root_cause: Old runtime dependency issue.
+  explanation: Deprecated known issue.
+  scope_note: Applies to old releases.
+  suggested_next_checks:
+    - Check release version.
+verification:
+  checks:
+    - Run old import smoke test.
+  expected_result: Import succeeds.
+provenance:
+  references:
+    - issue-126
+confidence:
+  level: observed
+  rationale: Previously observed.
+lifecycle:
+  state: deprecated
+  reason: Replaced by newer guidance
+review:
+  status: approved
+tags:
+  - deprecated

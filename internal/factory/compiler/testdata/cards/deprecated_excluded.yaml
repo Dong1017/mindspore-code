@@ -1,0 +1,34 @@
+id: deprecated-excluded
+kind: known_issue
+title: Deprecated excluded
+problem:
+  problem_type: failure
+  stage: import
+  symptoms:
+    - Deprecated issue
+match:
+  keywords:
+    - deprecated
+diagnosis:
+  root_cause: Deprecated root cause.
+  explanation: Deprecated cards are excluded from packs.
+  scope_note: Old issue only.
+  suggested_next_checks:
+    - Check old version.
+verification:
+  checks:
+    - Run old check.
+  expected_result: Old check passes.
+provenance:
+  references:
+    - issue-compiler-3
+confidence:
+  level: observed
+  rationale: Old observation.
+lifecycle:
+  state: deprecated
+  reason: Deprecated fixture
+review:
+  status: approved
+tags:
+  - deprecated

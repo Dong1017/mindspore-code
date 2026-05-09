@@ -1,0 +1,17 @@
+id: invalid-stage
+kind: known_issue
+title: Invalid stage
+problem:
+  problem_type: failure
+  stage: startup
+  symptoms:
+    - Startup fails
+diagnosis:
+  explanation: Invalid stage fixture.
+confidence:
+  level: bootstrap
+lifecycle:
+  state: draft
+  reason: Test fixture
+tags:
+  - invalid

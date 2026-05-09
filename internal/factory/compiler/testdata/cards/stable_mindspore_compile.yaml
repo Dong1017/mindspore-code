@@ -1,0 +1,40 @@
+id: stable-mindspore-compile
+kind: known_issue
+title: MindSpore graph compile failure
+problem:
+  problem_type: failure
+  stage: compile
+  symptoms:
+    - Graph compilation fails with unsupported operator
+match:
+  keywords:
+    - unsupported operator
+    - graph compile
+  stack_keywords:
+    - mindspore/ops
+diagnosis:
+  root_cause: The graph uses an operator unsupported by the target backend.
+  explanation: Compile fails when lowering the graph for the selected device.
+  scope_note: Applies to MindSpore graph compile failures.
+  suggested_next_checks:
+    - Identify the unsupported operator name.
+fix:
+  summary: Replace or rewrite the unsupported operator.
+verification:
+  checks:
+    - Re-run graph compilation.
+  expected_result: Graph compilation passes.
+provenance:
+  references:
+    - issue-compiler-2
+confidence:
+  level: verified
+  rationale: Confirmed by maintainer review.
+lifecycle:
+  state: stable
+  reason: Reviewed fixture
+review:
+  status: approved
+tags:
+  - mindspore
+  - compile

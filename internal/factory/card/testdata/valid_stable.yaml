@@ -1,0 +1,59 @@
+id: valid-stable
+kind: known_issue
+title: Torch NPU import failure
+problem:
+  problem_type: failure
+  stage: import
+  symptoms:
+    - torch_npu import fails with missing CANN runtime
+environment:
+  hardware:
+    accelerator: ascend
+    chip:
+      - Ascend 910B
+  runtime:
+    cann_version: "8.0"
+    python_version: "3.10"
+  frameworks:
+    - name: torch
+      version: "2.7.1"
+    - name: torch_npu
+      version: "2.7.1.post2"
+match:
+  keywords:
+    - torch_npu
+    - CANN runtime
+  regex:
+    - "ImportError:.*torch_npu"
+  stack_keywords:
+    - import torch_npu
+diagnosis:
+  root_cause: CANN runtime is not visible to torch_npu during import.
+  explanation: The import path reaches torch_npu but cannot resolve the runtime dependency.
+  scope_note: Applies to Ascend environments using torch_npu.
+  suggested_next_checks:
+    - Check CANN environment variables.
+    - Verify torch_npu and torch versions match.
+fix:
+  summary: Activate the CANN environment before importing torch_npu.
+  steps:
+    - Source the CANN set_env script.
+verification:
+  checks:
+    - Run a minimal torch_npu import command.
+  expected_result: torch_npu imports without runtime dependency errors.
+provenance:
+  references:
+    - issue-123
+confidence:
+  level: observed
+  rationale: Observed in a reproducible diagnostic run.
+lifecycle:
+  state: stable
+  reason: Reviewed known import failure
+review:
+  status: approved
+  reviewed_by: maintainer
+tags:
+  - torch_npu
+  - import

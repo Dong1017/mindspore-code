@@ -1,0 +1,50 @@
+id: stable-ascend-import
+kind: known_issue
+title: Ascend import runtime failure
+problem:
+  problem_type: failure
+  stage: import
+  symptoms:
+    - torch_npu import fails with runtime dependency error
+environment:
+  hardware:
+    accelerator: ascend
+  frameworks:
+    - name: torch_npu
+      version: "2.7.1.post2"
+match:
+  keywords:
+    - torch_npu
+    - runtime dependency
+  regex:
+    - "ImportError:.*torch_npu"
+  negative_patterns:
+    - cuda-only
+diagnosis:
+  root_cause: CANN runtime is not visible during torch_npu import.
+  explanation: The import reaches torch_npu but cannot resolve runtime libraries.
+  scope_note: Applies to Ascend torch_npu import failures.
+  suggested_next_checks:
+    - Check CANN environment variables.
+fix:
+  summary: Source CANN environment before import.
+  steps:
+    - Source set_env.sh.
+verification:
+  checks:
+    - Run python import smoke test.
+  expected_result: torch_npu imports successfully.
+provenance:
+  references:
+    - issue-compiler-1
+confidence:
+  level: observed
+  rationale: Observed in diagnostic cases.
+lifecycle:
+  state: stable
+  reason: Reviewed fixture
+review:
+  status: approved
+tags:
+  - torch_npu
+  - import

@@ -1,0 +1,20 @@
+id: invalid-regex
+kind: known_issue
+title: Invalid regex
+problem:
+  problem_type: failure
+  stage: import
+  symptoms:
+    - Import fails
+match:
+  regex:
+    - "[unterminated"
+diagnosis:
+  explanation: Invalid regex fixture.
+confidence:
+  level: bootstrap
+lifecycle:
+  state: draft
+  reason: Test fixture
+tags:
+  - invalid

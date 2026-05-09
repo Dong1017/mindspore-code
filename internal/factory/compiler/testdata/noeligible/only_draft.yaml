@@ -1,0 +1,17 @@
+id: only-draft
+kind: known_issue
+title: Only draft
+problem:
+  problem_type: failure
+  stage: import
+  symptoms:
+    - Draft issue only
+diagnosis:
+  explanation: No eligible stable cards in this directory.
+confidence:
+  level: bootstrap
+lifecycle:
+  state: draft
+  reason: No eligible fixture
+tags:
+  - draft

@@ -1,0 +1,21 @@
+id: invalid-framework
+kind: known_issue
+title: Invalid framework
+problem:
+  problem_type: failure
+  stage: import
+  symptoms:
+    - Import fails
+environment:
+  frameworks:
+    - name: tensorflow
+      version: "2.0"
+diagnosis:
+  explanation: Invalid framework fixture.
+confidence:
+  level: bootstrap
+lifecycle:
+  state: draft
+  reason: Test fixture
+tags:
+  - invalid

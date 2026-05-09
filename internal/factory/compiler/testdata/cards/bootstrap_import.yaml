@@ -1,0 +1,35 @@
+id: bootstrap-import
+kind: known_issue
+title: Bootstrap import hint
+problem:
+  problem_type: failure
+  stage: import
+  symptoms:
+    - torch_npu import fails with runtime dependency error
+match:
+  keywords:
+    - torch_npu
+    - runtime dependency
+diagnosis:
+  root_cause: Candidate runtime dependency issue.
+  explanation: Bootstrap card for ranking test.
+  scope_note: Applies to import failures.
+  suggested_next_checks:
+    - Collect CANN environment details.
+verification:
+  checks:
+    - Run import smoke test.
+  expected_result: Import succeeds.
+provenance:
+  references:
+    - bootstrap-fixture
+confidence:
+  level: bootstrap
+  rationale: Generated from limited evidence.
+lifecycle:
+  state: stable
+  reason: Test fixture
+review:
+  status: approved
+tags:
+  - torch_npu

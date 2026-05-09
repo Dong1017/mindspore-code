@@ -1,0 +1,34 @@
+id: stable-without-approval
+kind: known_issue
+title: Stable without approval
+problem:
+  problem_type: failure
+  stage: import
+  symptoms:
+    - torch_npu import fails
+match:
+  keywords:
+    - torch_npu
+diagnosis:
+  root_cause: Runtime dependency is unavailable.
+  explanation: The import path cannot resolve the runtime dependency.
+  scope_note: Applies to torch_npu import failures.
+  suggested_next_checks:
+    - Check runtime environment.
+verification:
+  checks:
+    - Run import smoke test.
+  expected_result: Import succeeds.
+provenance:
+  references:
+    - issue-124
+confidence:
+  level: observed
+  rationale: Observed in diagnostics.
+lifecycle:
+  state: stable
+  reason: Missing approval fixture
+review:
+  status: pending
+tags:
+  - import

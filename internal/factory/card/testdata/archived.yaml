@@ -1,0 +1,34 @@
+id: archived-card
+kind: known_issue
+title: Archived card
+problem:
+  problem_type: failure
+  stage: import
+  symptoms:
+    - Archived import failure
+match:
+  keywords:
+    - archived-runtime
+diagnosis:
+  root_cause: Archived runtime dependency issue.
+  explanation: Archived known issue.
+  scope_note: Applies to unsupported releases.
+  suggested_next_checks:
+    - Check release version.
+verification:
+  checks:
+    - Run archived import smoke test.
+  expected_result: Import succeeds.
+provenance:
+  references:
+    - issue-127
+confidence:
+  level: observed
+  rationale: Previously observed.
+lifecycle:
+  state: archived
+  reason: Unsupported old issue
+review:
+  status: approved
+tags:
+  - archived

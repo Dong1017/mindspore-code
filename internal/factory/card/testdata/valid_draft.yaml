@@ -1,0 +1,20 @@
+id: valid-draft
+kind: known_issue
+title: Draft import failure
+problem:
+  problem_type: failure
+  stage: import
+  symptoms:
+    - Import fails before training starts
+diagnosis:
+  explanation: The failure happens during framework import and needs more evidence.
+confidence:
+  level: bootstrap
+lifecycle:
+  state: draft
+  reason: Initial candidate from one diagnostic run
+review:
+  status: pending
+tags:
+  - import
+  - draft

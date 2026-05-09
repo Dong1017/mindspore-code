@@ -1,0 +1,17 @@
+id: invalid-problem-type
+kind: known_issue
+title: Invalid problem type
+problem:
+  problem_type: compile
+  stage: import
+  symptoms:
+    - Import fails
+diagnosis:
+  explanation: Invalid problem type fixture.
+confidence:
+  level: bootstrap
+lifecycle:
+  state: draft
+  reason: Test fixture
+tags:
+  - invalid

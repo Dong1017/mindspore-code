@@ -1,0 +1,17 @@
+id: draft-excluded
+kind: known_issue
+title: Draft excluded
+problem:
+  problem_type: failure
+  stage: import
+  symptoms:
+    - Draft issue
+diagnosis:
+  explanation: Draft cards are excluded from packs.
+confidence:
+  level: bootstrap
+lifecycle:
+  state: draft
+  reason: Draft fixture
+tags:
+  - draft

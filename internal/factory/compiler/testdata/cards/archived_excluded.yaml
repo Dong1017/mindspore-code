@@ -1,0 +1,34 @@
+id: archived-excluded
+kind: known_issue
+title: Archived excluded
+problem:
+  problem_type: failure
+  stage: import
+  symptoms:
+    - Archived issue
+match:
+  keywords:
+    - archived
+diagnosis:
+  root_cause: Archived root cause.
+  explanation: Archived cards are excluded from packs.
+  scope_note: Unsupported issue only.
+  suggested_next_checks:
+    - Check old version.
+verification:
+  checks:
+    - Run archived check.
+  expected_result: Archived check passes.
+provenance:
+  references:
+    - issue-compiler-4
+confidence:
+  level: observed
+  rationale: Old observation.
+lifecycle:
+  state: archived
+  reason: Archived fixture
+review:
+  status: approved
+tags:
+  - archived

@@ -1,0 +1,17 @@
+id: invalid-card
+kind: known_issue
+title: Invalid compiler fixture
+problem:
+  problem_type: runtime
+  stage: import
+  symptoms:
+    - Invalid problem type
+diagnosis:
+  explanation: Invalid card should fail compiler.
+confidence:
+  level: bootstrap
+lifecycle:
+  state: draft
+  reason: Invalid fixture
+tags:
+  - invalid

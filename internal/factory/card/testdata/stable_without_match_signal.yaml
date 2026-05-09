@@ -1,0 +1,31 @@
+id: stable-without-match-signal
+kind: known_issue
+title: Stable without match signal
+problem:
+  problem_type: failure
+  stage: import
+  symptoms:
+    - torch_npu import fails
+diagnosis:
+  root_cause: Runtime dependency is unavailable.
+  explanation: The import path cannot resolve the runtime dependency.
+  scope_note: Applies to torch_npu import failures.
+  suggested_next_checks:
+    - Check runtime environment.
+verification:
+  checks:
+    - Run import smoke test.
+  expected_result: Import succeeds.
+provenance:
+  references:
+    - issue-125
+confidence:
+  level: observed
+  rationale: Observed in diagnostics.
+lifecycle:
+  state: stable
+  reason: Missing match signal fixture
+review:
+  status: approved
+tags:
+  - import
