@@ -110,6 +110,8 @@ func (a *Application) handleCommand(input string) {
 			return
 		}
 		a.cmdPreflight(expanded)
+	case "/factory":
+		a.cmdFactory(cmd.Remainder)
 	case "/now":
 		a.cmdNow()
 	case "/skill":

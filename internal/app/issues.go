@@ -255,6 +255,9 @@ func (a *Application) runSkillCommand(input, command string) {
 	if mode == "diagnose" {
 		task = a.enrichDiagnoseTask(task, target)
 	}
+	if mode == "fix" {
+		a.storeFixRunSummary(task, target)
+	}
 
 	a.EventCh <- model.Event{Type: model.AgentThinking}
 	go a.runTask(task)
@@ -265,10 +268,39 @@ func (a *Application) enrichDiagnoseTask(task string, target issueCommandTarget)
 	enrichment, err := factoryruntime.BuildFactoryEnrichment(ctx, a.factoryPackLoadConfig())
 	summary := factoryruntime.BuildDiagnoseRunSummary(ctx, enrichment.Matches)
 	a.latestDiagnoseSummary = &summary
+	a.latestRunKind = "diagnose"
 	if err != nil || strings.TrimSpace(enrichment.HintBlock) == "" {
 		return task
 	}
 	return task + "\n\n" + enrichment.HintBlock
+}
+
+func (a *Application) storeFixRunSummary(task string, target issueCommandTarget) {
+	text := boundedDiagnosticText(firstNonEmptyText(target.Prompt, task))
+	summary := factoryruntime.BuildFixRunSummary(factoryruntime.FixRunSummaryInput{
+		Topic:              firstNonEmptyText(inferMainError(text), text),
+		UserProblemSummary: text,
+		PlannedFixSummary:  "Requested fix plan generated from bounded /fix input; execution results are not verified by this summary.",
+		KeyEvidence:        fixSummaryEvidence(text),
+	})
+	a.latestFixSummary = &summary
+	a.latestRunKind = "fix"
+}
+
+func fixSummaryEvidence(text string) []string {
+	values := []string{inferMainError(text), inferProblemType(text), inferStage(text), inferAccelerator(text)}
+	values = append(values, inferDiagnosticKeywords(text)...)
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
+		if len(out) >= 8 {
+			break
+		}
+	}
+	return out
 }
 
 func (a *Application) factoryPackLoadConfig() pack.LoadConfig {

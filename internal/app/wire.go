@@ -76,6 +76,8 @@ type Application struct {
 	issueUser             string
 	issueRole             string
 	latestDiagnoseSummary *factoryruntime.DiagnoseRunSummary
+	latestFixSummary      *factoryruntime.FixRunSummary
+	latestRunKind         string
 
 	// Project tracking
 	projectService *projectpkg.Service
