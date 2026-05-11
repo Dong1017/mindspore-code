@@ -11,6 +11,7 @@ type Manifest struct {
 	PackName           string
 	PackVersion        string
 	SchemaVersion      string
+	CardSchemaVersion  string
 	BuildTime          string
 	SourceCaseCount    int
 	CompiledCaseCount  int
@@ -41,6 +42,7 @@ func parseManifest(values map[string]string) (*Manifest, error) {
 		PackName:           values[ManifestKeyPackName],
 		PackVersion:        values[ManifestKeyPackVersion],
 		SchemaVersion:      values[ManifestKeySchemaVersion],
+		CardSchemaVersion:  values[ManifestKeyCardSchemaVersion],
 		BuildTime:          values[ManifestKeyBuildTime],
 		SourceCaseCount:    sourceCaseCount,
 		CompiledCaseCount:  compiledCaseCount,
@@ -60,6 +62,9 @@ func validateManifest(manifest *Manifest) error {
 	}
 	if manifest.SchemaVersion != SchemaVersion {
 		return fmt.Errorf("unsupported pack schema_version: %s", manifest.SchemaVersion)
+	}
+	if manifest.CardSchemaVersion != CardSchemaVersion {
+		return fmt.Errorf("unsupported card_schema_version: %s", manifest.CardSchemaVersion)
 	}
 	if _, err := time.Parse(time.RFC3339, manifest.BuildTime); err != nil {
 		return fmt.Errorf("invalid manifest build_time: %w", err)

@@ -56,8 +56,17 @@ func TestCompilePackBuildsSQLitePack(t *testing.T) {
 	if manifest[pack.ManifestKeyCompiledCaseCount] != "3" {
 		t.Fatalf("compiled manifest count = %q, want 3", manifest[pack.ManifestKeyCompiledCaseCount])
 	}
+	if manifest[pack.ManifestKeyCardSchemaVersion] != pack.CardSchemaVersion {
+		t.Fatalf("card schema version = %q, want %q", manifest[pack.ManifestKeyCardSchemaVersion], pack.CardSchemaVersion)
+	}
 	if manifest[pack.ManifestKeyChecksum] != summary.Checksum {
 		t.Fatalf("manifest checksum = %q, summary checksum = %q", manifest[pack.ManifestKeyChecksum], summary.Checksum)
+	}
+	if got := queryInt(t, db, `SELECT COUNT(*) FROM patterns WHERE pattern_type = 'negative'`); got != 0 {
+		t.Fatalf("negative pattern count = %d, want 0", got)
+	}
+	if got := queryInt(t, db, `SELECT COUNT(*) FROM advice WHERE advice_type = 'non_causes'`); got == 0 {
+		t.Fatalf("non_causes advice count = 0, want > 0")
 	}
 	if got := queryInt(t, db, `SELECT COUNT(*) FROM keywords`); got == 0 {
 		t.Fatalf("keywords count = 0, want > 0")

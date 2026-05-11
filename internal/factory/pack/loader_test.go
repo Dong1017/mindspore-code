@@ -27,6 +27,9 @@ func TestLoadAndInspectGeneratedPack(t *testing.T) {
 	if loaded.Manifest.SchemaVersion != pack.SchemaVersion {
 		t.Fatalf("SchemaVersion = %q, want %q", loaded.Manifest.SchemaVersion, pack.SchemaVersion)
 	}
+	if loaded.Manifest.CardSchemaVersion != pack.CardSchemaVersion {
+		t.Fatalf("CardSchemaVersion = %q, want %q", loaded.Manifest.CardSchemaVersion, pack.CardSchemaVersion)
+	}
 	if loaded.Manifest.SourceCaseCount != 6 {
 		t.Fatalf("SourceCaseCount = %d, want 6", loaded.Manifest.SourceCaseCount)
 	}
@@ -99,6 +102,20 @@ func TestInspectIncompatibleSchemaFails(t *testing.T) {
 	updateManifestKey(t, path, pack.ManifestKeySchemaVersion, "999")
 	_, err := pack.Inspect(path)
 	assertErrorContains(t, err, "unsupported pack schema_version")
+}
+
+func TestInspectMissingCardSchemaVersionFails(t *testing.T) {
+	path := buildTestPack(t)
+	deleteManifestKey(t, path, pack.ManifestKeyCardSchemaVersion)
+	_, err := pack.Inspect(path)
+	assertErrorContains(t, err, "manifest missing required field: card_schema_version")
+}
+
+func TestInspectIncompatibleCardSchemaVersionFails(t *testing.T) {
+	path := buildTestPack(t)
+	updateManifestKey(t, path, pack.ManifestKeyCardSchemaVersion, "known_issue/v0.4")
+	_, err := pack.Inspect(path)
+	assertErrorContains(t, err, "unsupported card_schema_version")
 }
 
 func TestInspectInvalidChecksumFails(t *testing.T) {

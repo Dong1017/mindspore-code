@@ -1,10 +1,11 @@
 package pack
 
 const (
-	Name          = "factory-core"
-	FileName      = "factory-core.pack"
-	SchemaVersion = "1"
-	MinMSCLIVer   = "0.1.0"
+	Name              = "factory-core"
+	FileName          = "factory-core.pack"
+	SchemaVersion     = "1"
+	CardSchemaVersion = "known_issue/v0.5"
+	MinMSCLIVer       = "0.1.0"
 )
 
 const (
@@ -19,6 +20,7 @@ const (
 	ManifestKeyPackName          = "pack_name"
 	ManifestKeyPackVersion       = "pack_version"
 	ManifestKeySchemaVersion     = "schema_version"
+	ManifestKeyCardSchemaVersion = "card_schema_version"
 	ManifestKeyBuildTime         = "build_time"
 	ManifestKeySourceCaseCount   = "source_case_count"
 	ManifestKeyCompiledCaseCount = "compiled_case_count"
@@ -31,6 +33,7 @@ var RequiredManifestKeys = []string{
 	ManifestKeyPackName,
 	ManifestKeyPackVersion,
 	ManifestKeySchemaVersion,
+	ManifestKeyCardSchemaVersion,
 	ManifestKeyBuildTime,
 	ManifestKeySourceCaseCount,
 	ManifestKeyCompiledCaseCount,

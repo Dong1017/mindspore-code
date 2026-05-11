@@ -47,7 +47,7 @@ func TestMatchCasesUnrelatedErrorReturnsNoMatch(t *testing.T) {
 	}
 }
 
-func TestMatchCasesHardConflictFiltersCandidate(t *testing.T) {
+func TestMatchCasesNonCausesDoNotFilterCandidate(t *testing.T) {
 	loaded := loadMatchPack(t)
 	fp := knownImportFingerprint()
 	fp.Signals.NegativeSignals = []string{"cuda-only"}
@@ -55,35 +55,56 @@ func TestMatchCasesHardConflictFiltersCandidate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MatchCases() error = %v", err)
 	}
-	for _, match := range matches {
-		if match.CaseID == "stable-ascend-import" {
-			t.Fatalf("hard-conflicted candidate was emitted")
-		}
+	if findMatch(matches, "stable-ascend-import") == nil {
+		t.Fatalf("non_cause filtered candidate; matches = %#v", matches)
 	}
 }
 
-func TestMatchCasesWeakConflictDowngradesCandidate(t *testing.T) {
+func TestMatchCasesNonCausesDoNotDowngradeCandidate(t *testing.T) {
 	loaded := loadMatchPack(t)
 	base, err := loaded.MatchCases(knownImportFingerprint(), pack.MatchOptions{})
 	if err != nil {
 		t.Fatalf("base MatchCases() error = %v", err)
 	}
-	weak := knownImportFingerprint()
-	weak.Signals.LogTail = "cuda-only appears in a partial environment note, but torch_npu import still fails"
-	weakMatches, err := loaded.MatchCases(weak, pack.MatchOptions{})
+	withNonCause := knownImportFingerprint()
+	withNonCause.Signals.LogTail = "cuda-only appears in a partial environment note, but torch_npu import still fails"
+	matches, err := loaded.MatchCases(withNonCause, pack.MatchOptions{})
 	if err != nil {
-		t.Fatalf("weak MatchCases() error = %v", err)
+		t.Fatalf("MatchCases() error = %v", err)
 	}
 	baseMatch := findMatch(base, "stable-ascend-import")
-	weakMatch := findMatch(weakMatches, "stable-ascend-import")
-	if baseMatch == nil || weakMatch == nil {
+	match := findMatch(matches, "stable-ascend-import")
+	if baseMatch == nil || match == nil {
 		t.Fatalf("expected stable-ascend-import in both result sets")
 	}
-	if weakMatch.Score >= baseMatch.Score {
-		t.Fatalf("weak conflict score = %d, base score = %d", weakMatch.Score, baseMatch.Score)
+	if match.Score != baseMatch.Score {
+		t.Fatalf("score with non_cause = %d, base score = %d; non_causes must not downgrade", match.Score, baseMatch.Score)
 	}
-	if len(weakMatch.ConflictingSignals) == 0 {
-		t.Fatalf("weak conflict did not record conflicting signal")
+}
+
+func TestMatchCasesNonCausesAreHintOnly(t *testing.T) {
+	loaded := loadMatchPack(t)
+	base, err := loaded.MatchCases(knownImportFingerprint(), pack.MatchOptions{})
+	if err != nil {
+		t.Fatalf("base MatchCases() error = %v", err)
+	}
+	withNonCause := knownImportFingerprint()
+	withNonCause.Signals.NegativeSignals = []string{"cuda-only"}
+	withNonCause.Signals.LogTail = "cuda-only appears in a partial environment note, but torch_npu import still fails"
+	matches, err := loaded.MatchCases(withNonCause, pack.MatchOptions{})
+	if err != nil {
+		t.Fatalf("MatchCases() error = %v", err)
+	}
+	baseMatch := findMatch(base, "stable-ascend-import")
+	match := findMatch(matches, "stable-ascend-import")
+	if baseMatch == nil || match == nil {
+		t.Fatalf("expected stable-ascend-import in both result sets")
+	}
+	if match.Score != baseMatch.Score {
+		t.Fatalf("score with non_cause = %d, base score = %d; non_causes must not downgrade", match.Score, baseMatch.Score)
+	}
+	if !containsString(match.ConflictingSignals, "cuda-only") {
+		t.Fatalf("ConflictingSignals = %#v, want non_cause hint", match.ConflictingSignals)
 	}
 }
 
@@ -183,4 +204,13 @@ func findMatch(matches []pack.CaseMatch, id string) *pack.CaseMatch {
 		}
 	}
 	return nil
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

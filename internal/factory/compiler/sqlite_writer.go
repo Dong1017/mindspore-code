@@ -214,17 +214,9 @@ func writeKeywords(db *sql.DB, c *card.KnownIssueCard) error {
 }
 
 func writePatterns(db *sql.DB, c *card.KnownIssueCard) error {
-	idx := 0
-	for _, pattern := range nonEmptySorted(c.Match.Regex) {
-		idx++
-		if _, err := db.Exec(`INSERT INTO patterns(id, case_id, pattern_type, pattern, weight) VALUES(?, ?, ?, ?, ?)`, fmt.Sprintf("%s:regex:%d", c.ID, idx), c.ID, "regex", pattern, 5.0); err != nil {
+	for idx, pattern := range nonEmptySorted(c.Match.Regex) {
+		if _, err := db.Exec(`INSERT INTO patterns(id, case_id, pattern_type, pattern, weight) VALUES(?, ?, ?, ?, ?)`, fmt.Sprintf("%s:regex:%d", c.ID, idx+1), c.ID, "regex", pattern, 5.0); err != nil {
 			return fmt.Errorf("write regex pattern for %s: %w", c.ID, err)
-		}
-	}
-	for _, pattern := range nonEmptySorted(c.Guidance.NonCauses) {
-		idx++
-		if _, err := db.Exec(`INSERT INTO patterns(id, case_id, pattern_type, pattern, weight) VALUES(?, ?, ?, ?, ?)`, fmt.Sprintf("%s:negative:%d", c.ID, idx), c.ID, "negative", pattern, -4.0); err != nil {
-			return fmt.Errorf("write negative pattern for %s: %w", c.ID, err)
 		}
 	}
 	return nil

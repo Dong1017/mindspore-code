@@ -17,6 +17,7 @@ func buildManifest(summary *BuildSummary, sourceHash string) map[string]string {
 		pack.ManifestKeyPackName:          summary.PackName,
 		pack.ManifestKeyPackVersion:       time.Now().UTC().Format("2006.01.02"),
 		pack.ManifestKeySchemaVersion:     summary.SchemaVersion,
+		pack.ManifestKeyCardSchemaVersion: pack.CardSchemaVersion,
 		pack.ManifestKeyBuildTime:         time.Now().UTC().Format(time.RFC3339),
 		pack.ManifestKeySourceCaseCount:   strconv.Itoa(summary.SourceCaseCount),
 		pack.ManifestKeyCompiledCaseCount: strconv.Itoa(summary.CompiledCaseCount),
