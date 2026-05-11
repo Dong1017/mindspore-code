@@ -132,18 +132,17 @@ func writeManifest(db *sql.DB, manifest map[string]string) error {
 }
 
 func writeCase(db *sql.DB, c *card.KnownIssueCard) error {
-	verificationSummary := strings.Join(c.Verification.Checks, "\n")
 	if _, err := db.Exec(`INSERT INTO cases(id, kind, title, problem_type, stage, root_cause_summary, fix_summary, verification_summary, confidence_level, lifecycle_state, source_card_hash) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		c.ID,
 		c.Kind,
 		c.Title,
-		c.Problem.ProblemType,
-		c.Problem.Stage,
-		c.Diagnosis.RootCause,
-		c.Fix.Summary,
-		verificationSummary,
-		c.Confidence.Level,
-		c.Lifecycle.State,
+		c.Case.ProblemType,
+		c.Case.Stage,
+		c.Guidance.Diagnosis,
+		c.Guidance.Fix,
+		c.Guidance.Verification,
+		c.Governance.Confidence,
+		c.Governance.Lifecycle,
 		caseSourceHash(c),
 	); err != nil {
 		return fmt.Errorf("write case %s: %w", c.ID, err)
@@ -174,11 +173,21 @@ func writeCase(db *sql.DB, c *card.KnownIssueCard) error {
 
 func writeMetadata(db *sql.DB, c *card.KnownIssueCard) error {
 	entries := map[string][]string{
-		"hardware.accelerator": {c.Environment.Hardware.Accelerator},
-		"runtime.cann_version": {c.Environment.Runtime.CANNVersion},
+		"case.domain":            {c.Case.Domain},
+		"hardware.accelerator":   {c.Case.Hardware},
+		"runtime.cann_version":   {c.Case.Environment.Runtime.CANNVersion},
+		"runtime.python_version": {c.Case.Environment.Runtime.PythonVersion},
+		"model.pattern":          {c.Case.Environment.Model.Pattern},
+		"model.execution_mode":   {c.Case.Environment.Model.ExecutionMode},
+		"model.optimization":     {c.Case.Environment.Model.Optimization},
+		"model.input_reuse":      {c.Case.Environment.Model.InputReuse},
+		"model.dtype":            {c.Case.Environment.Model.DType},
 	}
-	for _, framework := range c.Environment.Frameworks {
+	for _, framework := range c.Case.Environment.Frameworks {
 		entries["framework.name"] = append(entries["framework.name"], framework.Name)
+		entries["framework.version"] = append(entries["framework.version"], framework.Version)
+		entries["framework.branch"] = append(entries["framework.branch"], framework.Branch)
+		entries["framework.commit"] = append(entries["framework.commit"], framework.Commit)
 	}
 	keys := make([]string, 0, len(entries))
 	for key := range entries {
@@ -212,13 +221,7 @@ func writePatterns(db *sql.DB, c *card.KnownIssueCard) error {
 			return fmt.Errorf("write regex pattern for %s: %w", c.ID, err)
 		}
 	}
-	for _, pattern := range nonEmptySorted(c.Match.StackKeywords) {
-		idx++
-		if _, err := db.Exec(`INSERT INTO patterns(id, case_id, pattern_type, pattern, weight) VALUES(?, ?, ?, ?, ?)`, fmt.Sprintf("%s:stack:%d", c.ID, idx), c.ID, "stack_keyword", pattern, 4.0); err != nil {
-			return fmt.Errorf("write stack pattern for %s: %w", c.ID, err)
-		}
-	}
-	for _, pattern := range nonEmptySorted(c.Match.NegativePatterns) {
+	for _, pattern := range nonEmptySorted(c.Guidance.NonCauses) {
 		idx++
 		if _, err := db.Exec(`INSERT INTO patterns(id, case_id, pattern_type, pattern, weight) VALUES(?, ?, ?, ?, ?)`, fmt.Sprintf("%s:negative:%d", c.ID, idx), c.ID, "negative", pattern, -4.0); err != nil {
 			return fmt.Errorf("write negative pattern for %s: %w", c.ID, err)
@@ -238,16 +241,16 @@ func writeTags(db *sql.DB, c *card.KnownIssueCard) error {
 
 func writeAdvice(db *sql.DB, c *card.KnownIssueCard) error {
 	advice := map[string]string{
-		"explanation":      c.Diagnosis.Explanation,
-		"scope_note":       c.Diagnosis.ScopeNote,
-		"next_checks":      strings.Join(c.Diagnosis.SuggestedNextChecks, "\n"),
-		"fix_summary":      c.Fix.Summary,
-		"fix_steps":        strings.Join(c.Fix.Steps, "\n"),
-		"fix_template":     c.Fix.Template,
-		"verification":     strings.Join(c.Verification.Checks, "\n"),
-		"expected_result":  c.Verification.ExpectedResult,
-		"missing_evidence": strings.Join(c.Diagnosis.MissingEvidence, "\n"),
-		"conflicts":        strings.Join(c.Diagnosis.ConflictingSignals, "\n"),
+		"symptom":               c.Guidance.Symptom,
+		"trigger_signals":       strings.Join(c.Guidance.TriggerSignals, "\n"),
+		"representative_errors": strings.Join(c.Guidance.RepresentativeErrors, "\n"),
+		"explanation":           c.Guidance.Diagnosis,
+		"diagnosis_details":     strings.Join(c.Guidance.DiagnosisDetails, "\n"),
+		"fix_summary":           c.Guidance.Fix,
+		"fix_steps":             strings.Join(c.Guidance.Actions, "\n"),
+		"why_it_works":          strings.Join(c.Guidance.WhyItWorks, "\n"),
+		"verification":          c.Guidance.Verification,
+		"non_causes":            strings.Join(c.Guidance.NonCauses, "\n"),
 	}
 	keys := make([]string, 0, len(advice))
 	for key, value := range advice {
@@ -270,6 +273,16 @@ func writeProvenance(db *sql.DB, c *card.KnownIssueCard) error {
 			return fmt.Errorf("write provenance for %s: %w", c.ID, err)
 		}
 	}
+	for _, expected := range nonEmptySorted(c.Provenance.ExpectedBehavior) {
+		if _, err := db.Exec(`INSERT INTO provenance(case_id, key, value) VALUES(?, ?, ?)`, c.ID, "expected_behavior", expected); err != nil {
+			return fmt.Errorf("write expected behavior for %s: %w", c.ID, err)
+		}
+	}
+	for _, test := range nonEmptySorted(c.Provenance.RegressionTests) {
+		if _, err := db.Exec(`INSERT INTO provenance(case_id, key, value) VALUES(?, ?, ?)`, c.ID, "regression_test", test); err != nil {
+			return fmt.Errorf("write regression test for %s: %w", c.ID, err)
+		}
+	}
 	if strings.TrimSpace(c.Provenance.Notes) != "" {
 		if _, err := db.Exec(`INSERT INTO provenance(case_id, key, value) VALUES(?, ?, ?)`, c.ID, "notes", c.Provenance.Notes); err != nil {
 			return fmt.Errorf("write provenance notes for %s: %w", c.ID, err)
@@ -280,11 +293,8 @@ func writeProvenance(db *sql.DB, c *card.KnownIssueCard) error {
 
 func writeApplicability(db *sql.DB, c *card.KnownIssueCard) error {
 	entries := map[string][]string{
-		"affected_versions": c.Applicability.AffectedVersions,
-		"affected_branches": c.Applicability.AffectedBranches,
-		"affected_commits":  c.Applicability.AffectedCommits,
-		"introduced_by":     c.Applicability.IntroducedBy,
-		"fixed_by":          c.Applicability.FixedBy,
+		"affected": c.Case.Environment.Affected,
+		"fixed_by": c.Case.Environment.FixedBy,
 	}
 	keys := make([]string, 0, len(entries))
 	for key := range entries {

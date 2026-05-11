@@ -52,11 +52,11 @@ func (p *Pack) MatchCases(fp Fingerprint, opts MatchOptions) ([]CaseMatch, error
 			ConfidenceLevel:      c.ConfidenceLevel,
 			Score:                result.score,
 			WhyMatched:           result.whyMatched,
-			SuggestedNextChecks:  c.Advice["next_checks"],
+			SuggestedNextChecks:  adviceValues(c.Advice, "next_checks", "trigger_signals", "diagnosis_details", "fix_steps"),
 			SuggestedFixTemplate: firstAdvice(c.Advice, "fix_template", "fix_summary"),
-			Verification:         append(c.Advice["verification"], c.Advice["expected_result"]...),
+			Verification:         adviceValues(c.Advice, "verification", "expected_result"),
 			MissingEvidence:      append(result.missingEvidence, c.Advice["missing_evidence"]...),
-			ConflictingSignals:   append(result.conflictingSignals, c.Advice["conflicts"]...),
+			ConflictingSignals:   append(result.conflictingSignals, adviceValues(c.Advice, "conflicts", "non_causes")...),
 		})
 	}
 	sortMatches(matches)
@@ -64,6 +64,14 @@ func (p *Pack) MatchCases(fp Fingerprint, opts MatchOptions) ([]CaseMatch, error
 		matches = matches[:topK]
 	}
 	return matches, nil
+}
+
+func adviceValues(advice map[string][]string, keys ...string) []string {
+	var values []string
+	for _, key := range keys {
+		values = append(values, advice[key]...)
+	}
+	return values
 }
 
 func firstAdvice(advice map[string][]string, keys ...string) string {

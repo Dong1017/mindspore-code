@@ -35,9 +35,9 @@ func TestInvalidDraftCards(t *testing.T) {
 		fixture string
 		wantErr string
 	}{
-		{name: "problem type", fixture: "invalid_problem_type.yaml", wantErr: "invalid problem.problem_type"},
-		{name: "stage", fixture: "invalid_stage.yaml", wantErr: "invalid problem.stage"},
-		{name: "framework", fixture: "invalid_framework.yaml", wantErr: "invalid environment.frameworks.name"},
+		{name: "problem type", fixture: "invalid_problem_type.yaml", wantErr: "invalid case.problem_type"},
+		{name: "stage", fixture: "invalid_stage.yaml", wantErr: "invalid case.stage"},
+		{name: "framework", fixture: "invalid_framework.yaml", wantErr: "invalid case.environment.frameworks.name"},
 		{name: "regex", fixture: "invalid_regex.yaml", wantErr: "invalid match.regex"},
 	}
 
@@ -56,11 +56,11 @@ func TestPackEligibilityFailures(t *testing.T) {
 		fixture string
 		wantErr string
 	}{
-		{name: "stable without approval", fixture: "stable_without_approval.yaml", wantErr: "stable card requires review.status approved"},
+		{name: "stable without approval", fixture: "stable_without_approval.yaml", wantErr: "stable card requires governance.review_status approved"},
 		{name: "stable without match signal", fixture: "stable_without_match_signal.yaml", wantErr: "pack eligibility requires at least one match signal"},
-		{name: "draft excluded", fixture: "valid_draft.yaml", wantErr: "lifecycle.state must be stable"},
-		{name: "deprecated excluded", fixture: "deprecated.yaml", wantErr: "lifecycle.state must be stable"},
-		{name: "archived excluded", fixture: "archived.yaml", wantErr: "lifecycle.state must be stable"},
+		{name: "draft excluded", fixture: "valid_draft.yaml", wantErr: "governance.lifecycle must be stable"},
+		{name: "deprecated excluded", fixture: "deprecated.yaml", wantErr: "governance.lifecycle must be stable"},
+		{name: "archived excluded", fixture: "archived.yaml", wantErr: "governance.lifecycle must be stable"},
 	}
 
 	for _, tt := range tests {
@@ -77,7 +77,7 @@ func TestPackEligibilityFailures(t *testing.T) {
 
 func TestValidatePrivacy(t *testing.T) {
 	card := loadTestCard(t, "valid_draft.yaml")
-	card.Diagnosis.Explanation = "The command included access_token=secret-value."
+	card.Guidance.Diagnosis = "The command included access_token=secret-value."
 	err := ValidatePrivacy(card)
 	assertErrorContains(t, err, "privacy validation failed")
 }

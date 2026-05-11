@@ -110,24 +110,28 @@ func RenderReviewSummary(card *KnownIssueCard, validation ValidationResult) stri
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Factory Card Review: %s\n\n", safeSummaryLine(card.ID, 16))
 	fmt.Fprintf(&b, "## Title\n%s\n\n", safeSummaryLine(card.Title, 40))
-	fmt.Fprintf(&b, "## Problem\n- type: %s\n- stage: %s\n", safeSummaryLine(card.Problem.ProblemType, 8), safeSummaryLine(card.Problem.Stage, 8))
-	writeSummaryList(&b, "symptoms", card.Problem.Symptoms, 6)
-	b.WriteString("\n## Diagnosis\n")
-	fmt.Fprintf(&b, "- explanation: %s\n", safeSummaryLine(card.Diagnosis.Explanation, 60))
-	if strings.TrimSpace(card.Diagnosis.ScopeNote) != "" {
-		fmt.Fprintf(&b, "- scope_note: %s\n", safeSummaryLine(card.Diagnosis.ScopeNote, 60))
-	}
-	if strings.TrimSpace(card.Diagnosis.RootCause) != "" {
-		fmt.Fprintf(&b, "- root_cause: %s\n", safeSummaryLine(card.Diagnosis.RootCause, 60))
-	}
-	b.WriteString("\n## Fix\n")
-	if strings.TrimSpace(card.Fix.Summary) == "" {
-		b.WriteString("- summary: needs review\n")
+	fmt.Fprintf(&b, "## Case\n- problem_type: %s\n- stage: %s\n- domain: %s\n- hardware: %s\n", safeSummaryLine(card.Case.ProblemType, 8), safeSummaryLine(card.Case.Stage, 8), safeSummaryLine(card.Case.Domain, 8), safeSummaryLine(card.Case.Hardware, 8))
+	b.WriteString("\n## Guidance\n")
+	fmt.Fprintf(&b, "- symptom: %s\n", safeSummaryLine(card.Guidance.Symptom, 60))
+	fmt.Fprintf(&b, "- diagnosis: %s\n", safeSummaryLine(card.Guidance.Diagnosis, 60))
+	if strings.TrimSpace(card.Guidance.Fix) == "" {
+		b.WriteString("- fix: needs review\n")
 	} else {
-		fmt.Fprintf(&b, "- summary: %s\n", safeSummaryLine(card.Fix.Summary, 60))
+		fmt.Fprintf(&b, "- fix: %s\n", safeSummaryLine(card.Guidance.Fix, 60))
 	}
-	b.WriteString("\n## Verification\n")
-	writeSummaryList(&b, "checks", card.Verification.Checks, 4)
+	if strings.TrimSpace(card.Guidance.Verification) == "" {
+		b.WriteString("- verification: needs review\n")
+	} else {
+		fmt.Fprintf(&b, "- verification: %s\n", safeSummaryLine(card.Guidance.Verification, 60))
+	}
+	writeSummaryList(&b, "trigger_signals", card.Guidance.TriggerSignals, 6)
+	b.WriteString("\n## Provenance\n")
+	writeSummaryList(&b, "references", card.Provenance.References, 4)
+	writeSummaryList(&b, "expected_behavior", card.Provenance.ExpectedBehavior, 4)
+	b.WriteString("\n## Governance\n")
+	fmt.Fprintf(&b, "- confidence: %s\n", safeSummaryLine(card.Governance.Confidence, 8))
+	fmt.Fprintf(&b, "- lifecycle: %s\n", safeSummaryLine(card.Governance.Lifecycle, 8))
+	fmt.Fprintf(&b, "- review_status: %s\n", safeSummaryLine(card.Governance.ReviewStatus, 8))
 	b.WriteString("\n## Validation\n")
 	fmt.Fprintf(&b, "- schema: %s\n", checkStatus(validation.Schema))
 	fmt.Fprintf(&b, "- privacy: %s\n", checkStatus(validation.Privacy))

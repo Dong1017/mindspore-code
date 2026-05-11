@@ -76,7 +76,7 @@ func TestCompilePackBuildsSQLitePack(t *testing.T) {
 
 func TestCompilePackInvalidCardFails(t *testing.T) {
 	_, err := CompilePack("testdata/invalid", filepath.Join(t.TempDir(), pack.FileName))
-	assertErrorContains(t, err, "invalid problem.problem_type")
+	assertErrorContains(t, err, "invalid case.problem_type")
 }
 
 func TestCompilePackNoEligibleCardsFails(t *testing.T) {

@@ -1,13 +1,15 @@
 package card
 
 const (
-	KindKnownIssue = "known_issue"
+	SchemaVersionKnownIssueV05 = "known_issue/v0.5"
+	KindKnownIssue             = "known_issue"
 )
 
 const (
 	ProblemTypeFailure     = "failure"
 	ProblemTypeAccuracy    = "accuracy"
 	ProblemTypePerformance = "performance"
+	ProblemTypeUnknown     = "unknown"
 )
 
 const (
@@ -21,6 +23,29 @@ const (
 	StageGraphOpt  = "graph_opt"
 	StageExecution = "execution"
 	StageUnknown   = "unknown"
+)
+
+const (
+	DomainMindSpore = "mindspore"
+	DomainTorch     = "torch"
+	DomainTorchNPU  = "torch_npu"
+	DomainCANN      = "cann"
+	DomainUnknown   = "unknown"
+)
+
+const (
+	HardwareAscend  = "ascend"
+	HardwareGPU     = "gpu"
+	HardwareCPU     = "cpu"
+	HardwareUnknown = "unknown"
+)
+
+const (
+	SeverityLow      = "low"
+	SeverityMedium   = "medium"
+	SeverityHigh     = "high"
+	SeverityCritical = "critical"
+	SeverityUnknown  = "unknown"
 )
 
 const (
@@ -47,124 +72,95 @@ const (
 	ReviewPending  = "pending"
 	ReviewApproved = "approved"
 	ReviewRejected = "rejected"
+	ReviewUnknown  = "unknown"
 )
 
 type KnownIssueCard struct {
-	ID            string        `yaml:"id"`
-	Kind          string        `yaml:"kind"`
-	Title         string        `yaml:"title"`
-	Problem       Problem       `yaml:"problem"`
-	Environment   Environment   `yaml:"environment"`
-	Applicability Applicability `yaml:"applicability"`
-	Match         Match         `yaml:"match"`
-	Diagnosis     Diagnosis     `yaml:"diagnosis"`
-	Fix           Fix           `yaml:"fix"`
-	Verification  Verification  `yaml:"verification"`
-	Provenance    Provenance    `yaml:"provenance"`
-	Confidence    Confidence    `yaml:"confidence"`
-	Lifecycle     Lifecycle     `yaml:"lifecycle"`
-	Review        Review        `yaml:"review"`
-	Tags          []string      `yaml:"tags"`
+	SchemaVersion string     `yaml:"schema_version"`
+	Kind          string     `yaml:"kind"`
+	ID            string     `yaml:"id"`
+	Title         string     `yaml:"title"`
+	Tags          []string   `yaml:"tags"`
+	Case          Case       `yaml:"case"`
+	Match         Match      `yaml:"match"`
+	Guidance      Guidance   `yaml:"guidance"`
+	Provenance    Provenance `yaml:"provenance"`
+	Governance    Governance `yaml:"governance"`
 }
 
-type Problem struct {
-	ProblemType string   `yaml:"problem_type"`
-	Stage       string   `yaml:"stage"`
-	Symptoms    []string `yaml:"symptoms"`
+type Case struct {
+	ProblemType     string      `yaml:"problem_type"`
+	Stage           string      `yaml:"stage"`
+	Domain          string      `yaml:"domain"`
+	Hardware        string      `yaml:"hardware"`
+	Severity        string      `yaml:"severity"`
+	OccurrenceCount int         `yaml:"occurrence_count"`
+	Environment     Environment `yaml:"environment"`
 }
 
 type Environment struct {
-	Platform   Platform    `yaml:"platform"`
-	Hardware   Hardware    `yaml:"hardware"`
-	Runtime    Runtime     `yaml:"runtime"`
 	Frameworks []Framework `yaml:"frameworks"`
-}
-
-type Platform struct {
-	OS        OS     `yaml:"os"`
-	Arch      string `yaml:"arch"`
-	Container string `yaml:"container"`
-}
-
-type OS struct {
-	Family  string `yaml:"family"`
-	Name    string `yaml:"name"`
-	Version string `yaml:"version"`
-}
-
-type Hardware struct {
-	Accelerator string   `yaml:"accelerator"`
-	Chip        []string `yaml:"chip"`
-}
-
-type Runtime struct {
-	CANNVersion   string `yaml:"cann_version"`
-	DriverVersion string `yaml:"driver_version"`
-	PythonVersion string `yaml:"python_version"`
+	Runtime    Runtime     `yaml:"runtime"`
+	Model      Model       `yaml:"model"`
+	Affected   []string    `yaml:"affected"`
+	FixedBy    []string    `yaml:"fixed_by"`
 }
 
 type Framework struct {
 	Name    string `yaml:"name"`
 	Version string `yaml:"version"`
+	Branch  string `yaml:"branch"`
+	Commit  string `yaml:"commit"`
 }
 
-type Applicability struct {
-	AffectedVersions []string `yaml:"affected_versions"`
-	AffectedBranches []string `yaml:"affected_branches"`
-	AffectedCommits  []string `yaml:"affected_commits"`
-	IntroducedBy     []string `yaml:"introduced_by"`
-	FixedBy          []string `yaml:"fixed_by"`
+type Runtime struct {
+	CANNVersion   string `yaml:"cann_version"`
+	PythonVersion string `yaml:"python_version"`
+}
+
+type Model struct {
+	Pattern       string      `yaml:"pattern"`
+	ExecutionMode string      `yaml:"execution_mode"`
+	Optimization  string      `yaml:"optimization"`
+	InputReuse    string      `yaml:"input_reuse"`
+	DType         string      `yaml:"dtype"`
+	InputShapes   InputShapes `yaml:"input_shapes"`
+}
+
+type InputShapes struct {
+	OriginalReport string `yaml:"original_report"`
+	RegressionNote string `yaml:"regression_note"`
 }
 
 type Match struct {
-	Keywords         []string `yaml:"keywords"`
-	Regex            []string `yaml:"regex"`
-	StackKeywords    []string `yaml:"stack_keywords"`
-	NegativePatterns []string `yaml:"negative_patterns"`
+	Keywords []string `yaml:"keywords"`
+	Regex    []string `yaml:"regex"`
 }
 
-type Diagnosis struct {
-	RootCause           string   `yaml:"root_cause"`
-	Explanation         string   `yaml:"explanation"`
-	ScopeNote           string   `yaml:"scope_note"`
-	SuggestedNextChecks []string `yaml:"suggested_next_checks"`
-	MissingEvidence     []string `yaml:"missing_evidence"`
-	ConflictingSignals  []string `yaml:"conflicting_signals"`
-}
-
-type Fix struct {
-	Summary    string   `yaml:"summary"`
-	Steps      []string `yaml:"steps"`
-	Template   string   `yaml:"template"`
-	WhyItWorks string   `yaml:"why_it_works"`
-}
-
-type Verification struct {
-	Checks          []string `yaml:"checks"`
-	Commands        []string `yaml:"commands"`
-	ExpectedResult  string   `yaml:"expected_result"`
-	RegressionTests []string `yaml:"regression_tests"`
+type Guidance struct {
+	Symptom              string   `yaml:"symptom"`
+	TriggerSignals       []string `yaml:"trigger_signals"`
+	RepresentativeErrors []string `yaml:"representative_errors"`
+	Diagnosis            string   `yaml:"diagnosis"`
+	DiagnosisDetails     []string `yaml:"diagnosis_details"`
+	Actions              []string `yaml:"actions"`
+	Fix                  string   `yaml:"fix"`
+	WhyItWorks           []string `yaml:"why_it_works"`
+	Verification         string   `yaml:"verification"`
+	NonCauses            []string `yaml:"non_causes"`
 }
 
 type Provenance struct {
-	References []string `yaml:"references"`
-	Notes      string   `yaml:"notes"`
+	References       []string `yaml:"references"`
+	Notes            string   `yaml:"notes"`
+	ExpectedBehavior []string `yaml:"expected_behavior"`
+	RegressionTests  []string `yaml:"regression_tests"`
 }
 
-type Confidence struct {
-	Level     string `yaml:"level"`
-	Rationale string `yaml:"rationale"`
-}
-
-type Lifecycle struct {
-	State      string   `yaml:"state"`
-	Reason     string   `yaml:"reason"`
-	ReplacedBy []string `yaml:"replaced_by"`
-	UpdatedAt  string   `yaml:"updated_at"`
-}
-
-type Review struct {
-	Status        string `yaml:"status"`
-	ReviewedBy    string `yaml:"reviewed_by"`
-	ReviewerNotes string `yaml:"reviewer_notes"`
+type Governance struct {
+	Confidence   string `yaml:"confidence"`
+	Lifecycle    string `yaml:"lifecycle"`
+	ReviewStatus string `yaml:"review_status"`
+	Rationale    string `yaml:"rationale"`
+	UpdatedAt    string `yaml:"updated_at"`
 }

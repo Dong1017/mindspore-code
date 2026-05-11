@@ -20,35 +20,35 @@ func TestNewDraftFromRunSummaryDefaultsToDraftPendingBootstrap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDraftFromRunSummary() error = %v", err)
 	}
-	if card.Lifecycle.State != LifecycleDraft {
-		t.Fatalf("Lifecycle.State = %q, want draft", card.Lifecycle.State)
+	if card.Governance.Lifecycle != LifecycleDraft {
+		t.Fatalf("Governance.Lifecycle = %q, want draft", card.Governance.Lifecycle)
 	}
-	if card.Review.Status != ReviewPending {
-		t.Fatalf("Review.Status = %q, want pending", card.Review.Status)
+	if card.Governance.ReviewStatus != ReviewPending {
+		t.Fatalf("Governance.ReviewStatus = %q, want pending", card.Governance.ReviewStatus)
 	}
-	if card.Confidence.Level != ConfidenceBootstrap {
-		t.Fatalf("Confidence.Level = %q, want bootstrap", card.Confidence.Level)
+	if card.Governance.Confidence != ConfidenceBootstrap {
+		t.Fatalf("Governance.Confidence = %q, want bootstrap", card.Governance.Confidence)
 	}
-	if card.Problem.ProblemType != ProblemTypeFailure {
-		t.Fatalf("ProblemType = %q, want failure", card.Problem.ProblemType)
+	if card.Case.ProblemType != ProblemTypeFailure {
+		t.Fatalf("ProblemType = %q, want failure", card.Case.ProblemType)
 	}
 	if err := ValidateDraft(card); err != nil {
 		t.Fatalf("ValidateDraft() error = %v", err)
 	}
 }
 
-func TestNewDraftFromRunSummaryUnclearTypeDefaultsFailureNeedsReview(t *testing.T) {
+func TestNewDraftFromRunSummaryUnclearTypeUsesUnknownNeedsReview(t *testing.T) {
 	card, err := NewDraftFromRunSummary(factoryruntime.LastRunSummary{
 		Diagnose: &factoryruntime.DiagnoseRunSummary{Topic: "unexpected behavior", KeyEvidence: []string{"unexpected behavior"}},
 	}, DraftOptions{})
 	if err != nil {
 		t.Fatalf("NewDraftFromRunSummary() error = %v", err)
 	}
-	if card.Problem.ProblemType != ProblemTypeFailure {
-		t.Fatalf("ProblemType = %q, want failure", card.Problem.ProblemType)
+	if card.Case.ProblemType != ProblemTypeUnknown {
+		t.Fatalf("ProblemType = %q, want unknown", card.Case.ProblemType)
 	}
-	if !strings.Contains(card.Diagnosis.ScopeNote, "defaulted to failure") {
-		t.Fatalf("ScopeNote = %q, want default warning", card.Diagnosis.ScopeNote)
+	if !strings.Contains(strings.Join(card.Guidance.DiagnosisDetails, " "), "set to unknown") {
+		t.Fatalf("DiagnosisDetails = %#v, want unknown review warning", card.Guidance.DiagnosisDetails)
 	}
 }
 

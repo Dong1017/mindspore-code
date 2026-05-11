@@ -1,40 +1,73 @@
-id: stable-mindspore-compile
+schema_version: known_issue/v0.5
 kind: known_issue
-title: MindSpore graph compile failure
-problem:
-  problem_type: failure
-  stage: compile
-  symptoms:
-    - Graph compilation fails with unsupported operator
-match:
-  keywords:
-    - unsupported operator
-    - graph compile
-  stack_keywords:
-    - mindspore/ops
-diagnosis:
-  root_cause: The graph uses an operator unsupported by the target backend.
-  explanation: Compile fails when lowering the graph for the selected device.
-  scope_note: Applies to MindSpore graph compile failures.
-  suggested_next_checks:
-    - Identify the unsupported operator name.
-fix:
-  summary: Replace or rewrite the unsupported operator.
-verification:
-  checks:
-    - Re-run graph compilation.
-  expected_result: Graph compilation passes.
-provenance:
-  references:
-    - issue-compiler-2
-confidence:
-  level: verified
-  rationale: Confirmed by maintainer review.
-lifecycle:
-  state: stable
-  reason: Reviewed fixture
-review:
-  status: approved
+id: stable-mindspore-compile
+title: MindSpore compile failure
 tags:
   - mindspore
   - compile
+case:
+  problem_type: failure
+  stage: compile
+  domain: mindspore
+  hardware: ascend
+  severity: medium
+  occurrence_count: 1
+  environment:
+    frameworks:
+      - name: mindspore
+        version: "2.7.1"
+        branch: ""
+        commit: ""
+    runtime:
+      cann_version: "8.0"
+      python_version: "3.10"
+    model:
+      pattern: ""
+      execution_mode: unknown
+      optimization: ""
+      input_reuse: ""
+      dtype: ""
+      input_shapes:
+        original_report: ""
+        regression_note: ""
+    affected:
+      - torch_npu 2.7.1.post2
+    fixed_by:
+      - source CANN environment
+match:
+  keywords:
+    - mindspore
+    - graph compile
+  regex:
+    - "Graph compile.*failed"
+guidance:
+  symptom: MindSpore graph compile fails
+  trigger_signals:
+    - compile
+    - mindspore
+  representative_errors:
+    - Graph compile failed in MindSpore
+  diagnosis: MindSpore graph compilation fails before execution.
+  diagnosis_details:
+    - The graph compiler rejects the current operator pattern.
+  actions:
+    - Collect graph compiler diagnostics.
+  fix: Adjust the unsupported graph pattern or runtime configuration.
+  why_it_works:
+    - The adjusted graph avoids the unsupported compile path.
+  verification: Run graph compile smoke test.
+  non_causes: []
+provenance:
+  references:
+    - issue-123
+  notes: Reviewed known import failure
+  expected_behavior:
+    - MindSpore graph compiles successfully.
+  regression_tests:
+    - test:torch_npu_import
+governance:
+  confidence: observed
+  lifecycle: stable
+  review_status: approved
+  rationale: Observed in a reproducible diagnostic run.
+  updated_at: "2026-05-09T00:00:00Z"

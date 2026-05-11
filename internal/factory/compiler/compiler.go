@@ -44,7 +44,7 @@ func CompilePack(cardsDir string, outputPath string) (*BuildSummary, error) {
 			return nil, fmt.Errorf("validate %s: %w", source.path, err)
 		}
 
-		switch source.card.Lifecycle.State {
+		switch source.card.Governance.Lifecycle {
 		case card.LifecycleDraft:
 			summary.DraftExcluded++
 			continue

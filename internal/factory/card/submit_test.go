@@ -60,7 +60,7 @@ func TestSubmitDraftCardPrivacyFailureWritesNoBundle(t *testing.T) {
 
 func TestSubmitDraftCardInvalidDraftWritesNoBundle(t *testing.T) {
 	card := validDraftCard(t, "ImportError")
-	card.Problem.Symptoms = nil
+	card.Guidance.Symptom = ""
 	path := writeCardYAML(t, t.TempDir(), card)
 	out := filepath.Join(t.TempDir(), "submissions")
 	_, err := SubmitDraftCard(path, SubmitOptions{OutputRoot: out})

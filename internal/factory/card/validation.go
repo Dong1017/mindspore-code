@@ -23,32 +23,23 @@ func ValidateStable(card *KnownIssueCard) error {
 	if err := ValidateDraft(card); err != nil {
 		return err
 	}
-	if card.Lifecycle.State != LifecycleStable {
-		return fmt.Errorf("lifecycle.state must be stable")
+	if card.Governance.Lifecycle != LifecycleStable {
+		return fmt.Errorf("governance.lifecycle must be stable")
 	}
-	if card.Review.Status != ReviewApproved {
-		return fmt.Errorf("stable card requires review.status approved")
+	if card.Governance.ReviewStatus != ReviewApproved {
+		return fmt.Errorf("stable card requires governance.review_status approved")
 	}
-	if strings.TrimSpace(card.Diagnosis.RootCause) == "" {
-		return fmt.Errorf("diagnosis.root_cause is required for stable card")
-	}
-	if strings.TrimSpace(card.Diagnosis.ScopeNote) == "" {
-		return fmt.Errorf("diagnosis.scope_note is required for stable card")
-	}
-	if len(nonEmptyStrings(card.Diagnosis.SuggestedNextChecks)) == 0 {
-		return fmt.Errorf("diagnosis.suggested_next_checks is required for stable card")
-	}
-	if len(nonEmptyStrings(card.Verification.Checks)) == 0 {
-		return fmt.Errorf("verification.checks is required for stable card")
-	}
-	if strings.TrimSpace(card.Verification.ExpectedResult) == "" {
-		return fmt.Errorf("verification.expected_result is required for stable card")
+	if strings.TrimSpace(card.Guidance.Verification) == "" {
+		return fmt.Errorf("guidance.verification is required for stable card")
 	}
 	if len(nonEmptyStrings(card.Provenance.References)) == 0 {
 		return fmt.Errorf("provenance.references is required for stable card")
 	}
-	if strings.TrimSpace(card.Confidence.Rationale) == "" {
-		return fmt.Errorf("confidence.rationale is required for stable card")
+	if len(nonEmptyStrings(card.Provenance.ExpectedBehavior)) == 0 {
+		return fmt.Errorf("provenance.expected_behavior is required for stable card")
+	}
+	if strings.TrimSpace(card.Governance.Rationale) == "" {
+		return fmt.Errorf("governance.rationale is required for stable card")
 	}
 	return nil
 }
@@ -57,8 +48,26 @@ func ValidatePackEligible(card *KnownIssueCard) error {
 	if err := ValidateStable(card); err != nil {
 		return err
 	}
+	if card.Governance.Confidence != ConfidenceObserved && card.Governance.Confidence != ConfidenceVerified {
+		return fmt.Errorf("pack eligibility requires governance.confidence observed or verified")
+	}
 	if !hasMatchSignal(card.Match) {
 		return fmt.Errorf("pack eligibility requires at least one match signal")
+	}
+	if strings.TrimSpace(card.Guidance.Symptom) == "" {
+		return fmt.Errorf("pack eligibility requires guidance.symptom")
+	}
+	if strings.TrimSpace(card.Guidance.Diagnosis) == "" {
+		return fmt.Errorf("pack eligibility requires guidance.diagnosis")
+	}
+	if strings.TrimSpace(card.Guidance.Verification) == "" {
+		return fmt.Errorf("pack eligibility requires guidance.verification")
+	}
+	if len(nonEmptyStrings(card.Provenance.References)) == 0 {
+		return fmt.Errorf("pack eligibility requires provenance.references")
+	}
+	if len(nonEmptyStrings(card.Provenance.ExpectedBehavior)) == 0 {
+		return fmt.Errorf("pack eligibility requires provenance.expected_behavior")
 	}
 	return nil
 }
@@ -88,12 +97,15 @@ var forbiddenPrivacyTerms = []string{
 	"passwd",
 	"private key",
 	"begin rsa private key",
-	"begin openSSH private key",
+	"begin openssh private key",
 	"secret=",
 	"token=",
 }
 
 func validateCommon(card *KnownIssueCard) error {
+	if card.SchemaVersion != SchemaVersionKnownIssueV05 {
+		return fmt.Errorf("schema_version must be %s", SchemaVersionKnownIssueV05)
+	}
 	if strings.TrimSpace(card.ID) == "" {
 		return fmt.Errorf("id is required")
 	}
@@ -103,45 +115,48 @@ func validateCommon(card *KnownIssueCard) error {
 	if strings.TrimSpace(card.Title) == "" {
 		return fmt.Errorf("title is required")
 	}
-	if !validProblemType(card.Problem.ProblemType) {
-		return fmt.Errorf("invalid problem.problem_type: %s", card.Problem.ProblemType)
-	}
-	if !validStage(card.Problem.Stage) {
-		return fmt.Errorf("invalid problem.stage: %s", card.Problem.Stage)
-	}
-	if len(nonEmptyStrings(card.Problem.Symptoms)) == 0 {
-		return fmt.Errorf("problem.symptoms is required")
-	}
-	if strings.TrimSpace(card.Diagnosis.Explanation) == "" {
-		return fmt.Errorf("diagnosis.explanation is required")
-	}
-	if !validConfidenceLevel(card.Confidence.Level) {
-		return fmt.Errorf("invalid confidence.level: %s", card.Confidence.Level)
-	}
-	if !validLifecycleState(card.Lifecycle.State) {
-		return fmt.Errorf("invalid lifecycle.state: %s", card.Lifecycle.State)
-	}
-	if strings.TrimSpace(card.Lifecycle.Reason) == "" {
-		return fmt.Errorf("lifecycle.reason is required")
-	}
 	if len(nonEmptyStrings(card.Tags)) == 0 {
 		return fmt.Errorf("tags is required")
 	}
-	if card.Review.Status != "" && !validReviewStatus(card.Review.Status) {
-		return fmt.Errorf("invalid review.status: %s", card.Review.Status)
+	if !validProblemType(card.Case.ProblemType) {
+		return fmt.Errorf("invalid case.problem_type: %s", card.Case.ProblemType)
 	}
-	for _, framework := range card.Environment.Frameworks {
+	if !validStage(card.Case.Stage) {
+		return fmt.Errorf("invalid case.stage: %s", card.Case.Stage)
+	}
+	if !validDomain(card.Case.Domain) {
+		return fmt.Errorf("invalid case.domain: %s", card.Case.Domain)
+	}
+	if !validHardware(card.Case.Hardware) {
+		return fmt.Errorf("invalid case.hardware: %s", card.Case.Hardware)
+	}
+	if card.Case.Severity != "" && !validSeverity(card.Case.Severity) {
+		return fmt.Errorf("invalid case.severity: %s", card.Case.Severity)
+	}
+	if strings.TrimSpace(card.Guidance.Symptom) == "" {
+		return fmt.Errorf("guidance.symptom is required")
+	}
+	if strings.TrimSpace(card.Guidance.Diagnosis) == "" {
+		return fmt.Errorf("guidance.diagnosis is required")
+	}
+	if !validConfidenceLevel(card.Governance.Confidence) {
+		return fmt.Errorf("invalid governance.confidence: %s", card.Governance.Confidence)
+	}
+	if !validLifecycleState(card.Governance.Lifecycle) {
+		return fmt.Errorf("invalid governance.lifecycle: %s", card.Governance.Lifecycle)
+	}
+	if card.Governance.ReviewStatus != "" && !validReviewStatus(card.Governance.ReviewStatus) {
+		return fmt.Errorf("invalid governance.review_status: %s", card.Governance.ReviewStatus)
+	}
+	for _, framework := range card.Case.Environment.Frameworks {
 		if strings.TrimSpace(framework.Name) == "" {
 			continue
 		}
 		if !validFrameworkName(framework.Name) {
-			return fmt.Errorf("invalid environment.frameworks.name: %s", framework.Name)
+			return fmt.Errorf("invalid case.environment.frameworks.name: %s", framework.Name)
 		}
 	}
 	if err := validateRegexList("match.regex", card.Match.Regex); err != nil {
-		return err
-	}
-	if err := validateRegexList("match.negative_patterns", card.Match.NegativePatterns); err != nil {
 		return err
 	}
 	return nil
@@ -149,7 +164,7 @@ func validateCommon(card *KnownIssueCard) error {
 
 func validProblemType(value string) bool {
 	switch value {
-	case ProblemTypeFailure, ProblemTypeAccuracy, ProblemTypePerformance:
+	case ProblemTypeFailure, ProblemTypeAccuracy, ProblemTypePerformance, ProblemTypeUnknown:
 		return true
 	default:
 		return false
@@ -159,6 +174,33 @@ func validProblemType(value string) bool {
 func validStage(value string) bool {
 	switch value {
 	case StageSetup, StageImport, StageTrain, StageEval, StageInfer, StageCompile, StageData, StageGraphOpt, StageExecution, StageUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+func validDomain(value string) bool {
+	switch value {
+	case DomainMindSpore, DomainTorch, DomainTorchNPU, DomainCANN, DomainUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+func validHardware(value string) bool {
+	switch value {
+	case HardwareAscend, HardwareGPU, HardwareCPU, HardwareUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+func validSeverity(value string) bool {
+	switch value {
+	case SeverityLow, SeverityMedium, SeverityHigh, SeverityCritical, SeverityUnknown:
 		return true
 	default:
 		return false
@@ -194,7 +236,7 @@ func validLifecycleState(value string) bool {
 
 func validReviewStatus(value string) bool {
 	switch value {
-	case ReviewPending, ReviewApproved, ReviewRejected:
+	case ReviewPending, ReviewApproved, ReviewRejected, ReviewUnknown:
 		return true
 	default:
 		return false
@@ -215,7 +257,7 @@ func validateRegexList(field string, patterns []string) error {
 }
 
 func hasMatchSignal(match Match) bool {
-	return len(nonEmptyStrings(match.Keywords)) > 0 || len(nonEmptyStrings(match.Regex)) > 0 || len(nonEmptyStrings(match.StackKeywords)) > 0
+	return len(nonEmptyStrings(match.Keywords)) > 0 || len(nonEmptyStrings(match.Regex)) > 0
 }
 
 func nonEmptyStrings(values []string) []string {
@@ -234,33 +276,51 @@ func collectPrivacyText(card *KnownIssueCard) []string {
 		return nil
 	}
 	values := []string{
+		card.SchemaVersion,
+		card.Kind,
 		card.ID,
 		card.Title,
-		card.Diagnosis.RootCause,
-		card.Diagnosis.Explanation,
-		card.Diagnosis.ScopeNote,
-		card.Fix.Summary,
-		card.Fix.Template,
-		card.Fix.WhyItWorks,
-		card.Verification.ExpectedResult,
+		card.Case.ProblemType,
+		card.Case.Stage,
+		card.Case.Domain,
+		card.Case.Hardware,
+		card.Case.Severity,
+		card.Case.Environment.Runtime.CANNVersion,
+		card.Case.Environment.Runtime.PythonVersion,
+		card.Case.Environment.Model.Pattern,
+		card.Case.Environment.Model.ExecutionMode,
+		card.Case.Environment.Model.Optimization,
+		card.Case.Environment.Model.InputReuse,
+		card.Case.Environment.Model.DType,
+		card.Case.Environment.Model.InputShapes.OriginalReport,
+		card.Case.Environment.Model.InputShapes.RegressionNote,
+		card.Guidance.Symptom,
+		card.Guidance.Diagnosis,
+		card.Guidance.Fix,
+		card.Guidance.Verification,
 		card.Provenance.Notes,
-		card.Confidence.Rationale,
-		card.Lifecycle.Reason,
-		card.Review.ReviewerNotes,
+		card.Governance.Confidence,
+		card.Governance.Lifecycle,
+		card.Governance.ReviewStatus,
+		card.Governance.Rationale,
+		card.Governance.UpdatedAt,
 	}
-	values = append(values, card.Problem.Symptoms...)
+	for _, framework := range card.Case.Environment.Frameworks {
+		values = append(values, framework.Name, framework.Version, framework.Branch, framework.Commit)
+	}
+	values = append(values, card.Tags...)
+	values = append(values, card.Case.Environment.Affected...)
+	values = append(values, card.Case.Environment.FixedBy...)
 	values = append(values, card.Match.Keywords...)
 	values = append(values, card.Match.Regex...)
-	values = append(values, card.Match.StackKeywords...)
-	values = append(values, card.Match.NegativePatterns...)
-	values = append(values, card.Diagnosis.SuggestedNextChecks...)
-	values = append(values, card.Diagnosis.MissingEvidence...)
-	values = append(values, card.Diagnosis.ConflictingSignals...)
-	values = append(values, card.Fix.Steps...)
-	values = append(values, card.Verification.Checks...)
-	values = append(values, card.Verification.Commands...)
-	values = append(values, card.Verification.RegressionTests...)
+	values = append(values, card.Guidance.TriggerSignals...)
+	values = append(values, card.Guidance.RepresentativeErrors...)
+	values = append(values, card.Guidance.DiagnosisDetails...)
+	values = append(values, card.Guidance.Actions...)
+	values = append(values, card.Guidance.WhyItWorks...)
+	values = append(values, card.Guidance.NonCauses...)
 	values = append(values, card.Provenance.References...)
-	values = append(values, card.Tags...)
+	values = append(values, card.Provenance.ExpectedBehavior...)
+	values = append(values, card.Provenance.RegressionTests...)
 	return values
 }
