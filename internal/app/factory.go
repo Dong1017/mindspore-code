@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mindspore-lab/mindspore-cli/internal/factory/card"
+	"github.com/mindspore-lab/mindspore-cli/internal/factory/compiler"
 	"github.com/mindspore-lab/mindspore-cli/internal/factory/pack"
 	factoryruntime "github.com/mindspore-lab/mindspore-cli/internal/factory/runtime"
 	"github.com/mindspore-lab/mindspore-cli/ui/model"
@@ -26,6 +27,14 @@ func (a *Application) cmdFactory(input string) {
 		a.cmdFactoryCardSubmit(args[2])
 		return
 	}
+	if len(args) >= 2 && args[0] == "pack" && args[1] == "build" {
+		if len(args) != 4 {
+			a.EventCh <- model.Event{Type: model.AgentReply, Message: "Usage: /factory pack build <cards-dir> <output-pack>"}
+			return
+		}
+		a.cmdFactoryPackBuild(args[2], args[3])
+		return
+	}
 	if len(args) >= 2 && args[0] == "pack" && args[1] == "sync" {
 		if len(args) > 3 {
 			a.EventCh <- model.Event{Type: model.AgentReply, Message: "Usage: /factory pack sync [source-path]"}
@@ -40,7 +49,29 @@ func (a *Application) cmdFactory(input string) {
 		a.cmdFactoryPackSync(source)
 		return
 	}
-	a.EventCh <- model.Event{Type: model.AgentReply, Message: "Unsupported /factory command. Supported: /factory card create --from-last-run; /factory card submit <card-path>; /factory pack sync [source-path]"}
+	a.EventCh <- model.Event{Type: model.AgentReply, Message: "Unsupported /factory command. Supported: /factory card create --from-last-run; /factory card submit <card-path>; /factory pack build <cards-dir> <output-pack>; /factory pack sync [source-path]"}
+}
+
+func (a *Application) cmdFactoryPackBuild(cardsDir, outputPack string) {
+	result, err := compiler.CompilePack(cardsDir, outputPack)
+	if err != nil {
+		a.EventCh <- model.Event{Type: model.AgentReply, Message: fmt.Sprintf("build factory pack failed: %v", err)}
+		return
+	}
+	a.EventCh <- model.Event{Type: model.AgentReply, Message: renderFactoryPackBuildResult(cardsDir, result)}
+}
+
+func renderFactoryPackBuildResult(cardsDir string, result *compiler.BuildSummary) string {
+	return fmt.Sprintf("built factory pack:\ncards_dir: %s\noutput: %s\npack_name: %s\nschema_version: %s\ncard_schema_version: %s\nsource_case_count: %d\ncompiled_case_count: %d\nchecksum: %s",
+		cardsDir,
+		result.OutputPath,
+		result.PackName,
+		result.SchemaVersion,
+		pack.CardSchemaVersion,
+		result.SourceCaseCount,
+		result.CompiledCaseCount,
+		result.Checksum,
+	)
 }
 
 func (a *Application) cmdFactoryPackSync(source string) {
