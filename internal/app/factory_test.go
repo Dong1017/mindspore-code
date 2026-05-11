@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mindspore-lab/mindspore-cli/internal/factory/compiler"
 	factoryruntime "github.com/mindspore-lab/mindspore-cli/internal/factory/runtime"
 	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
@@ -294,6 +295,48 @@ func TestCmdFactoryCardCreatePrivacyFailureWritesNothing(t *testing.T) {
 	}
 }
 
+func TestFactoryPackSyncExplicitSourcePathWorks(t *testing.T) {
+	sourceDir, err := filepath.Abs(filepath.FromSlash("../factory/compiler/testdata/cards"))
+	if err != nil {
+		t.Fatalf("resolve source cards: %v", err)
+	}
+	dir := t.TempDir()
+	withWorkingDir(t, dir)
+	withHomeDir(t, filepath.Join(dir, "home"))
+	source := filepath.Join(dir, "source.pack")
+	if _, err := compiler.CompilePack(sourceDir, source); err != nil {
+		t.Fatalf("CompilePack() error = %v", err)
+	}
+	app := &Application{EventCh: make(chan model.Event, 4)}
+	app.cmdFactory("pack sync " + source)
+	ev := <-app.EventCh
+	if !strings.Contains(ev.Message, "synced factory pack:") {
+		t.Fatalf("Message = %q, want sync summary", ev.Message)
+	}
+	if !strings.Contains(ev.Message, "card_schema_version: known_issue/v0.5") {
+		t.Fatalf("Message = %q, want card schema version", ev.Message)
+	}
+	assertFileExists(t, filepath.Join(dir, "home", ".mscli", "factory", "factory-core.pack"))
+}
+
+func TestFactoryPackSyncNoConfiguredSourceReturnsClearError(t *testing.T) {
+	app := &Application{EventCh: make(chan model.Event, 4)}
+	app.cmdFactory("pack sync")
+	ev := <-app.EventCh
+	if !strings.Contains(ev.Message, "Factory pack source is not configured") {
+		t.Fatalf("Message = %q, want configured source error", ev.Message)
+	}
+}
+
+func TestFactoryPackUnknownSubcommandUnsupported(t *testing.T) {
+	app := &Application{EventCh: make(chan model.Event, 4)}
+	app.cmdFactory("pack build")
+	ev := <-app.EventCh
+	if !strings.Contains(ev.Message, "Unsupported /factory command") {
+		t.Fatalf("Message = %q, want unsupported command", ev.Message)
+	}
+}
+
 func TestStoreFixRunSummaryDoesNotWriteFiles(t *testing.T) {
 	dir := t.TempDir()
 	withWorkingDir(t, dir)
@@ -353,4 +396,27 @@ func withWorkingDir(t *testing.T, dir string) {
 			t.Fatalf("restore cwd: %v", err)
 		}
 	})
+}
+
+func withHomeDir(t *testing.T, dir string) {
+	t.Helper()
+	oldHome := os.Getenv("HOME")
+	oldUserProfile := os.Getenv("USERPROFILE")
+	if err := os.Setenv("HOME", dir); err != nil {
+		t.Fatalf("set HOME: %v", err)
+	}
+	if err := os.Setenv("USERPROFILE", dir); err != nil {
+		t.Fatalf("set USERPROFILE: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Setenv("HOME", oldHome)
+		_ = os.Setenv("USERPROFILE", oldUserProfile)
+	})
+}
+
+func assertFileExists(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("stat %s: %v", path, err)
+	}
 }
