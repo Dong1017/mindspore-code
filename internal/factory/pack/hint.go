@@ -95,7 +95,7 @@ func safeLineBudget(value string, maxTokens int) string {
 }
 
 func redactRawMarkers(value string) string {
-	for _, marker := range []string{"kind: known_issue", "pattern_type"} {
+	for _, marker := range []string{"kind: known_issue", "pattern_type", "CREATE TABLE", "INSERT INTO"} {
 		value = strings.ReplaceAll(value, marker, "[redacted]")
 	}
 	return value

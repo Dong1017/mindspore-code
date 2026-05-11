@@ -79,10 +79,20 @@ func resolveSyncSource(source string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("parse file source: %w", err)
 		}
-		if u.Scheme != "file" || u.Host != "" {
+		if u.Scheme != "file" {
 			return "", fmt.Errorf("unsupported factory pack source: %s", source)
 		}
-		source = filepath.FromSlash(u.Path)
+		if u.Host != "" {
+			if !strings.HasSuffix(u.Host, ":") {
+				return "", fmt.Errorf("unsupported factory pack source: %s", source)
+			}
+			source = u.Host + filepath.FromSlash(u.Path)
+		} else {
+			source = filepath.FromSlash(u.Path)
+			if len(source) >= 3 && os.IsPathSeparator(source[0]) && source[2] == ':' {
+				source = source[1:]
+			}
+		}
 	}
 	path, err := filepath.Abs(source)
 	if err != nil {
@@ -126,13 +136,25 @@ func copyFileTo(source string, dest *os.File) error {
 }
 
 func installValidatedPack(tmpPath, dest string) error {
-	backup := dest + ".bak"
-	_ = os.Remove(backup)
+	backup, err := os.CreateTemp(filepath.Dir(dest), ".factory-core-backup-*.pack")
+	if err != nil {
+		return fmt.Errorf("create backup pack: %w", err)
+	}
+	backupPath := backup.Name()
+	if err := backup.Close(); err != nil {
+		_ = os.Remove(backupPath)
+		return fmt.Errorf("close backup pack: %w", err)
+	}
+	if err := os.Remove(backupPath); err != nil {
+		return fmt.Errorf("prepare backup pack: %w", err)
+	}
+	defer func() { _ = os.Remove(backupPath) }()
+
 	hadExisting := false
 	_, statErr := os.Stat(dest)
 	if statErr == nil {
 		hadExisting = true
-		if err := os.Rename(dest, backup); err != nil {
+		if err := os.Rename(dest, backupPath); err != nil {
 			return fmt.Errorf("backup existing pack: %w", err)
 		}
 	} else if !os.IsNotExist(statErr) {
@@ -140,12 +162,9 @@ func installValidatedPack(tmpPath, dest string) error {
 	}
 	if err := os.Rename(tmpPath, dest); err != nil {
 		if hadExisting {
-			_ = os.Rename(backup, dest)
+			_ = os.Rename(backupPath, dest)
 		}
 		return fmt.Errorf("install factory pack: %w", err)
-	}
-	if hadExisting {
-		_ = os.Remove(backup)
 	}
 	return nil
 }

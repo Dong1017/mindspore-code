@@ -2,6 +2,7 @@ package pack_test
 
 import (
 	"database/sql"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,6 +49,42 @@ func TestSyncReplacesExistingDestinationPack(t *testing.T) {
 	}
 	if _, err := pack.Load(dest); err != nil {
 		t.Fatalf("Load(replaced) error = %v", err)
+	}
+}
+
+func TestSyncDoesNotClobberExistingRealBakFile(t *testing.T) {
+	source := buildSyncPack(t)
+	dir := t.TempDir()
+	dest := filepath.Join(dir, pack.FileName)
+	if err := os.WriteFile(dest, []byte("old invalid pack"), 0o600); err != nil {
+		t.Fatalf("write existing dest: %v", err)
+	}
+	realBak := dest + ".bak"
+	if err := os.WriteFile(realBak, []byte("user backup"), 0o600); err != nil {
+		t.Fatalf("write real bak: %v", err)
+	}
+	if _, err := pack.Sync(pack.SyncConfig{SourcePath: source, DestPath: dest}); err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+	if _, err := pack.Load(dest); err != nil {
+		t.Fatalf("Load(replaced) error = %v", err)
+	}
+	assertFileContent(t, realBak, "user backup")
+}
+
+func TestSyncFileURLSourcePathWorks(t *testing.T) {
+	source := buildSyncPack(t)
+	dest := filepath.Join(t.TempDir(), pack.FileName)
+	sourceURL := url.URL{Scheme: "file", Path: filepath.ToSlash(source)}
+	result, err := pack.Sync(pack.SyncConfig{SourcePath: sourceURL.String(), DestPath: dest})
+	if err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+	if result.SourcePath != source {
+		t.Fatalf("SourcePath = %q, want %q", result.SourcePath, source)
+	}
+	if _, err := pack.Load(dest); err != nil {
+		t.Fatalf("Load(installed) error = %v", err)
 	}
 }
 

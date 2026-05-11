@@ -31,12 +31,16 @@ func TestRenderFactoryHintBlock(t *testing.T) {
 }
 
 func TestRenderFactoryHintBlockExcludesRawContent(t *testing.T) {
+	longLog := strings.Repeat("full-log-line ", 300)
 	block, err := pack.RenderFactoryHintBlock([]pack.CaseMatch{{
-		CaseID:          "raw-check",
-		Title:           "Raw content check",
-		ConfidenceLevel: "observed",
-		WhyMatched:      []string{"id: raw\nkind: known_issue\ntitle: raw yaml"},
-		Verification:    []string{"{case_id: raw-check, pattern_type: regex}"},
+		CaseID:               "raw-check",
+		Title:                "Raw content check",
+		ConfidenceLevel:      "observed",
+		Score:                88,
+		WhyMatched:           []string{"id: raw\nkind: known_issue\ntitle: raw yaml", "CREATE TABLE cases(id TEXT); INSERT INTO manifest VALUES('checksum', 'sha256:abc')"},
+		SuggestedNextChecks:  []string{"inspect bounded evidence only " + longLog},
+		SuggestedFixTemplate: "do not expose raw sqlite pattern_type rows",
+		Verification:         []string{"{case_id: raw-check, pattern_type: regex}"},
 	}})
 	if err != nil {
 		t.Fatalf("RenderFactoryHintBlock() error = %v", err)
@@ -44,6 +48,12 @@ func TestRenderFactoryHintBlockExcludesRawContent(t *testing.T) {
 	assertNotContains(t, block, "kind: known_issue")
 	assertNotContains(t, block, "\nkind:")
 	assertNotContains(t, block, "pattern_type")
+	assertNotContains(t, block, "CREATE TABLE")
+	assertNotContains(t, block, "INSERT INTO")
+	if strings.Count(block, "full-log-line") > 40 {
+		t.Fatalf("hint block contains %d full-log-line tokens, want bounded output", strings.Count(block, "full-log-line"))
+	}
+	assertNotContains(t, block, "score")
 }
 
 func TestRenderFactoryHintBlockBudgetPreservesLineStructure(t *testing.T) {

@@ -319,6 +319,36 @@ func TestFactoryPackSyncExplicitSourcePathWorks(t *testing.T) {
 	assertFileExists(t, filepath.Join(dir, "home", ".mscli", "factory", "factory-core.pack"))
 }
 
+func TestFactoryPackSyncDoesNotChangeCardCreateOrSubmitBehavior(t *testing.T) {
+	dir := t.TempDir()
+	withWorkingDir(t, dir)
+	app := &Application{
+		EventCh: make(chan model.Event, 4),
+		latestDiagnoseSummary: &factoryruntime.DiagnoseRunSummary{
+			Topic:              "ImportError torch_npu missing on Ascend",
+			UserProblemSummary: "ImportError torch_npu missing on Ascend",
+			KeyEvidence:        []string{"ImportError", "torch_npu", "ascend"},
+		},
+	}
+	app.cmdFactory("card create --from-last-run")
+	createEvent := <-app.EventCh
+	if !strings.Contains(createEvent.Message, "created draft card:") {
+		t.Fatalf("Message = %q, want created draft", createEvent.Message)
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "factory", "cards", "drafts", "*.yaml"))
+	if err != nil {
+		t.Fatalf("glob draft cards: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("draft count = %d, want 1", len(matches))
+	}
+	app.cmdFactory("card submit " + matches[0])
+	submitEvent := <-app.EventCh
+	if !strings.Contains(submitEvent.Message, "created review bundle:") {
+		t.Fatalf("Message = %q, want created review bundle", submitEvent.Message)
+	}
+}
+
 func TestFactoryPackSyncNoConfiguredSourceReturnsClearError(t *testing.T) {
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("pack sync")

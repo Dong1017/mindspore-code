@@ -37,6 +37,24 @@ func TestNewDraftFromRunSummaryDefaultsToDraftPendingBootstrap(t *testing.T) {
 	}
 }
 
+func TestNewDraftFromRunSummaryDiagnoseOnlyIncludesVerificationPlaceholder(t *testing.T) {
+	card, err := NewDraftFromRunSummary(factoryruntime.LastRunSummary{
+		Diagnose: &factoryruntime.DiagnoseRunSummary{
+			Topic:       "ImportError torch_npu missing on Ascend",
+			KeyEvidence: []string{"ImportError", "torch_npu", "ascend"},
+		},
+	}, DraftOptions{})
+	if err != nil {
+		t.Fatalf("NewDraftFromRunSummary() error = %v", err)
+	}
+	if strings.TrimSpace(card.Guidance.Verification) == "" {
+		t.Fatalf("Guidance.Verification is empty")
+	}
+	if !strings.Contains(card.Guidance.Verification, "not verified") {
+		t.Fatalf("Guidance.Verification = %q, want placeholder", card.Guidance.Verification)
+	}
+}
+
 func TestNewDraftFromRunSummaryUnclearTypeUsesUnknownNeedsReview(t *testing.T) {
 	card, err := NewDraftFromRunSummary(factoryruntime.LastRunSummary{
 		Diagnose: &factoryruntime.DiagnoseRunSummary{Topic: "unexpected behavior", KeyEvidence: []string{"unexpected behavior"}},
