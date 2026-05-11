@@ -6,21 +6,19 @@ import (
 )
 
 func TestValidateDraft(t *testing.T) {
-	card := loadTestCard(t, "valid_draft.yaml")
-	if err := ValidateDraft(card); err != nil {
+	if err := ValidateDraft(validDraftTestCard()); err != nil {
 		t.Fatalf("ValidateDraft() error = %v", err)
 	}
 }
 
 func TestValidateStable(t *testing.T) {
-	card := loadTestCard(t, "valid_stable.yaml")
-	if err := ValidateStable(card); err != nil {
+	if err := ValidateStable(validStableTestCard()); err != nil {
 		t.Fatalf("ValidateStable() error = %v", err)
 	}
 }
 
 func TestValidatePackEligible(t *testing.T) {
-	card := loadTestCard(t, "valid_stable.yaml")
+	card := validStableTestCard()
 	if err := ValidatePackEligible(card); err != nil {
 		t.Fatalf("ValidatePackEligible() error = %v", err)
 	}
@@ -32,20 +30,20 @@ func TestValidatePackEligible(t *testing.T) {
 func TestInvalidDraftCards(t *testing.T) {
 	tests := []struct {
 		name    string
-		fixture string
+		mutate  func(*KnownIssueCard)
 		wantErr string
 	}{
-		{name: "problem type", fixture: "invalid_problem_type.yaml", wantErr: "invalid case.problem_type"},
-		{name: "stage", fixture: "invalid_stage.yaml", wantErr: "invalid case.stage"},
-		{name: "framework", fixture: "invalid_framework.yaml", wantErr: "invalid case.environment.frameworks.name"},
-		{name: "regex", fixture: "invalid_regex.yaml", wantErr: "invalid match.regex"},
+		{name: "problem type", mutate: func(card *KnownIssueCard) { card.Case.ProblemType = "bad" }, wantErr: "invalid case.problem_type"},
+		{name: "stage", mutate: func(card *KnownIssueCard) { card.Case.Stage = "bad" }, wantErr: "invalid case.stage"},
+		{name: "framework", mutate: func(card *KnownIssueCard) { card.Case.Environment.Frameworks = []Framework{{Name: "bad"}} }, wantErr: "invalid case.environment.frameworks.name"},
+		{name: "regex", mutate: func(card *KnownIssueCard) { card.Match.Regex = []string{"["} }, wantErr: "invalid match.regex"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			card := loadTestCard(t, tt.fixture)
-			err := ValidateDraft(card)
-			assertErrorContains(t, err, tt.wantErr)
+			card := validDraftTestCard()
+			tt.mutate(card)
+			assertErrorContains(t, ValidateDraft(card), tt.wantErr)
 		})
 	}
 }
@@ -53,21 +51,21 @@ func TestInvalidDraftCards(t *testing.T) {
 func TestPackEligibilityFailures(t *testing.T) {
 	tests := []struct {
 		name    string
-		fixture string
+		mutate  func(*KnownIssueCard)
 		wantErr string
 	}{
-		{name: "stable without approval", fixture: "stable_without_approval.yaml", wantErr: "stable card requires governance.review_status approved"},
-		{name: "stable without match signal", fixture: "stable_without_match_signal.yaml", wantErr: "pack eligibility requires at least one match signal"},
-		{name: "draft excluded", fixture: "valid_draft.yaml", wantErr: "governance.lifecycle must be stable"},
-		{name: "deprecated excluded", fixture: "deprecated.yaml", wantErr: "governance.lifecycle must be stable"},
-		{name: "archived excluded", fixture: "archived.yaml", wantErr: "governance.lifecycle must be stable"},
+		{name: "stable without approval", mutate: func(card *KnownIssueCard) { card.Governance.ReviewStatus = ReviewPending }, wantErr: "stable card requires governance.review_status approved"},
+		{name: "stable without match signal", mutate: func(card *KnownIssueCard) { card.Match = Match{} }, wantErr: "pack eligibility requires at least one match signal"},
+		{name: "draft excluded", mutate: func(card *KnownIssueCard) { card.Governance.Lifecycle = LifecycleDraft }, wantErr: "governance.lifecycle must be stable"},
+		{name: "deprecated excluded", mutate: func(card *KnownIssueCard) { card.Governance.Lifecycle = LifecycleDeprecated }, wantErr: "governance.lifecycle must be stable"},
+		{name: "archived excluded", mutate: func(card *KnownIssueCard) { card.Governance.Lifecycle = LifecycleArchived }, wantErr: "governance.lifecycle must be stable"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			card := loadTestCard(t, tt.fixture)
-			err := ValidatePackEligible(card)
-			assertErrorContains(t, err, tt.wantErr)
+			card := validStableTestCard()
+			tt.mutate(card)
+			assertErrorContains(t, ValidatePackEligible(card), tt.wantErr)
 			if IsPackEligible(card) {
 				t.Fatalf("IsPackEligible() = true")
 			}
@@ -76,19 +74,49 @@ func TestPackEligibilityFailures(t *testing.T) {
 }
 
 func TestValidatePrivacy(t *testing.T) {
-	card := loadTestCard(t, "valid_draft.yaml")
+	card := validDraftTestCard()
 	card.Guidance.Diagnosis = "The command included access_token=secret-value."
-	err := ValidatePrivacy(card)
-	assertErrorContains(t, err, "privacy validation failed")
+	assertErrorContains(t, ValidatePrivacy(card), "privacy validation failed")
 }
 
-func loadTestCard(t *testing.T, name string) *KnownIssueCard {
-	t.Helper()
-	card, err := LoadFile("testdata/" + name)
-	if err != nil {
-		t.Fatalf("LoadFile(%q) error = %v", name, err)
-	}
+func validDraftTestCard() *KnownIssueCard {
+	card := validStableTestCard()
+	card.Governance = Governance{Confidence: ConfidenceBootstrap, Lifecycle: LifecycleDraft, ReviewStatus: ReviewPending}
 	return card
+}
+
+func validStableTestCard() *KnownIssueCard {
+	return &KnownIssueCard{
+		SchemaVersion: SchemaVersionKnownIssueV05,
+		Kind:          KindKnownIssue,
+		ID:            "validation-card",
+		Title:         "torch_npu import fails when CANN is missing",
+		Tags:          []string{"ascend"},
+		Case: Case{
+			ProblemType: ProblemTypeFailure,
+			Stage:       StageImport,
+			Domain:      DomainTorchNPU,
+			Hardware:    HardwareAscend,
+			Severity:    SeverityHigh,
+			Environment: Environment{Frameworks: []Framework{{Name: FrameworkTorchNPU}}},
+		},
+		Match: Match{Keywords: []string{"torch_npu"}, Regex: []string{"ImportError.*torch_npu"}},
+		Guidance: Guidance{
+			Symptom:      "ImportError mentions torch_npu",
+			Diagnosis:    "CANN runtime is not visible",
+			Verification: "Run python import smoke test",
+		},
+		Provenance: Provenance{
+			References:       []string{"local evidence"},
+			ExpectedBehavior: []string{"torch_npu imports"},
+		},
+		Governance: Governance{
+			Confidence:   ConfidenceObserved,
+			Lifecycle:    LifecycleStable,
+			ReviewStatus: ReviewApproved,
+			Rationale:    "manual review passed",
+		},
+	}
 }
 
 func assertErrorContains(t *testing.T, err error, want string) {

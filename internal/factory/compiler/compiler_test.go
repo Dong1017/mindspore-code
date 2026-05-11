@@ -8,6 +8,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/mindspore-lab/mindspore-cli/internal/factory/card"
 	"github.com/mindspore-lab/mindspore-cli/internal/factory/pack"
 )
 
@@ -84,13 +85,60 @@ func TestCompilePackBuildsSQLitePack(t *testing.T) {
 }
 
 func TestCompilePackInvalidCardFails(t *testing.T) {
-	_, err := CompilePack("testdata/invalid", filepath.Join(t.TempDir(), pack.FileName))
+	dir := t.TempDir()
+	invalid := compilerTestCard("invalid-card")
+	invalid.Case.ProblemType = "bad"
+	writeCompilerTestCard(t, dir, invalid)
+	_, err := CompilePack(dir, filepath.Join(t.TempDir(), pack.FileName))
 	assertErrorContains(t, err, "invalid case.problem_type")
 }
 
 func TestCompilePackNoEligibleCardsFails(t *testing.T) {
-	_, err := CompilePack("testdata/noeligible", filepath.Join(t.TempDir(), pack.FileName))
+	dir := t.TempDir()
+	draft := compilerTestCard("only-draft")
+	draft.Governance = card.Governance{Confidence: card.ConfidenceBootstrap, Lifecycle: card.LifecycleDraft, ReviewStatus: card.ReviewPending}
+	writeCompilerTestCard(t, dir, draft)
+	_, err := CompilePack(dir, filepath.Join(t.TempDir(), pack.FileName))
 	assertErrorContains(t, err, "no eligible stable cards found")
+}
+
+func compilerTestCard(id string) *card.KnownIssueCard {
+	return &card.KnownIssueCard{
+		SchemaVersion: card.SchemaVersionKnownIssueV05,
+		Kind:          card.KindKnownIssue,
+		ID:            id,
+		Title:         "torch_npu import fails when CANN is missing",
+		Tags:          []string{"torch_npu"},
+		Case: card.Case{
+			ProblemType: card.ProblemTypeFailure,
+			Stage:       card.StageImport,
+			Domain:      card.DomainTorchNPU,
+			Hardware:    card.HardwareAscend,
+		},
+		Match: card.Match{Keywords: []string{"torch_npu"}},
+		Guidance: card.Guidance{
+			Symptom:      "torch_npu import fails",
+			Diagnosis:    "CANN runtime is not visible",
+			Verification: "Run import smoke test",
+		},
+		Provenance: card.Provenance{
+			References:       []string{"issue-123"},
+			ExpectedBehavior: []string{"torch_npu imports"},
+		},
+		Governance: card.Governance{
+			Confidence:   card.ConfidenceObserved,
+			Lifecycle:    card.LifecycleStable,
+			ReviewStatus: card.ReviewApproved,
+			Rationale:    "manual review passed",
+		},
+	}
+}
+
+func writeCompilerTestCard(t *testing.T, dir string, known *card.KnownIssueCard) {
+	t.Helper()
+	if _, err := card.WriteDraftYAML(known, dir); err != nil {
+		t.Fatalf("WriteDraftYAML() error = %v", err)
+	}
 }
 
 func openPack(t *testing.T, path string) *sql.DB {

@@ -1,24 +1,18 @@
 # Factory Privacy and Safety
 
-Factory Pack is designed to provide bounded local hints without exposing raw contribution or pack internals to the agent prompt.
+Factory Pack provides bounded local hints without exposing raw contribution or pack internals to the agent prompt.
 
-## Draft and submission validation
+## Validation and review boundaries
 
-Card creation and submission run privacy validation before writing draft cards or review bundles. Sensitive values such as credentials, tokens, and secrets block writes.
+Card creation, submission, and manual approval run privacy validation. Sensitive values such as credentials, tokens, and secrets block writes.
 
-Home paths are sanitized in generated draft content where the draft builder has the home directory context.
+`/factory card review <card-id>` is bounded and read-only. Manual approval is explicit, observed-confidence only, validates again, and writes only the local approved source card without overwriting existing files.
 
 ## Runtime hint boundaries
 
 `/diagnose` receives a bounded Factory hint block, not raw pack contents. The hint renderer excludes raw known-issue YAML markers, SQLite internals, full logs, and internal match scores.
 
-Factory hints are labeled as prior diagnostic hints and must not be treated as final conclusions without checking current evidence.
-
-## Local review and approval boundaries
-
-`/factory card review <card-id>` reads only the local submission bundle and renders a bounded review view. It does not create approved cards, build packs, sync packs, upload, create PRs/MRs, or enqueue remote review work.
-
-Manual approval requires explicit `observed` confidence and a non-empty human rationale. Approval re-runs validation and writes only the local approved source card path without overwriting existing files.
+Factory hints are prior diagnostic hints, not final conclusions without current evidence.
 
 ## Local pack storage
 
