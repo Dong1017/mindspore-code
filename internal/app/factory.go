@@ -14,51 +14,157 @@ import (
 )
 
 func (a *Application) cmdFactory(input string) {
-	args := strings.Fields(input)
-	if len(args) == 3 && args[0] == "card" && args[1] == "create" && args[2] == "--from-last-run" {
+	args, err := parseFactoryArgs(input)
+	if err != nil {
+		a.replyFactory(fmt.Sprintf("parse /factory command failed: %v", err))
+		return
+	}
+	if len(args) == 0 {
+		a.replyFactory(renderFactoryHelp())
+		return
+	}
+	switch args[0] {
+	case "card":
+		a.cmdFactoryCard(args[1:])
+	case "pack":
+		a.cmdFactoryPack(args[1:])
+	default:
+		a.replyFactory(renderFactoryHelp())
+	}
+}
+
+func (a *Application) cmdFactoryCard(args []string) {
+	if len(args) == 0 {
+		a.replyFactory(renderFactoryCardHelp())
+		return
+	}
+	switch args[0] {
+	case "create":
+		a.cmdFactoryCardCreate(args[1:])
+	case "submit":
+		a.cmdFactoryCardSubmit(args[1:])
+	case "review":
+		a.cmdFactoryCardReview(args[1:])
+	default:
+		a.replyFactory(renderFactoryCardHelp())
+	}
+}
+
+func (a *Application) cmdFactoryPack(args []string) {
+	if len(args) == 0 {
+		a.replyFactory(renderFactoryPackHelp())
+		return
+	}
+	switch args[0] {
+	case "build":
+		a.cmdFactoryPackBuild(args[1:])
+	case "sync":
+		a.cmdFactoryPackSync(args[1:])
+	default:
+		a.replyFactory(renderFactoryPackHelp())
+	}
+}
+
+func (a *Application) replyFactory(message string) {
+	a.EventCh <- model.Event{Type: model.AgentReply, Message: message}
+}
+
+func renderFactoryHelp() string {
+	return "Factory commands:\n\nCard workflow:\n  /factory card create\n  /factory card submit <card-path>\n  /factory card review <card-id>\n  /factory card review <card-id> --approve --confidence observed --rationale \"<manual rationale>\"\n\nPack workflow:\n  /factory pack build <cards-dir> <output-pack>\n  /factory pack sync [source-path]"
+}
+
+func renderFactoryCardHelp() string {
+	return "Factory card commands:\n  /factory card create\n  /factory card submit <card-path>\n  /factory card review <card-id>\n  /factory card review <card-id> --approve --confidence observed --rationale \"<manual rationale>\""
+}
+
+func renderFactoryPackHelp() string {
+	return "Factory pack commands:\n  /factory pack build <cards-dir> <output-pack>\n  /factory pack sync [source-path]"
+}
+
+func (a *Application) cmdFactoryCardCreate(args []string) {
+	if len(args) == 0 || (len(args) == 1 && args[0] == "--from-last-run") {
 		a.cmdFactoryCardCreateFromLastRun()
 		return
 	}
-	if len(args) >= 2 && args[0] == "card" && args[1] == "submit" {
-		if len(args) != 3 {
-			a.EventCh <- model.Event{Type: model.AgentReply, Message: "Usage: /factory card submit <card-path>"}
-			return
-		}
-		a.cmdFactoryCardSubmit(args[2])
-		return
-	}
-	if len(args) >= 2 && args[0] == "pack" && args[1] == "build" {
-		if len(args) != 4 {
-			a.EventCh <- model.Event{Type: model.AgentReply, Message: "Usage: /factory pack build <cards-dir> <output-pack>"}
-			return
-		}
-		a.cmdFactoryPackBuild(args[2], args[3])
-		return
-	}
-	if len(args) >= 2 && args[0] == "pack" && args[1] == "sync" {
-		if len(args) > 3 {
-			a.EventCh <- model.Event{Type: model.AgentReply, Message: "Usage: /factory pack sync [source-path]"}
-			return
-		}
-		source := ""
-		if len(args) == 3 {
-			source = args[2]
-		} else {
-			source = a.factoryPackSource()
-		}
-		a.cmdFactoryPackSync(source)
-		return
-	}
-	a.EventCh <- model.Event{Type: model.AgentReply, Message: "Unsupported /factory command. Supported: /factory card create --from-last-run; /factory card submit <card-path>; /factory pack build <cards-dir> <output-pack>; /factory pack sync [source-path]"}
+	a.replyFactory("Usage: /factory card create")
 }
 
-func (a *Application) cmdFactoryPackBuild(cardsDir, outputPack string) {
-	result, err := compiler.CompilePack(cardsDir, outputPack)
-	if err != nil {
-		a.EventCh <- model.Event{Type: model.AgentReply, Message: fmt.Sprintf("build factory pack failed: %v", err)}
+func (a *Application) cmdFactoryCardSubmit(args []string) {
+	if len(args) != 1 {
+		a.replyFactory("Usage: /factory card submit <card-path>")
 		return
 	}
-	a.EventCh <- model.Event{Type: model.AgentReply, Message: renderFactoryPackBuildResult(cardsDir, result)}
+	bundle, err := card.SubmitDraftCard(args[0], card.SubmitOptions{})
+	if err != nil {
+		a.replyFactory(fmt.Sprintf("submit draft card failed: %v", err))
+		return
+	}
+	a.replyFactory(fmt.Sprintf("created local review item: %s\nfiles: %s\nnext: /factory card review %s", bundle.CardID, filepath.ToSlash(bundle.Path)+"/", bundle.CardID))
+}
+
+func (a *Application) cmdFactoryCardReview(args []string) {
+	if len(args) == 1 {
+		view, err := card.RenderReviewItem(args[0], card.ReviewOptions{})
+		if err != nil {
+			a.replyFactory(fmt.Sprintf("review card failed: %v", err))
+			return
+		}
+		a.replyFactory(view)
+		return
+	}
+	if len(args) == 6 && args[1] == "--approve" && args[2] == "--confidence" && args[4] == "--rationale" {
+		result, err := card.ApproveReviewItem(args[0], card.ApprovalOptions{Confidence: args[3], Rationale: args[5]})
+		if err != nil {
+			a.replyFactory(fmt.Sprintf("approve review card failed: %v", err))
+			return
+		}
+		a.replyFactory(fmt.Sprintf("approved local factory card: %s\nfile: %s\ngovernance: lifecycle=stable review_status=approved confidence=observed\npack build still required: /factory pack build factory/cards <output-pack>", result.CardID, result.Path))
+		return
+	}
+	a.replyFactory("Usage: /factory card review <card-id> [--approve --confidence observed --rationale \"<manual rationale>\"]")
+}
+
+func parseFactoryArgs(input string) ([]string, error) {
+	var args []string
+	var current strings.Builder
+	inQuote := false
+	for i := 0; i < len(input); i++ {
+		ch := input[i]
+		switch ch {
+		case ' ', '\t', '\n', '\r':
+			if inQuote {
+				current.WriteByte(ch)
+			} else if current.Len() > 0 {
+				args = append(args, current.String())
+				current.Reset()
+			}
+		case '"':
+			inQuote = !inQuote
+		default:
+			current.WriteByte(ch)
+		}
+	}
+	if inQuote {
+		return nil, fmt.Errorf("unterminated quoted argument")
+	}
+	if current.Len() > 0 {
+		args = append(args, current.String())
+	}
+	return args, nil
+}
+
+func (a *Application) cmdFactoryPackBuild(args []string) {
+	if len(args) != 2 {
+		a.replyFactory("Usage: /factory pack build <cards-dir> <output-pack>")
+		return
+	}
+	cardsDir, outputPack := args[0], args[1]
+	result, err := compiler.CompilePack(cardsDir, outputPack)
+	if err != nil {
+		a.replyFactory(fmt.Sprintf("build factory pack failed: %v", err))
+		return
+	}
+	a.replyFactory(renderFactoryPackBuildResult(cardsDir, result))
 }
 
 func renderFactoryPackBuildResult(cardsDir string, result *compiler.BuildSummary) string {
@@ -74,9 +180,19 @@ func renderFactoryPackBuildResult(cardsDir string, result *compiler.BuildSummary
 	)
 }
 
-func (a *Application) cmdFactoryPackSync(source string) {
+func (a *Application) cmdFactoryPackSync(args []string) {
+	if len(args) > 1 {
+		a.replyFactory("Usage: /factory pack sync [source-path]")
+		return
+	}
+	source := ""
+	if len(args) == 1 {
+		source = args[0]
+	} else {
+		source = a.factoryPackSource()
+	}
 	if strings.TrimSpace(source) == "" {
-		a.EventCh <- model.Event{Type: model.AgentReply, Message: "Factory pack source is not configured. Configure factory.pack_source or pass a local source path."}
+		a.replyFactory("Factory pack source is not configured. Configure factory.pack_source or pass a local source path.")
 		return
 	}
 	result, err := pack.Sync(pack.SyncConfig{SourcePath: source})
@@ -89,10 +205,10 @@ func (a *Application) cmdFactoryPackSync(source string) {
 				message += "\nNo local factory pack was installed."
 			}
 		}
-		a.EventCh <- model.Event{Type: model.AgentReply, Message: message}
+		a.replyFactory(message)
 		return
 	}
-	a.EventCh <- model.Event{Type: model.AgentReply, Message: renderFactoryPackSyncResult(result)}
+	a.replyFactory(renderFactoryPackSyncResult(result))
 }
 
 func (a *Application) factoryPackSource() string {
@@ -112,34 +228,25 @@ func renderFactoryPackSyncResult(result *pack.SyncResult) string {
 	)
 }
 
-func (a *Application) cmdFactoryCardSubmit(cardPath string) {
-	bundle, err := card.SubmitDraftCard(cardPath, card.SubmitOptions{})
-	if err != nil {
-		a.EventCh <- model.Event{Type: model.AgentReply, Message: fmt.Sprintf("submit draft card failed: %v", err)}
-		return
-	}
-	a.EventCh <- model.Event{Type: model.AgentReply, Message: fmt.Sprintf("created review bundle: %s", bundle.Path)}
-}
-
 func (a *Application) cmdFactoryCardCreateFromLastRun() {
 	selected := factoryruntime.SelectLastRunSummary(a.latestDiagnoseSummary, a.latestFixSummary, a.latestRunKind)
 	if selected.Diagnose == nil && selected.Fix == nil {
-		a.EventCh <- model.Event{Type: model.AgentReply, Message: "No latest /diagnose or /fix run summary is available."}
+		a.replyFactory("No latest /diagnose or /fix run summary is available.")
 		return
 	}
 	draft, err := card.NewDraftFromRunSummary(selected, card.DraftOptions{Reporter: a.issueUser})
 	if err != nil {
-		a.EventCh <- model.Event{Type: model.AgentReply, Message: fmt.Sprintf("create draft card failed: %v", err)}
+		a.replyFactory(fmt.Sprintf("create draft card failed: %v", err))
 		return
 	}
 	path, err := card.WriteDraftYAML(draft, filepath.FromSlash(card.DefaultDraftCardsDir))
 	if err != nil {
-		a.EventCh <- model.Event{Type: model.AgentReply, Message: fmt.Sprintf("create draft card failed: %v", err)}
+		a.replyFactory(fmt.Sprintf("create draft card failed: %v", err))
 		return
 	}
 	message := fmt.Sprintf("created draft card: %s", path)
 	if selected.Warning != "" {
 		message = selected.Warning + "\n" + message
 	}
-	a.EventCh <- model.Event{Type: model.AgentReply, Message: message}
+	a.replyFactory(message)
 }

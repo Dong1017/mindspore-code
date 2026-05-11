@@ -22,6 +22,16 @@ Known-issue cards use `known_issue/v0.5`. Pack compilation records the expected 
 
 `/factory pack sync [source-path]` installs a local pack source into the default user-level Factory pack location. The source pack is copied to a temporary file, validated with `pack.Load`, and installed only after validation succeeds.
 
+### P2.5 command surface closure
+
+`/factory pack build <cards-dir> <output-pack>` compiles pack-eligible local cards into a requested output pack without installing, syncing, uploading, or publishing it.
+
+### P2.6 local review and manual approval closure
+
+`/factory card review <card-id>` renders a bounded, read-only review view from `factory/submissions/<card-id>/`.
+
+`/factory card review <card-id> --approve --confidence observed --rationale "<manual rationale>"` performs explicit local manual approval and writes `factory/cards/<card-id>.yaml` without overwriting existing approved cards.
+
 ## Runtime flow
 
 ```text
@@ -40,13 +50,27 @@ The runtime does not expose raw cards, SQLite rows, full logs, or internal score
 ```text
 /diagnose or /fix run
   -> latest run summary stored in memory
-  -> /factory card create --from-last-run
+  -> /factory card create
   -> draft YAML written under factory/cards/drafts/
   -> /factory card submit <card-path>
   -> local review bundle written under factory/submissions/
+  -> /factory card review <card-id>
+  -> /factory card review <card-id> --approve --confidence observed --rationale "<manual rationale>"
+  -> approved source card written under factory/cards/
 ```
 
-Drafts remain local. Submission means a local review bundle, not a server upload.
+Drafts and review bundles remain local. Submission means a local review bundle, not a server upload. Approval means local manual promotion to an approved source card, not pack build or installation.
+
+## Local build flow
+
+```text
+/factory pack build <cards-dir> <output-pack>
+  -> load approved source cards
+  -> validate pack eligibility
+  -> compile factory-core pack at requested output path
+```
+
+Build does not install or sync the output pack.
 
 ## Local sync flow
 

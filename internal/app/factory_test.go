@@ -6,18 +6,36 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mindspore-lab/mindspore-cli/internal/factory/card"
 	"github.com/mindspore-lab/mindspore-cli/internal/factory/compiler"
 	"github.com/mindspore-lab/mindspore-cli/internal/factory/pack"
 	factoryruntime "github.com/mindspore-lab/mindspore-cli/internal/factory/runtime"
 	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	"gopkg.in/yaml.v3"
 )
 
-func TestCmdFactoryUnsupportedCommand(t *testing.T) {
-	app := &Application{EventCh: make(chan model.Event, 4)}
-	app.cmdFactory("pack publish")
-	ev := <-app.EventCh
-	if !strings.Contains(ev.Message, "Unsupported /factory command") {
-		t.Fatalf("Message = %q, want unsupported command", ev.Message)
+func TestCmdFactoryHelpRoutes(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"top", "", "Factory commands:"},
+		{"card", "card", "Factory card commands:"},
+		{"pack", "pack", "Factory pack commands:"},
+		{"unknown top", "unknown", "Factory commands:"},
+		{"unknown card", "card publish", "Factory card commands:"},
+		{"unknown pack", "pack publish", "Factory pack commands:"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app := &Application{EventCh: make(chan model.Event, 4)}
+			app.cmdFactory(tc.input)
+			ev := <-app.EventCh
+			if !strings.Contains(ev.Message, tc.want) {
+				t.Fatalf("Message = %q, want %q", ev.Message, tc.want)
+			}
+		})
 	}
 }
 
@@ -161,8 +179,11 @@ func TestCmdFactoryCardSubmitCreatesBundle(t *testing.T) {
 
 	app.cmdFactory("card submit " + matches[0])
 	ev := <-app.EventCh
-	if !strings.Contains(ev.Message, "created review bundle:") {
-		t.Fatalf("Message = %q, want created review bundle", ev.Message)
+	if !strings.Contains(ev.Message, "created local review item:") {
+		t.Fatalf("Message = %q, want local review item", ev.Message)
+	}
+	if !strings.Contains(ev.Message, "next: /factory card review ") {
+		t.Fatalf("Message = %q, want review next step", ev.Message)
 	}
 	bundleMatches, err := filepath.Glob(filepath.Join(dir, "factory", "submissions", "*", "validation.json"))
 	if err != nil {
@@ -247,6 +268,33 @@ func TestCmdFactoryCardCreateNoSummaryWritesNothing(t *testing.T) {
 	}
 }
 
+func TestCmdFactoryCardCreatePreferredCommandWritesDraft(t *testing.T) {
+	dir := t.TempDir()
+	withWorkingDir(t, dir)
+	app := &Application{
+		EventCh: make(chan model.Event, 4),
+		latestDiagnoseSummary: &factoryruntime.DiagnoseRunSummary{
+			Topic:       "ImportError torch_npu missing on Ascend",
+			KeyEvidence: []string{"ImportError", "torch_npu", "ascend"},
+		},
+	}
+	app.cmdFactory("card create")
+	ev := <-app.EventCh
+	if !strings.Contains(ev.Message, "created draft card:") {
+		t.Fatalf("Message = %q, want created draft", ev.Message)
+	}
+	assertDraftContains(t, dir, "torch_npu")
+}
+
+func TestCmdFactoryCardCreateBadArgsReturnsUsage(t *testing.T) {
+	app := &Application{EventCh: make(chan model.Event, 4)}
+	app.cmdFactory("card create --from-file card.yaml")
+	ev := <-app.EventCh
+	if !strings.Contains(ev.Message, "Usage: /factory card create") {
+		t.Fatalf("Message = %q, want usage", ev.Message)
+	}
+}
+
 func TestCmdFactoryCardCreateFromLastRunWritesDraft(t *testing.T) {
 	dir := t.TempDir()
 	withWorkingDir(t, dir)
@@ -293,6 +341,79 @@ func TestCmdFactoryCardCreatePrivacyFailureWritesNothing(t *testing.T) {
 	}
 	if len(matches) != 0 {
 		t.Fatalf("draft count = %d, want 0", len(matches))
+	}
+}
+
+func TestFactoryCardReviewRendersLocalReviewItem(t *testing.T) {
+	dir := t.TempDir()
+	withWorkingDir(t, dir)
+	cardID := createReviewBundleFromLastRun(t)
+	app := &Application{EventCh: make(chan model.Event, 4)}
+	app.cmdFactory("card review " + cardID)
+	ev := <-app.EventCh
+	for _, want := range []string{"factory card review:", "case.problem_type:", "validation:", "Manual review required"} {
+		if !strings.Contains(ev.Message, want) {
+			t.Fatalf("Message = %q, want %q", ev.Message, want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "factory", "cards", cardID+".yaml")); !os.IsNotExist(err) {
+		t.Fatalf("approved card stat err = %v, want not exist", err)
+	}
+}
+
+func TestFactoryCardReviewMissingSubmissionReturnsClearError(t *testing.T) {
+	dir := t.TempDir()
+	withWorkingDir(t, dir)
+	app := &Application{EventCh: make(chan model.Event, 4)}
+	app.cmdFactory("card review missing-card")
+	ev := <-app.EventCh
+	if !strings.Contains(ev.Message, "review submission does not exist") {
+		t.Fatalf("Message = %q, want missing submission", ev.Message)
+	}
+}
+
+func TestFactoryCardReviewApproveWritesApprovedCard(t *testing.T) {
+	dir := t.TempDir()
+	withWorkingDir(t, dir)
+	cardID := createPackReadyReviewBundle(t)
+	app := &Application{EventCh: make(chan model.Event, 4)}
+	app.cmdFactory("card review " + cardID + " --approve --confidence observed --rationale \"manual review passed\"")
+	ev := <-app.EventCh
+	for _, want := range []string{"approved local factory card: " + cardID, "governance: lifecycle=stable review_status=approved confidence=observed", "pack build still required: /factory pack build factory/cards <output-pack>"} {
+		if !strings.Contains(ev.Message, want) {
+			t.Fatalf("Message = %q, want %q", ev.Message, want)
+		}
+	}
+	approved, err := card.LoadFile(filepath.Join(dir, "factory", "cards", cardID+".yaml"))
+	if err != nil {
+		t.Fatalf("LoadFile(approved) error = %v", err)
+	}
+	if approved.Governance.Lifecycle != card.LifecycleStable || approved.Governance.ReviewStatus != card.ReviewApproved || approved.Governance.Confidence != card.ConfidenceObserved {
+		t.Fatalf("Governance = %+v, want stable approved observed", approved.Governance)
+	}
+	if approved.Governance.Rationale != "manual review passed" || strings.TrimSpace(approved.Governance.UpdatedAt) == "" {
+		t.Fatalf("Governance = %+v, want rationale and updated_at", approved.Governance)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "factory", "factory-core.pack")); !os.IsNotExist(err) {
+		t.Fatalf("pack stat err = %v, want not exist", err)
+	}
+}
+
+func TestFactoryCardReviewApproveRejectsInvalidArgs(t *testing.T) {
+	dir := t.TempDir()
+	withWorkingDir(t, dir)
+	cardID := createPackReadyReviewBundle(t)
+	for _, input := range []string{
+		"card review " + cardID + " --approve --confidence observed",
+		"card review " + cardID + " --approve --confidence verified --rationale manual",
+		"card review " + cardID + " --approve --confidence observed --rationale \"\"",
+	} {
+		app := &Application{EventCh: make(chan model.Event, 4)}
+		app.cmdFactory(input)
+		ev := <-app.EventCh
+		if !strings.Contains(ev.Message, "Usage:") && !strings.Contains(ev.Message, "approve review card failed") {
+			t.Fatalf("input %q Message = %q, want approval failure", input, ev.Message)
+		}
 	}
 }
 
@@ -444,8 +565,8 @@ func TestFactoryPackSyncDoesNotChangeCardCreateOrSubmitBehavior(t *testing.T) {
 	}
 	app.cmdFactory("card submit " + matches[0])
 	submitEvent := <-app.EventCh
-	if !strings.Contains(submitEvent.Message, "created review bundle:") {
-		t.Fatalf("Message = %q, want created review bundle", submitEvent.Message)
+	if !strings.Contains(submitEvent.Message, "created local review item:") {
+		t.Fatalf("Message = %q, want local review item", submitEvent.Message)
 	}
 }
 
@@ -455,15 +576,6 @@ func TestFactoryPackSyncNoConfiguredSourceReturnsClearError(t *testing.T) {
 	ev := <-app.EventCh
 	if !strings.Contains(ev.Message, "Factory pack source is not configured") {
 		t.Fatalf("Message = %q, want configured source error", ev.Message)
-	}
-}
-
-func TestFactoryPackUnknownSubcommandUnsupported(t *testing.T) {
-	app := &Application{EventCh: make(chan model.Event, 4)}
-	app.cmdFactory("pack build")
-	ev := <-app.EventCh
-	if !strings.Contains(ev.Message, "Unsupported /factory command") {
-		t.Fatalf("Message = %q, want unsupported command", ev.Message)
 	}
 }
 
@@ -542,6 +654,62 @@ func withHomeDir(t *testing.T, dir string) {
 		_ = os.Setenv("HOME", oldHome)
 		_ = os.Setenv("USERPROFILE", oldUserProfile)
 	})
+}
+
+func createReviewBundleFromLastRun(t *testing.T) string {
+	t.Helper()
+	app := &Application{
+		EventCh: make(chan model.Event, 4),
+		latestDiagnoseSummary: &factoryruntime.DiagnoseRunSummary{
+			Topic:              "ImportError torch_npu missing on Ascend",
+			UserProblemSummary: "ImportError torch_npu missing on Ascend",
+			KeyEvidence:        []string{"ImportError", "torch_npu", "ascend"},
+		},
+	}
+	app.cmdFactory("card create")
+	<-app.EventCh
+	matches, err := filepath.Glob(filepath.Join("factory", "cards", "drafts", "*.yaml"))
+	if err != nil {
+		t.Fatalf("glob draft cards: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("draft count = %d, want 1", len(matches))
+	}
+	app.cmdFactory("card submit " + matches[0])
+	ev := <-app.EventCh
+	if !strings.Contains(ev.Message, "created local review item:") {
+		t.Fatalf("Message = %q, want local review item", ev.Message)
+	}
+	bundleMatches, err := filepath.Glob(filepath.Join("factory", "submissions", "*"))
+	if err != nil {
+		t.Fatalf("glob submissions: %v", err)
+	}
+	if len(bundleMatches) != 1 {
+		t.Fatalf("bundle count = %d, want 1", len(bundleMatches))
+	}
+	return filepath.Base(bundleMatches[0])
+}
+
+func createPackReadyReviewBundle(t *testing.T) string {
+	t.Helper()
+	cardID := createReviewBundleFromLastRun(t)
+	cardPath := filepath.Join("factory", "submissions", cardID, "card.yaml")
+	loaded, err := card.LoadFile(cardPath)
+	if err != nil {
+		t.Fatalf("LoadFile(review card) error = %v", err)
+	}
+	loaded.Match.Keywords = []string{"torch_npu"}
+	loaded.Guidance.Verification = "Run python import smoke test"
+	loaded.Provenance.References = []string{"local review evidence"}
+	loaded.Provenance.ExpectedBehavior = []string{"torch_npu imports"}
+	data, err := yaml.Marshal(loaded)
+	if err != nil {
+		t.Fatalf("marshal review card: %v", err)
+	}
+	if err := os.WriteFile(cardPath, data, 0o600); err != nil {
+		t.Fatalf("write pack ready review card: %v", err)
+	}
+	return cardID
 }
 
 func assertFileContent(t *testing.T, path, want string) {
