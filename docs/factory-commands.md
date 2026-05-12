@@ -36,6 +36,10 @@ Attempts to sync from the configured Factory pack source. The adapter exists, bu
 
 Installs a local pack source into the default user-level Factory pack location after validation.
 
+### `/factory pack match-debug "<diagnose text>"`
+
+Loads the default local Factory pack and runs bounded local matching against the provided text for local developer/debug audit use. It is not normal user-facing diagnostic output and is not injected into `/diagnose` prompts. It does not call an LLM, run `/diagnose`, mutate cards or packs, upload data, expose raw card YAML, expose SQLite rows, or print full logs.
+
 ## Unsupported commands
 
 Unknown `/factory`, `/factory card`, and `/factory pack` subcommands return an unsupported command or usage message. Deferred product surfaces include remote registry operations, uploads, automatic PR/MR creation, review queues, multi-pack management, signing, channel selection, background sync, and enterprise/private pack policy.

@@ -69,7 +69,45 @@ func ValidatePackEligible(card *KnownIssueCard) error {
 	if len(nonEmptyStrings(card.Provenance.ExpectedBehavior)) == 0 {
 		return fmt.Errorf("pack eligibility requires provenance.expected_behavior")
 	}
+	if card.Case.ProblemType == ProblemTypeUnknown {
+		return fmt.Errorf("pack eligibility rejects unknown case.problem_type")
+	}
+	if card.Case.Stage == StageUnknown {
+		return fmt.Errorf("pack eligibility rejects unknown case.stage")
+	}
+	if card.Case.Domain == DomainUnknown {
+		return fmt.Errorf("pack eligibility rejects unknown case.domain")
+	}
+	if card.Case.Hardware == HardwareUnknown {
+		return fmt.Errorf("pack eligibility rejects unknown case.hardware")
+	}
+	if hasWeakPackText(card.Guidance.Symptom, "symptom") {
+		return fmt.Errorf("pack eligibility rejects placeholder guidance.symptom")
+	}
+	if hasWeakPackText(card.Guidance.Diagnosis, "diagnosis") {
+		return fmt.Errorf("pack eligibility rejects placeholder guidance.diagnosis")
+	}
+	if hasWeakPackText(card.Guidance.Verification, "verification") {
+		return fmt.Errorf("pack eligibility rejects placeholder guidance.verification")
+	}
 	return nil
+}
+
+func hasWeakPackText(value string, field string) bool {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	if lower == "" {
+		return false
+	}
+	if field == "symptom" && strings.Contains(lower, "draft generated from the latest bounded run summary") {
+		return true
+	}
+	if field == "diagnosis" {
+		return strings.Contains(lower, "draft generated from the latest bounded run summary") || strings.Contains(lower, "review and complete before promotion")
+	}
+	if field == "verification" {
+		return strings.Contains(lower, "not verified") || strings.Contains(lower, "reviewer must add validation steps")
+	}
+	return false
 }
 
 func IsPackEligible(card *KnownIssueCard) bool {

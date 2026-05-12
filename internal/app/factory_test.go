@@ -185,6 +185,9 @@ func TestFactoryPackBuildRoutes(t *testing.T) {
 	if !strings.Contains(ev.Message, "built factory pack:") {
 		t.Fatalf("Message = %q, want build summary", ev.Message)
 	}
+	if len(strings.Split(ev.Message, "\n")) < 2 {
+		t.Fatalf("Message = %q, want multiline output", ev.Message)
+	}
 	for _, want := range []string{
 		"cards_dir: " + sourceDir,
 		"output: " + output,
@@ -233,6 +236,9 @@ func TestFactoryPackSyncExplicitSourcePathWorks(t *testing.T) {
 	if !strings.Contains(ev.Message, "synced factory pack:") {
 		t.Fatalf("Message = %q, want sync summary", ev.Message)
 	}
+	if len(strings.Split(ev.Message, "\n")) < 2 {
+		t.Fatalf("Message = %q, want multiline output", ev.Message)
+	}
 	if !strings.Contains(ev.Message, "card_schema_version: known_issue/v0.5") {
 		t.Fatalf("Message = %q, want card schema version", ev.Message)
 	}
@@ -245,6 +251,94 @@ func TestFactoryPackSyncNoConfiguredSourceReturnsClearError(t *testing.T) {
 	ev := <-app.EventCh
 	if !strings.Contains(ev.Message, "Factory pack source is not configured") {
 		t.Fatalf("Message = %q, want configured source error", ev.Message)
+	}
+}
+
+func TestFactoryPackMatchDebugShowsMatch(t *testing.T) {
+	sourceDir, err := filepath.Abs(filepath.FromSlash("../factory/compiler/testdata/cards"))
+	if err != nil {
+		t.Fatalf("resolve source cards: %v", err)
+	}
+	dir := t.TempDir()
+	withHomeDir(t, filepath.Join(dir, "home"))
+	if _, err := compiler.CompilePack(sourceDir, filepath.Join(dir, "home", ".mscli", "factory", "factory-core.pack")); err != nil {
+		t.Fatalf("CompilePack() error = %v", err)
+	}
+	app := &Application{EventCh: make(chan model.Event, 4)}
+	app.cmdFactory("pack match-debug \"ImportError: torch_npu failed because CANN runtime dependency is missing\"")
+	ev := <-app.EventCh
+	for _, want := range []string{
+		"factory pack match-debug:",
+		"pack_load_status: loaded",
+		"manifest_summary: factory-core schema=1 card_schema=known_issue/v0.5 cases=3",
+		"candidate_count:",
+		"emitted_hint_count:",
+		"matched_case_id: stable-ascend-import",
+		"score:",
+		"why_matched:",
+	} {
+		if !strings.Contains(ev.Message, want) {
+			t.Fatalf("Message = %q, want %q", ev.Message, want)
+		}
+	}
+	for _, forbidden := range []string{"schema_version:", "CREATE TABLE", "INSERT INTO", "ImportError: torch_npu failed because CANN runtime dependency is missing"} {
+		if strings.Contains(ev.Message, forbidden) {
+			t.Fatalf("Message = %q, should not contain %q", ev.Message, forbidden)
+		}
+	}
+}
+
+func TestFactoryPackMatchDebugNoMatch(t *testing.T) {
+	sourceDir, err := filepath.Abs(filepath.FromSlash("../factory/compiler/testdata/cards"))
+	if err != nil {
+		t.Fatalf("resolve source cards: %v", err)
+	}
+	dir := t.TempDir()
+	withHomeDir(t, filepath.Join(dir, "home"))
+	if _, err := compiler.CompilePack(sourceDir, filepath.Join(dir, "home", ".mscli", "factory", "factory-core.pack")); err != nil {
+		t.Fatalf("CompilePack() error = %v", err)
+	}
+	app := &Application{EventCh: make(chan model.Event, 4)}
+	app.cmdFactory("pack match-debug \"validation labels are imbalanced and accuracy drifts slowly\"")
+	ev := <-app.EventCh
+	for _, want := range []string{"pack_load_status: loaded", "candidate_count: 0", "emitted_hint_count: 0", "fallback_reason: no match"} {
+		if !strings.Contains(ev.Message, want) {
+			t.Fatalf("Message = %q, want %q", ev.Message, want)
+		}
+	}
+}
+
+func TestFactoryPackMatchDebugMissingPack(t *testing.T) {
+	dir := t.TempDir()
+	withHomeDir(t, filepath.Join(dir, "home"))
+	app := &Application{EventCh: make(chan model.Event, 4)}
+	app.cmdFactory("pack match-debug \"ImportError torch_npu\"")
+	ev := <-app.EventCh
+	for _, want := range []string{"pack_load_status: failed", "candidate_count: 0", "emitted_hint_count: 0", "fallback_reason: pack load failed"} {
+		if !strings.Contains(ev.Message, want) {
+			t.Fatalf("Message = %q, want %q", ev.Message, want)
+		}
+	}
+}
+func TestFactoryPackMatchDebugBoundsLongInput(t *testing.T) {
+	sourceDir, err := filepath.Abs(filepath.FromSlash("../factory/compiler/testdata/cards"))
+	if err != nil {
+		t.Fatalf("resolve source cards: %v", err)
+	}
+	dir := t.TempDir()
+	withHomeDir(t, filepath.Join(dir, "home"))
+	if _, err := compiler.CompilePack(sourceDir, filepath.Join(dir, "home", ".mscli", "factory", "factory-core.pack")); err != nil {
+		t.Fatalf("CompilePack() error = %v", err)
+	}
+	longInput := strings.Repeat("torch_npu ", 200)
+	app := &Application{EventCh: make(chan model.Event, 4)}
+	app.cmdFactory("pack match-debug \"" + longInput + "\"")
+	ev := <-app.EventCh
+	if strings.Contains(ev.Message, longInput) {
+		t.Fatalf("Message echoed full long input")
+	}
+	if got := len(strings.Split(ev.Message, "\n")); got > 40 {
+		t.Fatalf("match-debug output lines = %d, want bounded", got)
 	}
 }
 
@@ -360,6 +454,8 @@ func createPackReadyReviewBundle(t *testing.T) string {
 		t.Fatalf("LoadFile(review card) error = %v", err)
 	}
 	loaded.Match.Keywords = []string{"torch_npu"}
+	loaded.Guidance.Symptom = "ImportError mentions torch_npu on Ascend"
+	loaded.Guidance.Diagnosis = "CANN runtime is not visible"
 	loaded.Guidance.Verification = "Run python import smoke test"
 	loaded.Provenance.References = []string{"local review evidence"}
 	loaded.Provenance.ExpectedBehavior = []string{"torch_npu imports"}

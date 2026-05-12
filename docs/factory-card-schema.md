@@ -49,7 +49,17 @@ Generated diagnose-only drafts must include a non-empty verification placeholder
 
 ## Provenance
 
-`provenance` records source references and expected behavior. `expected_behavior` is a list. Pack-eligible cards require references and expected behavior.
+`provenance` records source references and expected behavior. `references` and `expected_behavior` are lists of strings. Pack-eligible cards require references and expected behavior.
+
+```yaml
+provenance:
+  references:
+    - "script:/path/to/repro.py"
+    - "report:out/report.md"
+    - "command:python repro.py --mode broken"
+```
+
+Do not encode references as structured objects in `known_issue/v0.5`.
 
 ## Governance
 
@@ -96,7 +106,9 @@ guidance:
   verification: Run a Python import smoke test after sourcing CANN.
 provenance:
   references:
-    - local review evidence
+    - "script:/path/to/repro.py"
+    - "report:out/report.md"
+    - "command:python repro.py --mode broken"
   expected_behavior:
     - torch_npu imports successfully after CANN runtime is visible.
 governance:

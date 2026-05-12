@@ -1,6 +1,8 @@
 package card
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -48,13 +50,40 @@ func TestInvalidDraftCards(t *testing.T) {
 	}
 }
 
+func TestValidateDraftPermitsPlaceholders(t *testing.T) {
+	card := validDraftTestCard()
+	card.Case.ProblemType = ProblemTypeUnknown
+	card.Case.Stage = StageUnknown
+	card.Case.Domain = DomainUnknown
+	card.Case.Hardware = HardwareUnknown
+	card.Guidance.Symptom = "Draft generated from the latest bounded run summary"
+	card.Guidance.Diagnosis = "Draft generated from the latest bounded run summary; review and complete before promotion"
+	card.Guidance.Verification = "not verified; reviewer must add validation steps"
+	if err := ValidateDraft(card); err != nil {
+		t.Fatalf("ValidateDraft() error = %v", err)
+	}
+}
+
 func TestPackEligibilityFailures(t *testing.T) {
 	tests := []struct {
 		name    string
 		mutate  func(*KnownIssueCard)
 		wantErr string
 	}{
-		{name: "stable without approval", mutate: func(card *KnownIssueCard) { card.Governance.ReviewStatus = ReviewPending }, wantErr: "stable card requires governance.review_status approved"},
+		{name: "unknown problem type", mutate: func(card *KnownIssueCard) { card.Case.ProblemType = ProblemTypeUnknown }, wantErr: "unknown case.problem_type"},
+		{name: "unknown stage", mutate: func(card *KnownIssueCard) { card.Case.Stage = StageUnknown }, wantErr: "unknown case.stage"},
+		{name: "unknown domain", mutate: func(card *KnownIssueCard) { card.Case.Domain = DomainUnknown }, wantErr: "unknown case.domain"},
+		{name: "unknown hardware", mutate: func(card *KnownIssueCard) { card.Case.Hardware = HardwareUnknown }, wantErr: "unknown case.hardware"},
+		{name: "placeholder symptom", mutate: func(card *KnownIssueCard) {
+			card.Guidance.Symptom = "Draft generated from the latest bounded run summary"
+		}, wantErr: "placeholder guidance.symptom"},
+		{name: "placeholder diagnosis", mutate: func(card *KnownIssueCard) {
+			card.Guidance.Diagnosis = "Draft generated from the latest bounded run summary; review and complete before promotion"
+		}, wantErr: "placeholder guidance.diagnosis"},
+		{name: "placeholder verification", mutate: func(card *KnownIssueCard) {
+			card.Guidance.Verification = "not verified; reviewer must add validation steps"
+		}, wantErr: "placeholder guidance.verification"},
+		{name: "stable without references", mutate: func(card *KnownIssueCard) { card.Provenance.References = nil }, wantErr: "provenance.references"},
 		{name: "stable without match signal", mutate: func(card *KnownIssueCard) { card.Match = Match{} }, wantErr: "pack eligibility requires at least one match signal"},
 		{name: "draft excluded", mutate: func(card *KnownIssueCard) { card.Governance.Lifecycle = LifecycleDraft }, wantErr: "governance.lifecycle must be stable"},
 		{name: "deprecated excluded", mutate: func(card *KnownIssueCard) { card.Governance.Lifecycle = LifecycleDeprecated }, wantErr: "governance.lifecycle must be stable"},
@@ -77,6 +106,45 @@ func TestValidatePrivacy(t *testing.T) {
 	card := validDraftTestCard()
 	card.Guidance.Diagnosis = "The command included access_token=secret-value."
 	assertErrorContains(t, ValidatePrivacy(card), "privacy validation failed")
+}
+
+func TestLoadFileStructuredReferencesError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "card.yaml")
+	data := `schema_version: known_issue/v0.5
+kind: known_issue
+id: validation-card
+title: torch_npu import fails when CANN is missing
+tags:
+  - ascend
+case:
+  problem_type: failure
+  stage: import
+  domain: torch_npu
+  hardware: ascend
+match:
+  keywords:
+    - torch_npu
+guidance:
+  symptom: ImportError mentions torch_npu
+  diagnosis: CANN runtime is not visible
+  verification: Run python import smoke test
+provenance:
+  references:
+    - kind: script
+      path: repro.py
+  expected_behavior:
+    - torch_npu imports
+governance:
+  confidence: observed
+  lifecycle: stable
+  review_status: approved
+  rationale: manual review passed
+`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatalf("write card: %v", err)
+	}
+	_, err := LoadFile(path)
+	assertErrorContains(t, err, "provenance.references must be a list of strings, not objects")
 }
 
 func validDraftTestCard() *KnownIssueCard {

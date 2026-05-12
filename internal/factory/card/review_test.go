@@ -201,6 +201,35 @@ func TestApproveReviewItemRejectsMismatchedCardIDAndWritesNothing(t *testing.T) 
 	}
 }
 
+func TestApproveReviewItemRejectsWeakPackReadyFields(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		mutate  func(*KnownIssueCard)
+		wantErr string
+	}{
+		{"unknown problem type", func(card *KnownIssueCard) { card.Case.ProblemType = ProblemTypeUnknown }, "unknown case.problem_type"},
+		{"unknown stage", func(card *KnownIssueCard) { card.Case.Stage = StageUnknown }, "unknown case.stage"},
+		{"unknown domain", func(card *KnownIssueCard) { card.Case.Domain = DomainUnknown }, "unknown case.domain"},
+		{"unknown hardware", func(card *KnownIssueCard) { card.Case.Hardware = HardwareUnknown }, "unknown case.hardware"},
+		{"placeholder diagnosis", func(card *KnownIssueCard) {
+			card.Guidance.Diagnosis = "Draft generated from the latest bounded run summary; review and complete before promotion"
+		}, "placeholder guidance.diagnosis"},
+		{"placeholder verification", func(card *KnownIssueCard) {
+			card.Guidance.Verification = "not verified; reviewer must add validation steps"
+		}, "placeholder guidance.verification"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			card := packReadyReviewTestCard()
+			tc.mutate(card)
+			bundle := writeReviewTestBundle(t, card)
+			_, err := ApproveReviewItem(bundle.CardID, ApprovalOptions{SubmissionsRoot: filepath.Dir(bundle.Path), CardsRoot: t.TempDir(), Confidence: ConfidenceObserved, Rationale: "manual"})
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("error = %v, want %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func writeReviewTestBundle(t *testing.T, card *KnownIssueCard) *ReviewBundle {
 	t.Helper()
 	bundle, err := SubmitDraftCard(writeReviewTestDraft(t, card), SubmitOptions{OutputRoot: filepath.Join(t.TempDir(), "submissions")})
