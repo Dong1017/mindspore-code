@@ -1,0 +1,121 @@
+schema_version: known_issue/v0.6
+kind: known_issue
+id: function-runtime-module-import-missing
+title: MindFormers experimental module import breakage
+tags:
+- b-componenttest
+- mindspore-org-issues
+- runtime
+- import
+- module-missing
+- b-sig-mindformers-infer
+- mindspore-mindformers
+- golden-stick
+- pangu-deploy
+case:
+  problem_type: failure
+  stage: runtime
+  domain: mindformers
+  hardware: ascend
+  severity: high
+  occurrence_count: 5
+  environment:
+    frameworks:
+    - name: mindformers
+      version: dev
+    - name: golden-stick
+    - name: mindrlhf
+    - name: pangu-deploy
+    runtime:
+      cann_version: unknown
+      python_version: unknown
+    model:
+      error_family: downstream imports still reference removed or relocated mindformers.experimental
+        modules
+      affected_projects:
+      - ms_custom_ops
+      - golden-stick
+      - mindrlhf
+      - pangu_deploy
+      execution_modes:
+      - inference
+      - quantization
+      - parallel runtime
+    affected:
+    - MindFormers dev-branch refactors that remove or relocate mindformers.experimental
+      APIs
+    - Downstream projects that still import removed experimental parallel_core helpers
+match:
+  metadata:
+    problem_type: failure
+    stage: runtime
+    domain: mindformers
+    hardware: ascend
+  keywords:
+  - mindformers.experimental
+  - ModuleNotFoundError
+  - ImportError
+  - parallel_core
+  - get_tensor_model_parallel_rank
+  regex:
+  - "(ModuleNotFoundError|No module named|ImportError)"
+guidance:
+  symptom: |
+    Multiple downstream projects broke after MindFormers dev-branch refactors
+    removed or relocated `mindformers.experimental.*` modules. The failures show
+    up as `No module named ...` import errors in inference and quantization
+    scenarios. The real repair is not a generic environment workaround: callers
+    must update imports to the new MindFormers locations, and any helper that was
+    dropped from dev must be carried or reimplemented in the downstream project.
+  trigger_signals:
+  - No module named mindformers.experimental
+  - Failed to import get_tensor_model_parallel_rank from both possible locations
+  - MindFormers dev refactor后，下游推理或量化任务在 import 阶段直接失败
+  representative_errors:
+  - "(ModuleNotFoundError|No module named|ImportError)"
+  - No module named 'mindformers.experimental'
+  - Failed to import get_tensor_model_parallel_rank from both possible locations
+  diagnosis: 'The source issues converge on the same family: MindFormers dev-branch
+    refactors moved or removed `mindformers.experimental.*` APIs, but downstream projects
+    still import the old paths. In some cases the API still exists and only the import
+    path changed; in other cases helpers such as experimental parallel-core utilities
+    or `ReduceScatterToSequenceParallelRegion` were removed from dev and must be carried
+    or reimplemented downstream.'
+  diagnosis_details:
+  - 仍保留在 dev 分支里的接口需要改到新 import 路径
+  - dev 分支已经删除的 helper 不能继续从 mindformers.experimental 引用，需要在下游仓继承或重实现
+  - 这类报错不是通用环境问题，而是下游代码仍绑定旧 API 面
+  actions:
+  - 对仍保留在 MindFormers dev 分支里的接口，改到新的 import 路径。
+  - 对 dev 已删除的 helper，在下游仓继承、补定义或重实现兼容层。
+  - 同步更新依赖这些 helper 的调用点，而不是只修单个 import 语句。
+  - 回归盘古推理、Golden Stick 深度量化、MindRLHF 并行场景，确认 import 阶段不再失败。
+  fix: 把保留接口切到新的 MindFormers import 路径，并对 dev 已删除的 experimental helper 在下游仓补齐兼容实现。
+  why_it_works:
+  - 仍存在的 API 走到正确新路径后，模块解析会重新命中当前 MindFormers dev API 面。
+  - 对已删除 helper 做下游继承或补定义后，运行不再依赖 `mindformers.experimental` 的历史实现。
+  verification: After the fix, downstream inference, quantization, and parallel tasks
+    no longer fail during module import when running against the refactored MindFormers
+    dev branch.
+  non_causes:
+  - 不是单纯 PYTHONPATH 没配好
+  - 不是随机安装缺包，而是 API 路径迁移后的兼容性断裂
+provenance:
+  references:
+  - issue:mindformers#2220
+  - issue:org-issues#ICK1SO
+  - issue:org-issues#ICK2HD
+  - issue:org-issues#ICKL7B
+  - issue:org-issues#ICLEY2
+  notes: Rewritten from mindformers#2220 plus org-issues ICK1SO / ICK2HD / ICKL7B
+    / ICLEY2 source details and root-cause notes. These source issues all describe
+    downstream breakage after MindFormers dev-branch API moves or removals under `mindformers.experimental`.
+  expected_behavior:
+  - 下游项目在 import 阶段不再抛出 ModuleNotFoundError 或 ImportError
+  - 推理、量化和并行相关任务能够继续进入后续执行阶段
+governance:
+  confidence: verified
+  lifecycle: stable
+  review_status: pending
+  rationale: rewritten from multiple source issues and root-cause notes on 2026-05-12
+  updated_at: '2026-05-12'

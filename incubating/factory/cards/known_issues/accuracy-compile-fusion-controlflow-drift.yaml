@@ -1,0 +1,135 @@
+schema_version: "known_issue/v0.6"
+kind: known_issue
+id: accuracy-compile-fusion-controlflow-drift
+title: DVM CV fusion control-flow same-input drift
+tags:
+  - accuracy
+  - compile
+  - fusion
+  - controlflow
+  - dvm
+  - cv-fusion
+  - same-input
+  - gradient-drift
+
+case:
+  problem_type: accuracy
+  stage: compile
+  domain: mindspore
+  hardware: ascend
+  severity: high
+  occurrence_count: 1
+
+  environment:
+    frameworks:
+      - name: mindspore
+        version: "2.9.0"
+        branch: "master"
+        commit: "c899f34d"
+
+    runtime:
+      cann_version: "unknown"
+      python_version: "unknown"
+
+    model:
+      pattern: "control-flow while loop with Add + MatMul/BatchMatMulExt fusion"
+      execution_mode: "PyNative"
+      optimization: "DVM on/off comparison"
+      input_reuse: "same input reused across fused cube/load paths"
+      dtype: "float16"
+      input_shapes:
+        original_report: "(1024, 1024)"
+        regression_note: "(1, 1024, 1024)"
+
+    affected:
+      - "DVM-enabled control-flow CV fusion scenes"
+      - "same-input fused cube/load ownership path"
+
+match:
+  metadata:
+    problem_type: accuracy
+    stage: compile
+    domain: mindspore
+    hardware: ascend
+
+  keywords:
+    - "DVM"
+    - "CV融合"
+    - "控制流"
+    - "same input"
+    - "output and gradient mismatch"
+
+  regex:
+    - "(?i)dvm.*control"
+    - "(?i)cv.*fusion"
+    - "(?i)allclose\\(output1, output2"
+    - "(?i)开启DVM.*不开启DVM"
+
+guidance:
+  symptom: >
+    In a control-flow network, enabling DVM makes output and gradient compare
+    fail, while disabling DVM makes the same case pass.
+
+  trigger_signals:
+    - "开启 DVM 与不开启 DVM 对比时，output 不一致"
+    - "开启 DVM 与不开启 DVM 对比时，grad_output 不一致"
+    - "控制流 while 场景下的 CV 融合精度报错"
+
+  representative_errors:
+    - "assert np.allclose(output1, output2, 1e-03, 1e-03, equal_nan=True)"
+
+  diagnosis: >
+    DVM CV fusion mishandles same-input cube/load ownership in control-flow
+    scenes, and graph-split recovery does not fully preserve the relocated GM
+    tracking state needed by later cloned loads.
+
+  diagnosis_details:
+    - "cube 自有输入和后续融合共用 load，导致 load 状态被后续处理污染"
+    - "splitgraphd 场景首次重定位后，loadb 残留状态影响后续 clone/load 处理"
+    - "recover tracker 没把 relocation 后仍需要的 GM 节点完整纳入，导致恢复链不完整"
+
+  actions:
+    - "给 cube 自有输入重新创建独立 load，不再复用会参与后续融合的 load"
+    - "在 splitgraphd 场景处理首次重定位后残留的 loadb，并把相关 GM 节点加入 recover tracker，保证后续 clone loadb 还能被 cube_gen 正确处理"
+
+  fix: >
+    recreate dedicated loads for cube-owned inputs and add GM nodes to the
+    recover tracker after split-graph relocation
+
+  why_it_works:
+    - "独立 load 让 cube 输入生命周期与后续融合解耦，避免共享 load 状态被错误复用"
+    - "补齐 GM 恢复跟踪后，重定位后的 clone/load 仍能走到正确恢复链，不会读到脏状态"
+
+  verification: >
+    After the fix, enabling DVM no longer changes output or gradient in this
+    control-flow CV-fusion pattern.
+
+  non_causes:
+    - "不是普通 matmul 数值波动"
+    - "不是单纯 while 控制流语义错误"
+    - "不是仅梯度路径问题，forward 和 grad 都会漂"
+
+provenance:
+  references:
+    - "issue:org-issues#42220"
+    - "introduced_by:pr#91899"
+    - "fixed_by:pr#91960"
+
+  notes: >
+    Derived from org-issues#42220 root-cause discussion and linked fix landing.
+
+  expected_behavior:
+    - "关闭 DVM 作为 baseline，开启 DVM 后 output 对齐"
+    - "关闭 DVM 作为 baseline，开启 DVM 后 grad_output 对齐"
+    - "same-input matmul/elementwise 控制流 ST 用例通过"
+
+  regression_tests:
+    - "_run_matmul_same_input_elemwise"
+    - "_run_matmul_elemwise_same_input"
+
+governance:
+  confidence: verified
+  lifecycle: stable
+  review_status: pending
+  rationale: "initial revision aligned to KnownIssueCard source schema"
+  updated_at: "2026-05-09"

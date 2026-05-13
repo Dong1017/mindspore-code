@@ -1,0 +1,120 @@
+schema_version: known_issue/v0.6
+kind: known_issue
+id: accuracy-model-qwen3vl-resize-interpolate-mismatch
+title: Qwen3VL resize interpolate semantic mismatch
+tags:
+- accuracy
+- qwen3vl
+- interpolate
+- resize
+- image-preprocess
+- training
+- torch-parity
+case:
+  problem_type: accuracy
+  stage: train
+  domain: mindspore
+  hardware: ascend
+  severity: high
+  occurrence_count: 1
+  environment:
+    frameworks:
+    - name: mindspore
+      version: master
+      commit: 4b99047cefc86fa0af9b5c0be7f0b8c4aee9b644
+    - name: torch
+      version: 2.7.1
+    - name: torch-npu
+      version: 2.7.1.post4.dev20260226
+    - name: transformers
+      version: 4.57.0
+    - name: sqlalchemy
+      version: 2.0.36
+    - name: megatron-lm
+      version: a845aa7e12b3a117e24c2352b9e3e60bad2e3a17
+    - name: mindspeed
+      version: 932fc7906f49d6e8d4bf0860ecf11c2a89dc2922
+    - name: mindspeed-mm
+      version: 7b8e497efcbfb1a44a77a03a7755de88f1a0424a
+    - name: msadapter
+      version: 81032fd5bb226a0f679994dfbc1f86adde335d33
+    runtime:
+      cann_version: 9.0.0.B073_20260317
+      python_version: '3.12'
+    model:
+      model_area: vision preprocessing
+      topology: tp1 / pp2 / cp1 / GBS8
+      dataset: COCO
+      training_mode: fine-tuning, non-frozen, deterministic enabled
+      resize_path: torchvision/transforms/v2/functional/_geometry.py::resize_image
+        -> interpolate
+    affected:
+    - Qwen3VL image preprocessing in training
+    - resize_image 调到 interpolate
+    - MindSpore vs torch 行为不一致
+match:
+  metadata:
+    problem_type: accuracy
+    stage: train
+    domain: mindspore
+    hardware: ascend
+  keywords:
+  - qwen3vl
+  - resize_image
+  - interpolate
+  - 8B
+  - 30B
+  regex:
+  - "(?i)qwen3vl"
+  - "(?i)resize.*interpolate"
+guidance:
+  symptom: |
+    Qwen3VL 8B/30B fine-tuning drifts even with deterministic mode enabled,
+    and the first stable divergence is traced back to the image resize path.
+  trigger_signals:
+  - qwen3vl 8B/30B 网络训练精度异常
+  - 和 PTA 对比时 loss 逐 step 漂移
+  - 问题集中在 resize_image / interpolate 路径
+  representative_errors: []
+  diagnosis: 'The source issue comments identify the first stable divergence in the
+    Qwen3VL training pipeline at `resize_image -> interpolate`: `ms.ops.interpolate`
+    does not match the torch path for this scene, so preprocessing drifts before the
+    model proper, and the training loss drift is downstream of that mismatch.'
+  diagnosis_details:
+  - 精度对齐时定位到 torchvision resize_image 中的 interpolate 调用
+  - mode / align_corners / antialias 三个参数组合触发与 torch 不一致的行为
+  - 前处理输出先漂移，随后带着漂移进入主网络训练
+  actions:
+  - 在精度对齐阶段，先对比 `resize_image` 输出，确认漂移发生在前处理而不是主网络。
+  - 按 root-cause comment 的临时规避方式，在 `torchvision/transforms/v2/functional/_geometry.py`
+    的 `resize_image` 里注释 `interpolate` 的 `mode`、`align_corners`、`antialias` 三个参数。
+  - 在规避后重新对齐 Qwen3VL 8B 和 30B 的训练场景，并继续推进长期的 op-plugin/mint 语义对齐。
+  fix: 短期按 issue 评论中的方案规避 `resize_image` 调用里的 `interpolate` 参数组合；长期需要把该路径切到与 torch
+    对齐的实现语义。
+  why_it_works:
+  - 先把 resize 路径的语义偏差压住后，loss 漂移不会再从图像前处理一路传进训练主干。
+  - 把问题锁定在 `interpolate` 语义层，可以避免把它误判成大模型训练链路本身的精度问题。
+  verification: |
+    After the fix, Qwen3VL image preprocessing matches the reference path and
+    the observed training loss drift disappears in both 8B and 30B scenes.
+  non_causes:
+  - 不是 Qwen3VL 主网络结构本身错误
+  - 不是随机性或数据集不稳定导致
+provenance:
+  references:
+  - issue:org-issues#42408
+  notes: Rewritten from org-issues#42408 issue body and root-cause comments. The source
+    issue tracks Qwen3VL 8B/30B training loss drift, and the root-cause comment attributes
+    it to interpolate semantic mismatch in the resize path.
+  expected_behavior:
+  - Qwen3VL 8B 精度恢复
+  - Qwen3VL 30B 精度恢复
+  - resize path 输出与 reference 对齐
+  - loss 绝对误差回到 0.0
+governance:
+  confidence: verified
+  lifecycle: stable
+  review_status: pending
+  rationale: rewritten from org-issues#42408 source body and root-cause comments on
+    2026-05-12
+  updated_at: '2026-05-12'

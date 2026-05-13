@@ -1,0 +1,91 @@
+schema_version: known_issue/v0.6
+kind: known_issue
+id: accuracy-operator-clamp-precision-drift
+title: Clamp O1 Cmp fusion drift
+tags:
+- accuracy
+- operator
+- clamp
+- o1
+- dvm
+- cmp-fusion
+- compile
+case:
+  problem_type: accuracy
+  stage: compile
+  domain: mindspore
+  hardware: ascend
+  severity: high
+  occurrence_count: 1
+  environment:
+    frameworks:
+    - name: mindspore
+      version: master
+      commit: 20fd6e9d
+    runtime:
+      cann_version: '20260317'
+      python_version: '3.12'
+    model:
+      execution_mode: GRAPH_MODE
+      optimization_switch: CONTEXT_JIT_LEVEL=O1
+      testcase: t_clamp_bfloat16_6d_4x4x8x9x4x4_random_broadcast
+      dtype: bfloat16
+match:
+  metadata:
+    problem_type: accuracy
+    stage: compile
+    domain: mindspore
+    hardware: ascend
+  keywords:
+  - Tensor.clamp
+  - O1
+  - Cmp融合
+  regex:
+  - "(?i)clamp.*o1"
+guidance:
+  symptom: |
+    `Tensor.clamp` only drifts in O1 mode, indicating the error comes from the
+    fused compile path rather than clamp arithmetic itself.
+  trigger_signals:
+  - Tensor.clamp O1 模式下结果与标杆不一致
+  - 非 O1 场景不报
+  - 同一场景下 forward/grad compare 在 O1 模式漂移
+  representative_errors:
+  - Tensor.clamp O1 模式下结果与标杆不一致
+  diagnosis: 'The root-cause comment is direct: O1 mode `Cmp` fusion on the DVM side
+    is wrong. The issue is not in clamp arithmetic itself, but in the compare-fusion
+    path used when clamp is lowered in O1 mode.'
+  diagnosis_details:
+  - 问题在 O1 模式下复现，说明偏差来自编译融合路径
+  - Cmp 融合语义出错后，clamp 依赖的比较结果被带偏
+  actions:
+  - 修复 DVM 侧 O1 `Cmp` 融合算子问题。
+  - 复用 issue 中的 `t_clamp_bfloat16_6d_4x4x8x9x4x4_random_broadcast` 场景回归 forward 和
+    grad compare。
+  fix: 修复 O1 模式下的 DVM `Cmp` 融合路径，而不是改单独的 clamp 逻辑。
+  why_it_works:
+  - clamp 依赖的 compare 语义恢复正确后，O1 模式下的结果和梯度会一起回到基线。
+  verification: |
+    After the fix, clamp matches the baseline in O1 mode because the fused
+    compare path no longer drifts.
+  non_causes:
+  - 不是 clamp 本身数学公式错误
+provenance:
+  references:
+  - issue:org-issues#42271
+  - introduced_by:mindspore#91899
+  notes: Rewritten from org-issues#42271 issue body and root-cause comments. The source
+    issue reports clamp mismatch only in O1 mode, and the root-cause comment attributes
+    it to the O1-mode Cmp fusion path.
+  expected_behavior:
+  - O1 模式 clamp 结果恢复对齐
+  - 非 O1 场景保持不回退
+  regression_tests:
+  - t_clamp_bfloat16_6d_4x4x8x9x4x4_random_broadcast
+governance:
+  confidence: verified
+  lifecycle: stable
+  review_status: pending
+  rationale: rewritten from org-issues#42271 source body and root-cause comments on
+    2026-05-12
+  updated_at: '2026-05-12'
