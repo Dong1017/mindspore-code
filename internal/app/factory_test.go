@@ -16,24 +16,33 @@ import (
 
 func TestCmdFactoryHelpRoutes(t *testing.T) {
 	cases := []struct {
-		name  string
-		input string
-		want  string
+		name         string
+		input        string
+		want         string
+		placeholders []string
 	}{
-		{"top", "", "Factory commands:"},
-		{"card", "card", "Factory card commands:"},
-		{"pack", "pack", "Factory pack commands:"},
-		{"unknown top", "unknown", "Factory commands:"},
-		{"unknown card", "card publish", "Factory card commands:"},
-		{"unknown pack", "pack publish", "Factory pack commands:"},
+		{"top", "", "Factory commands:", []string{"{card-path}", "{card-id}", "{cards-dir}", "{output-pack}", "{diagnose text}"}},
+		{"card", "card", "Factory card commands:", []string{"{card-path}", "{card-id}"}},
+		{"pack", "pack", "Factory pack commands:", []string{"{cards-dir}", "{output-pack}", "{diagnose text}"}},
+		{"unknown top", "unknown", "Factory commands:", []string{"{card-path}", "{card-id}", "{cards-dir}", "{output-pack}", "{diagnose text}"}},
+		{"unknown card", "card publish", "Factory card commands:", []string{"{card-path}", "{card-id}"}},
+		{"unknown pack", "pack publish", "Factory pack commands:", []string{"{cards-dir}", "{output-pack}", "{diagnose text}"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			app := &Application{EventCh: make(chan model.Event, 4)}
 			app.cmdFactory(tc.input)
 			ev := <-app.EventCh
-			if !strings.Contains(ev.Message, tc.want) {
-				t.Fatalf("Message = %q, want %q", ev.Message, tc.want)
+			if !ev.RawANSI {
+				t.Fatalf("RawANSI = false, want true for multiline factory help")
+			}
+			for _, want := range append([]string{tc.want}, tc.placeholders...) {
+				if !strings.Contains(ev.Message, want) {
+					t.Fatalf("Message = %q, want %q", ev.Message, want)
+				}
+			}
+			if strings.Contains(ev.Message, "<card-path>") || strings.Contains(ev.Message, "<card-id>") || strings.Contains(ev.Message, "<cards-dir>") || strings.Contains(ev.Message, "<output-pack>") || strings.Contains(ev.Message, "<diagnose text>") {
+				t.Fatalf("Message = %q, should not contain angle placeholder", ev.Message)
 			}
 		})
 	}
@@ -81,7 +90,7 @@ func TestCmdFactoryCardSubmitMissingPathReturnsUsage(t *testing.T) {
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("card submit")
 	ev := <-app.EventCh
-	if !strings.Contains(ev.Message, "Usage: /factory card submit <card-path>") {
+	if !strings.Contains(ev.Message, "Usage: /factory card submit {card-path}") {
 		t.Fatalf("Message = %q, want usage", ev.Message)
 	}
 }
@@ -151,7 +160,7 @@ func TestFactoryCardReviewApproveWritesApprovedCard(t *testing.T) {
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("card review " + cardID + " --approve --confidence observed --rationale \"manual review passed\"")
 	ev := <-app.EventCh
-	for _, want := range []string{"approved local factory card: " + cardID, "governance: lifecycle=stable review_status=approved confidence=observed", "pack build still required: /factory pack build factory/cards <output-pack>"} {
+	for _, want := range []string{"approved local factory card: " + cardID, "governance: lifecycle=stable review_status=approved confidence=observed", "pack build still required: /factory pack build factory/cards {output-pack}"} {
 		if !strings.Contains(ev.Message, want) {
 			t.Fatalf("Message = %q, want %q", ev.Message, want)
 		}
@@ -212,7 +221,7 @@ func TestFactoryPackBuildBadArgsReturnUsage(t *testing.T) {
 		app := &Application{EventCh: make(chan model.Event, 4)}
 		app.cmdFactory(input)
 		ev := <-app.EventCh
-		if !strings.Contains(ev.Message, "Usage: /factory pack build <cards-dir> <output-pack>") {
+		if !strings.Contains(ev.Message, "Usage: /factory pack build {cards-dir} {output-pack}") {
 			t.Fatalf("input %q Message = %q, want usage", input, ev.Message)
 		}
 	}

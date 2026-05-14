@@ -68,19 +68,19 @@ func (a *Application) cmdFactoryPack(args []string) {
 }
 
 func (a *Application) replyFactory(message string) {
-	a.EventCh <- model.Event{Type: model.AgentReply, Message: message}
+	a.EventCh <- model.Event{Type: model.AgentReply, Message: message, RawANSI: strings.Contains(message, "\n")}
 }
 
 func renderFactoryHelp() string {
-	return "Factory commands:\n\nCard workflow:\n  /factory card create\n  /factory card submit <card-path>\n  /factory card review <card-id>\n  /factory card review <card-id> --approve --confidence observed --rationale \"<manual rationale>\"\n\nPack workflow:\n  /factory pack build <cards-dir> <output-pack>\n  /factory pack sync [source-path]\n  /factory pack match-debug \"<diagnose text>\""
+	return "Factory commands:\n\nCard workflow:\n  /factory card create\n  /factory card submit {card-path}\n  /factory card review {card-id}\n  /factory card review {card-id} --approve --confidence observed --rationale \"{manual rationale}\"\n\nPack workflow:\n  /factory pack build {cards-dir} {output-pack}\n  /factory pack sync [source-path]\n  /factory pack match-debug \"{diagnose text}\""
 }
 
 func renderFactoryCardHelp() string {
-	return "Factory card commands:\n  /factory card create\n  /factory card submit <card-path>\n  /factory card review <card-id>\n  /factory card review <card-id> --approve --confidence observed --rationale \"<manual rationale>\""
+	return "Factory card commands:\n  /factory card create\n  /factory card submit {card-path}\n  /factory card review {card-id}\n  /factory card review {card-id} --approve --confidence observed --rationale \"{manual rationale}\""
 }
 
 func renderFactoryPackHelp() string {
-	return "Factory pack commands:\n  /factory pack build <cards-dir> <output-pack>\n  /factory pack sync [source-path]\n  /factory pack match-debug \"<diagnose text>\""
+	return "Factory pack commands:\n  /factory pack build {cards-dir} {output-pack}\n  /factory pack sync [source-path]\n  /factory pack match-debug \"{diagnose text}\""
 }
 
 func (a *Application) cmdFactoryCardCreate(args []string) {
@@ -93,7 +93,7 @@ func (a *Application) cmdFactoryCardCreate(args []string) {
 
 func (a *Application) cmdFactoryCardSubmit(args []string) {
 	if len(args) != 1 {
-		a.replyFactory("Usage: /factory card submit <card-path>")
+		a.replyFactory("Usage: /factory card submit {card-path}")
 		return
 	}
 	bundle, err := card.SubmitDraftCard(args[0], card.SubmitOptions{})
@@ -120,10 +120,10 @@ func (a *Application) cmdFactoryCardReview(args []string) {
 			a.replyFactory(fmt.Sprintf("approve review card failed: %v", err))
 			return
 		}
-		a.replyFactory(fmt.Sprintf("approved local factory card: %s\nfile: %s\ngovernance: lifecycle=stable review_status=approved confidence=observed\npack build still required: /factory pack build factory/cards <output-pack>", result.CardID, result.Path))
+		a.replyFactory(fmt.Sprintf("approved local factory card: %s\nfile: %s\ngovernance: lifecycle=stable review_status=approved confidence=observed\npack build still required: /factory pack build factory/cards {output-pack}", result.CardID, result.Path))
 		return
 	}
-	a.replyFactory("Usage: /factory card review <card-id> [--approve --confidence observed --rationale \"<manual rationale>\"]")
+	a.replyFactory("Usage: /factory card review {card-id} [--approve --confidence observed --rationale \"{manual rationale}\"]")
 }
 
 func parseFactoryArgs(input string) ([]string, error) {
@@ -157,7 +157,7 @@ func parseFactoryArgs(input string) ([]string, error) {
 
 func (a *Application) cmdFactoryPackBuild(args []string) {
 	if len(args) != 2 {
-		a.replyFactory("Usage: /factory pack build <cards-dir> <output-pack>")
+		a.replyFactory("Usage: /factory pack build {cards-dir} {output-pack}")
 		return
 	}
 	cardsDir, outputPack := args[0], args[1]
@@ -215,7 +215,7 @@ func (a *Application) cmdFactoryPackSync(args []string) {
 
 func (a *Application) cmdFactoryPackMatchDebug(args []string) {
 	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
-		a.replyFactory("Usage: /factory pack match-debug \"<diagnose text>\"")
+		a.replyFactory("Usage: /factory pack match-debug \"{diagnose text}\"")
 		return
 	}
 	loadedPack, err := pack.LoadDefault(pack.LoadConfig{})
