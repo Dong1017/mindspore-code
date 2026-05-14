@@ -28,13 +28,23 @@ Approval remains local. It does not modify the review bundle, build or sync a pa
 
 Compiles pack-eligible source cards from a local cards directory into the requested output pack. Build output is bounded and does not install, sync, upload, or publish the pack.
 
+### `/factory pack publish {pack-path}`
+
+Validates a locally built pack, then uploads it to the configured `mscli-server` using `MSCLI_FACTORY_SERVER_URL` and `MSCLI_FACTORY_TOKEN`. The server stores pack metadata plus the pack blob in SQLite for this internal P3.0a pilot only; this is not the long-term artifact storage design.
+
+Duplicate checksum publishes are allowed. Each publish creates a new server row, and the latest pack is selected by `created_at DESC, id DESC`.
+
 ### `/factory pack sync`
 
-Attempts to sync from the configured Factory pack source. The adapter exists, but no config source is currently wired; this returns a clear no-source error.
+If `MSCLI_FACTORY_SERVER_URL` and `MSCLI_FACTORY_TOKEN` are set, downloads `/factory/packs/latest/download` to a temporary file and installs it through the same validated local sync path as explicit source sync.
 
-### `/factory pack sync <source-path>`
+No-arg sync precedence is: server config, then intentionally wired configured local source, then no-source error.
 
-Installs a local pack source into the default user-level Factory pack location after validation.
+If no server config is present, attempts to sync from the configured Factory pack source. The adapter exists, but no config source is currently wired; this returns a clear no-source error.
+
+### `/factory pack sync {source-path}`
+
+Installs an explicit local pack source into the default user-level Factory pack location after validation.
 
 ### `/factory pack match-debug "{diagnose text}"`
 

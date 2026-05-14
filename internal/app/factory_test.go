@@ -1,6 +1,9 @@
 package app
 
 import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,12 +24,12 @@ func TestCmdFactoryHelpRoutes(t *testing.T) {
 		want         string
 		placeholders []string
 	}{
-		{"top", "", "Factory commands:", []string{"{card-path}", "{card-id}", "{cards-dir}", "{output-pack}", "{diagnose text}"}},
+		{"top", "", "Factory commands:", []string{"{card-path}", "{card-id}", "{cards-dir}", "{output-pack}", "{pack-path}", "[{source-path}]", "{diagnose text}"}},
 		{"card", "card", "Factory card commands:", []string{"{card-path}", "{card-id}"}},
-		{"pack", "pack", "Factory pack commands:", []string{"{cards-dir}", "{output-pack}", "{diagnose text}"}},
-		{"unknown top", "unknown", "Factory commands:", []string{"{card-path}", "{card-id}", "{cards-dir}", "{output-pack}", "{diagnose text}"}},
+		{"pack", "pack", "Factory pack commands:", []string{"{cards-dir}", "{output-pack}", "{pack-path}", "[{source-path}]", "{diagnose text}"}},
+		{"unknown top", "unknown", "Factory commands:", []string{"{card-path}", "{card-id}", "{cards-dir}", "{output-pack}", "{pack-path}", "[{source-path}]", "{diagnose text}"}},
 		{"unknown card", "card publish", "Factory card commands:", []string{"{card-path}", "{card-id}"}},
-		{"unknown pack", "pack publish", "Factory pack commands:", []string{"{cards-dir}", "{output-pack}", "{diagnose text}"}},
+		{"unknown pack", "pack unknown", "Factory pack commands:", []string{"{cards-dir}", "{output-pack}", "{pack-path}", "[{source-path}]", "{diagnose text}"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -225,6 +228,91 @@ func TestFactoryPackBuildBadArgsReturnUsage(t *testing.T) {
 			t.Fatalf("input %q Message = %q, want usage", input, ev.Message)
 		}
 	}
+}
+
+func TestFactoryPackPublishPublishesValidPack(t *testing.T) {
+	source := compileAppTestPack(t)
+	var sawAuth bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/factory/packs" || r.Method != http.MethodPost {
+			t.Fatalf("request = %s %s, want POST /factory/packs", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Authorization") == "Bearer secret" {
+			sawAuth = true
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = fmt.Fprint(w, `{"id":9,"pack_name":"factory-core","pack_version":"1","schema_version":"1","card_schema_version":"known_issue/v0.5","compiled_case_count":3,"checksum":"sha256:abc","publisher":"alice","created_at":"2026-05-14T00:00:00Z"}`)
+	}))
+	defer server.Close()
+	withFactoryServerEnv(t, server.URL, "secret")
+
+	app := &Application{EventCh: make(chan model.Event, 4)}
+	app.cmdFactory("pack publish " + source)
+	ev := <-app.EventCh
+	for _, want := range []string{"published factory pack:", "source: " + source, "server: " + server.URL, "pack_id: 9", "pack_name: factory-core", "checksum: sha256:abc"} {
+		if !strings.Contains(ev.Message, want) {
+			t.Fatalf("Message = %q, want %q", ev.Message, want)
+		}
+	}
+	if !sawAuth {
+		t.Fatal("publish did not send bearer token")
+	}
+}
+
+func TestFactoryPackPublishRequiresServerConfigAndValidPack(t *testing.T) {
+	withFactoryServerEnv(t, "", "")
+	app := &Application{EventCh: make(chan model.Event, 4)}
+	app.cmdFactory("pack publish missing.pack")
+	ev := <-app.EventCh
+	if !strings.Contains(ev.Message, "Factory pack server is not configured") {
+		t.Fatalf("Message = %q, want server config error", ev.Message)
+	}
+
+	withFactoryServerEnv(t, "http://example.invalid", "secret")
+	badPack := filepath.Join(t.TempDir(), "bad.pack")
+	if err := os.WriteFile(badPack, []byte("not a pack"), 0o600); err != nil {
+		t.Fatalf("write bad pack: %v", err)
+	}
+	app.cmdFactory("pack publish " + badPack)
+	ev = <-app.EventCh
+	if !strings.Contains(ev.Message, "publish factory pack failed: validate pack") {
+		t.Fatalf("Message = %q, want local validation error", ev.Message)
+	}
+}
+
+func TestFactoryPackSyncRemoteDownloadsAndInstallsLatest(t *testing.T) {
+	source := compileAppTestPack(t)
+	packBytes, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatalf("read source pack: %v", err)
+	}
+	dir := t.TempDir()
+	withHomeDir(t, filepath.Join(dir, "home"))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer secret" {
+			t.Fatalf("Authorization = %q, want bearer", r.Header.Get("Authorization"))
+		}
+		switch r.URL.Path {
+		case "/factory/packs/latest":
+			_, _ = fmt.Fprint(w, `{"id":11,"pack_name":"factory-core","pack_version":"1","schema_version":"1","card_schema_version":"known_issue/v0.5","compiled_case_count":3,"checksum":"sha256:abc","publisher":"alice","created_at":"2026-05-14T00:00:00Z"}`)
+		case "/factory/packs/latest/download":
+			_, _ = w.Write(packBytes)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	withFactoryServerEnv(t, server.URL, "secret")
+
+	app := &Application{EventCh: make(chan model.Event, 4)}
+	app.cmdFactory("pack sync")
+	ev := <-app.EventCh
+	for _, want := range []string{"synced factory pack from server:", "remote_id: 11", "destination:", "card_schema_version: known_issue/v0.5"} {
+		if !strings.Contains(ev.Message, want) {
+			t.Fatalf("Message = %q, want %q", ev.Message, want)
+		}
+	}
+	assertFileExists(t, filepath.Join(dir, "home", ".mscli", "factory", "factory-core.pack"))
 }
 
 func TestFactoryPackSyncExplicitSourcePathWorks(t *testing.T) {
@@ -476,6 +564,35 @@ func createPackReadyReviewBundle(t *testing.T) string {
 		t.Fatalf("write pack ready review card: %v", err)
 	}
 	return cardID
+}
+
+func compileAppTestPack(t *testing.T) string {
+	t.Helper()
+	sourceDir, err := filepath.Abs(filepath.FromSlash("../factory/compiler/testdata/cards"))
+	if err != nil {
+		t.Fatalf("resolve source cards: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "factory-core.pack")
+	if _, err := compiler.CompilePack(sourceDir, path); err != nil {
+		t.Fatalf("CompilePack() error = %v", err)
+	}
+	return path
+}
+
+func withFactoryServerEnv(t *testing.T, serverURL, token string) {
+	t.Helper()
+	oldURL := os.Getenv("MSCLI_FACTORY_SERVER_URL")
+	oldToken := os.Getenv("MSCLI_FACTORY_TOKEN")
+	if err := os.Setenv("MSCLI_FACTORY_SERVER_URL", serverURL); err != nil {
+		t.Fatalf("set MSCLI_FACTORY_SERVER_URL: %v", err)
+	}
+	if err := os.Setenv("MSCLI_FACTORY_TOKEN", token); err != nil {
+		t.Fatalf("set MSCLI_FACTORY_TOKEN: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Setenv("MSCLI_FACTORY_SERVER_URL", oldURL)
+		_ = os.Setenv("MSCLI_FACTORY_TOKEN", oldToken)
+	})
 }
 
 func assertFileExists(t *testing.T, path string) {

@@ -1,14 +1,17 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/mindspore-lab/mindspore-cli/internal/factory/card"
 	"github.com/mindspore-lab/mindspore-cli/internal/factory/compiler"
 	"github.com/mindspore-lab/mindspore-cli/internal/factory/pack"
+	"github.com/mindspore-lab/mindspore-cli/internal/factory/remote"
 	factoryruntime "github.com/mindspore-lab/mindspore-cli/internal/factory/runtime"
 	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
@@ -58,6 +61,8 @@ func (a *Application) cmdFactoryPack(args []string) {
 	switch args[0] {
 	case "build":
 		a.cmdFactoryPackBuild(args[1:])
+	case "publish":
+		a.cmdFactoryPackPublish(args[1:])
 	case "sync":
 		a.cmdFactoryPackSync(args[1:])
 	case "match-debug":
@@ -72,7 +77,7 @@ func (a *Application) replyFactory(message string) {
 }
 
 func renderFactoryHelp() string {
-	return "Factory commands:\n\nCard workflow:\n  /factory card create\n  /factory card submit {card-path}\n  /factory card review {card-id}\n  /factory card review {card-id} --approve --confidence observed --rationale \"{manual rationale}\"\n\nPack workflow:\n  /factory pack build {cards-dir} {output-pack}\n  /factory pack sync [source-path]\n  /factory pack match-debug \"{diagnose text}\""
+	return "Factory commands:\n\nCard workflow:\n  /factory card create\n  /factory card submit {card-path}\n  /factory card review {card-id}\n  /factory card review {card-id} --approve --confidence observed --rationale \"{manual rationale}\"\n\nPack workflow:\n  /factory pack build {cards-dir} {output-pack}\n  /factory pack publish {pack-path}\n  /factory pack sync [{source-path}]\n  /factory pack match-debug \"{diagnose text}\""
 }
 
 func renderFactoryCardHelp() string {
@@ -80,7 +85,7 @@ func renderFactoryCardHelp() string {
 }
 
 func renderFactoryPackHelp() string {
-	return "Factory pack commands:\n  /factory pack build {cards-dir} {output-pack}\n  /factory pack sync [source-path]\n  /factory pack match-debug \"{diagnose text}\""
+	return "Factory pack commands:\n  /factory pack build {cards-dir} {output-pack}\n  /factory pack publish {pack-path}\n  /factory pack sync [{source-path}]\n  /factory pack match-debug \"{diagnose text}\""
 }
 
 func (a *Application) cmdFactoryCardCreate(args []string) {
@@ -169,6 +174,31 @@ func (a *Application) cmdFactoryPackBuild(args []string) {
 	a.replyFactory(renderFactoryPackBuildResult(cardsDir, result))
 }
 
+func (a *Application) cmdFactoryPackPublish(args []string) {
+	if len(args) != 1 {
+		a.replyFactory("Usage: /factory pack publish {pack-path}")
+		return
+	}
+	config := factoryServerConfigFromEnv()
+	if !config.Configured() {
+		a.replyFactory("Factory pack server is not configured. Set MSCLI_FACTORY_SERVER_URL and MSCLI_FACTORY_TOKEN.")
+		return
+	}
+	packPath := args[0]
+	if _, err := pack.Load(packPath); err != nil {
+		a.replyFactory(fmt.Sprintf("publish factory pack failed: validate pack: %v", err))
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	metadata, err := (&remote.Client{BaseURL: config.ServerURL, Token: config.Token}).PublishPack(ctx, packPath)
+	if err != nil {
+		a.replyFactory(fmt.Sprintf("publish factory pack failed: %v", err))
+		return
+	}
+	a.replyFactory(renderFactoryPackPublishResult(packPath, config.ServerURL, metadata))
+}
+
 func renderFactoryPackBuildResult(cardsDir string, result *compiler.BuildSummary) string {
 	return fmt.Sprintf("built factory pack:\ncards_dir: %s\noutput: %s\npack_name: %s\nschema_version: %s\ncard_schema_version: %s\nsource_case_count: %d\ncompiled_case_count: %d\nchecksum: %s",
 		cardsDir,
@@ -184,33 +214,116 @@ func renderFactoryPackBuildResult(cardsDir string, result *compiler.BuildSummary
 
 func (a *Application) cmdFactoryPackSync(args []string) {
 	if len(args) > 1 {
-		a.replyFactory("Usage: /factory pack sync [source-path]")
+		a.replyFactory("Usage: /factory pack sync [{source-path}]")
 		return
 	}
-	source := ""
 	if len(args) == 1 {
-		source = args[0]
-	} else {
-		source = a.factoryPackSource()
-	}
-	if strings.TrimSpace(source) == "" {
-		a.replyFactory("Factory pack source is not configured. Configure factory.pack_source or pass a local source path.")
+		a.syncFactoryPackFromLocalSource(args[0])
 		return
 	}
+	config := factoryServerConfigFromEnv()
+	if config.Configured() {
+		a.syncFactoryPackFromRemote(config)
+		return
+	}
+	if source := a.factoryPackSource(); strings.TrimSpace(source) != "" {
+		a.syncFactoryPackFromLocalSource(source)
+		return
+	}
+	a.replyFactory("Factory pack source is not configured. Pass a local source path or set MSCLI_FACTORY_SERVER_URL and MSCLI_FACTORY_TOKEN.")
+}
+
+func (a *Application) syncFactoryPackFromLocalSource(source string) {
 	result, err := pack.Sync(pack.SyncConfig{SourcePath: source})
 	if err != nil {
-		message := fmt.Sprintf("sync factory pack failed: %v", err)
-		if dest, destErr := pack.DefaultPackPath(); destErr == nil {
-			if _, statErr := os.Stat(dest); statErr == nil {
-				message += "\nExisting local factory pack was preserved."
-			} else if os.IsNotExist(statErr) {
-				message += "\nNo local factory pack was installed."
-			}
-		}
-		a.replyFactory(message)
+		a.replyFactory(factoryPackSyncFailureMessage(err))
 		return
 	}
 	a.replyFactory(renderFactoryPackSyncResult(result))
+}
+
+func (a *Application) syncFactoryPackFromRemote(config factoryServerConfig) {
+	tmp, err := os.CreateTemp("", "factory-remote-*.pack")
+	if err != nil {
+		a.replyFactory(fmt.Sprintf("sync factory pack failed: create temp pack: %v", err))
+		return
+	}
+	tmpPath := tmp.Name()
+	_ = tmp.Close()
+	defer func() { _ = os.Remove(tmpPath) }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	metadata, err := (&remote.Client{BaseURL: config.ServerURL, Token: config.Token}).DownloadLatestPack(ctx, tmpPath)
+	if err != nil {
+		a.replyFactory(fmt.Sprintf("sync factory pack failed: %v", err))
+		return
+	}
+	result, err := pack.Sync(pack.SyncConfig{SourcePath: tmpPath})
+	if err != nil {
+		a.replyFactory(factoryPackSyncFailureMessage(err))
+		return
+	}
+	a.replyFactory(renderFactoryPackRemoteSyncResult(metadata, result))
+}
+
+func factoryPackSyncFailureMessage(err error) string {
+	message := fmt.Sprintf("sync factory pack failed: %v", err)
+	if dest, destErr := pack.DefaultPackPath(); destErr == nil {
+		if _, statErr := os.Stat(dest); statErr == nil {
+			message += "\nExisting local factory pack was preserved."
+		} else if os.IsNotExist(statErr) {
+			message += "\nNo local factory pack was installed."
+		}
+	}
+	return message
+}
+
+func renderFactoryPackPublishResult(source string, serverURL string, metadata *remote.PackMetadata) string {
+	return fmt.Sprintf("published factory pack:\nsource: %s\nserver: %s\npack_id: %d\npack_name: %s\npack_version: %s\nschema_version: %s\ncard_schema_version: %s\ncompiled_case_count: %d\nchecksum: %s\npublisher: %s\ncreated_at: %s",
+		source,
+		serverURL,
+		metadata.ID,
+		metadata.PackName,
+		metadata.PackVersion,
+		metadata.SchemaVersion,
+		metadata.CardSchemaVersion,
+		metadata.CompiledCaseCount,
+		metadata.Checksum,
+		metadata.Publisher,
+		metadata.CreatedAt,
+	)
+}
+
+func renderFactoryPackRemoteSyncResult(metadata *remote.PackMetadata, result *pack.SyncResult) string {
+	return fmt.Sprintf("synced factory pack from server:\nremote_id: %d\nsource: latest server pack\ndestination: %s\npack_name: %s\npack_version: %s\nschema_version: %s\ncard_schema_version: %s\ncompiled_case_count: %d\nchecksum: %s\npublisher: %s\ncreated_at: %s",
+		metadata.ID,
+		result.DestPath,
+		result.PackName,
+		result.PackVersion,
+		result.SchemaVersion,
+		result.CardSchemaVersion,
+		result.CompiledCaseCount,
+		result.Checksum,
+		metadata.Publisher,
+		metadata.CreatedAt,
+	)
+}
+
+type factoryServerConfig struct {
+	ServerURL string
+	Token     string
+}
+
+func factoryServerConfigFromEnv() factoryServerConfig {
+	return factoryServerConfig{
+		ServerURL: strings.TrimSpace(os.Getenv("MSCLI_FACTORY_SERVER_URL")),
+		Token:     strings.TrimSpace(os.Getenv("MSCLI_FACTORY_TOKEN")),
+	}
+}
+
+func (c factoryServerConfig) Configured() bool {
+	return c.ServerURL != "" && c.Token != ""
 }
 
 func (a *Application) cmdFactoryPackMatchDebug(args []string) {
