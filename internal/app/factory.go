@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,6 +28,8 @@ func (a *Application) cmdFactory(input string) {
 		return
 	}
 	switch args[0] {
+	case "status":
+		a.cmdFactoryStatus(args[1:])
 	case "card":
 		a.cmdFactoryCard(args[1:])
 	case "pack":
@@ -34,6 +37,133 @@ func (a *Application) cmdFactory(input string) {
 	default:
 		a.replyFactory(renderFactoryHelp())
 	}
+}
+
+func renderFactoryStatusHelp() string {
+	return "Usage: /factory status"
+}
+
+func (a *Application) cmdFactoryStatus(args []string) {
+	if len(args) != 0 {
+		a.replyFactory(renderFactoryStatusHelp())
+		return
+	}
+	a.replyFactory(a.renderFactoryStatus())
+}
+
+func (a *Application) renderFactoryStatus() string {
+	var b strings.Builder
+	b.WriteString("factory status:")
+
+	localPath, localPack := renderFactoryLocalPackStatus(&b)
+	config := resolveFactoryServerConfig()
+	serverConfigured := config.Configured()
+	fmt.Fprintf(&b, "\nserver_configured: %t", serverConfigured)
+	fmt.Fprintf(&b, "\nconfig_source: %s", factoryConfigSourceLabel(config.Source))
+	if serverConfigured {
+		renderFactoryServerStatus(&b, config, localPack)
+	}
+	renderFactoryCardCounts(&b)
+	if localPath == "" {
+		fmt.Fprintf(&b, "\nlocal_pack_path: unavailable")
+	}
+	return b.String()
+}
+
+func renderFactoryLocalPackStatus(b *strings.Builder) (string, *pack.Pack) {
+	localPath, err := pack.DefaultPackPath()
+	if err != nil {
+		fmt.Fprintf(b, "\nlocal_pack_installed: false\nlocal_pack_path: unavailable\nlocal_pack_reason: %s", boundedFactoryReason(err))
+		return "", nil
+	}
+	fmt.Fprintf(b, "\nlocal_pack_path: %s", localPath)
+	loaded, err := pack.Load(localPath)
+	if err != nil {
+		fmt.Fprintf(b, "\nlocal_pack_installed: false")
+		if !os.IsNotExist(err) {
+			fmt.Fprintf(b, "\nlocal_pack_reason: %s", boundedFactoryReason(err))
+		}
+		return localPath, nil
+	}
+	manifest := loaded.Manifest
+	fmt.Fprintf(b, "\nlocal_pack_installed: true")
+	fmt.Fprintf(b, "\nlocal_pack_name: %s", manifest.PackName)
+	fmt.Fprintf(b, "\nlocal_pack_version: %s", manifest.PackVersion)
+	fmt.Fprintf(b, "\nlocal_schema_version: %s", manifest.SchemaVersion)
+	fmt.Fprintf(b, "\nlocal_card_schema_version: %s", manifest.CardSchemaVersion)
+	fmt.Fprintf(b, "\nlocal_compiled_case_count: %d", manifest.CompiledCaseCount)
+	fmt.Fprintf(b, "\nlocal_checksum: %s", manifest.Checksum)
+	return localPath, loaded
+}
+
+func renderFactoryServerStatus(b *strings.Builder, config factoryServerConfig, localPack *pack.Pack) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	metadata, err := (&remote.Client{BaseURL: config.ServerURL, Token: config.Token}).GetLatestPack(ctx)
+	if err != nil {
+		fmt.Fprintf(b, "\nserver_reachable: false\nserver_reason: %s", boundedFactoryReason(err))
+		return
+	}
+	fmt.Fprintf(b, "\nserver_reachable: true")
+	fmt.Fprintf(b, "\nserver_pack_id: %d", metadata.ID)
+	fmt.Fprintf(b, "\nserver_pack_name: %s", metadata.PackName)
+	fmt.Fprintf(b, "\nserver_pack_version: %s", metadata.PackVersion)
+	fmt.Fprintf(b, "\nserver_schema_version: %s", metadata.SchemaVersion)
+	fmt.Fprintf(b, "\nserver_card_schema_version: %s", metadata.CardSchemaVersion)
+	fmt.Fprintf(b, "\nserver_compiled_case_count: %d", metadata.CompiledCaseCount)
+	fmt.Fprintf(b, "\nserver_checksum: %s", metadata.Checksum)
+	if localPack != nil && strings.TrimSpace(localPack.Manifest.Checksum) != "" && strings.TrimSpace(metadata.Checksum) != "" {
+		fmt.Fprintf(b, "\nlocal_matches_server_latest: %t", localPack.Manifest.Checksum == metadata.Checksum)
+	}
+}
+
+func renderFactoryCardCounts(b *strings.Builder) {
+	fmt.Fprintf(b, "\ndraft_cards: %d", countFilesWithSuffix(filepath.FromSlash(card.DefaultDraftCardsDir), ".yaml"))
+	fmt.Fprintf(b, "\nreview_items: %d", countDirs(filepath.FromSlash(card.DefaultSubmissionsDir)))
+	fmt.Fprintf(b, "\napproved_cards: %d", countFilesWithSuffix(filepath.FromSlash(card.DefaultApprovedCardsDir), ".yaml"))
+}
+
+func factoryConfigSourceLabel(source string) string {
+	if strings.TrimSpace(source) == "" {
+		return "none"
+	}
+	return source
+}
+
+func boundedFactoryReason(err error) string {
+	message := strings.TrimSpace(err.Error())
+	if len(message) > 180 {
+		return message[:180] + "..."
+	}
+	return message
+}
+
+func countFilesWithSuffix(root string, suffix string) int {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return 0
+	}
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), suffix) {
+			count++
+		}
+	}
+	return count
+}
+
+func countDirs(root string) int {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return 0
+	}
+	count := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			count++
+		}
+	}
+	return count
 }
 
 func (a *Application) cmdFactoryCard(args []string) {
@@ -77,7 +207,7 @@ func (a *Application) replyFactory(message string) {
 }
 
 func renderFactoryHelp() string {
-	return "Factory commands:\n\nCard workflow:\n  /factory card create\n  /factory card submit {card-path}\n  /factory card review {card-id}\n  /factory card review {card-id} --approve --confidence observed --rationale \"{manual rationale}\"\n\nPack workflow:\n  /factory pack build {cards-dir} {output-pack}\n  /factory pack publish {pack-path}\n  /factory pack sync [{source-path}]\n  /factory pack match-debug \"{diagnose text}\""
+	return "Factory commands:\n\nCard workflow:\n  /factory card create\n  /factory card submit {card-path}\n  /factory card review {card-id}\n  /factory card review {card-id} --approve --confidence observed --rationale \"{manual rationale}\"\n\nPack workflow:\n  /factory pack build {cards-dir} {output-pack}\n  /factory pack publish {pack-path}\n  /factory pack sync [{source-path}]\n  /factory pack match-debug \"{diagnose text}\"\n\nStatus:\n  /factory status"
 }
 
 func renderFactoryCardHelp() string {
@@ -106,7 +236,7 @@ func (a *Application) cmdFactoryCardSubmit(args []string) {
 		a.replyFactory(fmt.Sprintf("submit draft card failed: %v", err))
 		return
 	}
-	a.replyFactory(fmt.Sprintf("created local review item: %s\nfiles: %s\nnext: /factory card review %s", bundle.CardID, filepath.ToSlash(bundle.Path)+"/", bundle.CardID))
+	a.replyFactory(fmt.Sprintf("created local review item: %s\nfiles: %s\nnext:\n  /factory card review %s", bundle.CardID, filepath.ToSlash(bundle.Path)+"/", bundle.CardID))
 }
 
 func (a *Application) cmdFactoryCardReview(args []string) {
@@ -116,6 +246,7 @@ func (a *Application) cmdFactoryCardReview(args []string) {
 			a.replyFactory(fmt.Sprintf("review card failed: %v", err))
 			return
 		}
+		view += fmt.Sprintf("\nnext:\n  /factory card review %s --approve --confidence observed --rationale \"{manual rationale}\"", args[0])
 		a.replyFactory(view)
 		return
 	}
@@ -125,7 +256,7 @@ func (a *Application) cmdFactoryCardReview(args []string) {
 			a.replyFactory(fmt.Sprintf("approve review card failed: %v", err))
 			return
 		}
-		a.replyFactory(fmt.Sprintf("approved local factory card: %s\nfile: %s\ngovernance: lifecycle=stable review_status=approved confidence=observed\npack build still required: /factory pack build factory/cards {output-pack}", result.CardID, result.Path))
+		a.replyFactory(fmt.Sprintf("approved local factory card: %s\nfile: %s\ngovernance: lifecycle=stable review_status=approved confidence=observed\npack build still required: /factory pack build factory/cards {output-pack}\nnext:\n  /factory pack build factory/cards {output-pack}", result.CardID, result.Path))
 		return
 	}
 	a.replyFactory("Usage: /factory card review {card-id} [--approve --confidence observed --rationale \"{manual rationale}\"]")
@@ -171,7 +302,7 @@ func (a *Application) cmdFactoryPackBuild(args []string) {
 		a.replyFactory(fmt.Sprintf("build factory pack failed: %v", err))
 		return
 	}
-	a.replyFactory(renderFactoryPackBuildResult(cardsDir, result))
+	a.replyFactory(renderFactoryPackBuildResult(cardsDir, result) + "\nnext:\n  /factory pack publish " + result.OutputPath)
 }
 
 func (a *Application) cmdFactoryPackPublish(args []string) {
@@ -179,9 +310,9 @@ func (a *Application) cmdFactoryPackPublish(args []string) {
 		a.replyFactory("Usage: /factory pack publish {pack-path}")
 		return
 	}
-	config := factoryServerConfigFromEnv()
+	config := resolveFactoryServerConfig()
 	if !config.Configured() {
-		a.replyFactory("Factory pack server is not configured. Set MSCLI_FACTORY_SERVER_URL and MSCLI_FACTORY_TOKEN.")
+		a.replyFactory("Factory pack server is not configured. Pass a local source path, set MSCLI_FACTORY_SERVER_URL/MSCLI_FACTORY_TOKEN, or login/create ~/.mscli/credentials.json.")
 		return
 	}
 	packPath := args[0]
@@ -196,7 +327,7 @@ func (a *Application) cmdFactoryPackPublish(args []string) {
 		a.replyFactory(fmt.Sprintf("publish factory pack failed: %v", err))
 		return
 	}
-	a.replyFactory(renderFactoryPackPublishResult(packPath, config.ServerURL, metadata))
+	a.replyFactory(renderFactoryPackPublishResult(packPath, config.ServerURL, metadata) + "\nnext:\n  /factory pack sync")
 }
 
 func renderFactoryPackBuildResult(cardsDir string, result *compiler.BuildSummary) string {
@@ -221,7 +352,7 @@ func (a *Application) cmdFactoryPackSync(args []string) {
 		a.syncFactoryPackFromLocalSource(args[0])
 		return
 	}
-	config := factoryServerConfigFromEnv()
+	config := resolveFactoryServerConfig()
 	if config.Configured() {
 		a.syncFactoryPackFromRemote(config)
 		return
@@ -230,7 +361,7 @@ func (a *Application) cmdFactoryPackSync(args []string) {
 		a.syncFactoryPackFromLocalSource(source)
 		return
 	}
-	a.replyFactory("Factory pack source is not configured. Pass a local source path or set MSCLI_FACTORY_SERVER_URL and MSCLI_FACTORY_TOKEN.")
+	a.replyFactory("Factory pack source is not configured. Pass a local source path, set MSCLI_FACTORY_SERVER_URL/MSCLI_FACTORY_TOKEN, or login/create ~/.mscli/credentials.json.")
 }
 
 func (a *Application) syncFactoryPackFromLocalSource(source string) {
@@ -239,7 +370,7 @@ func (a *Application) syncFactoryPackFromLocalSource(source string) {
 		a.replyFactory(factoryPackSyncFailureMessage(err))
 		return
 	}
-	a.replyFactory(renderFactoryPackSyncResult(result))
+	a.replyFactory(renderFactoryPackSyncResult(result) + "\nnext:\n  /factory status")
 }
 
 func (a *Application) syncFactoryPackFromRemote(config factoryServerConfig) {
@@ -264,7 +395,7 @@ func (a *Application) syncFactoryPackFromRemote(config factoryServerConfig) {
 		a.replyFactory(factoryPackSyncFailureMessage(err))
 		return
 	}
-	a.replyFactory(renderFactoryPackRemoteSyncResult(metadata, result))
+	a.replyFactory(renderFactoryPackRemoteSyncResult(metadata, result) + "\nnext:\n  /factory status")
 }
 
 func factoryPackSyncFailureMessage(err error) string {
@@ -313,13 +444,40 @@ func renderFactoryPackRemoteSyncResult(metadata *remote.PackMetadata, result *pa
 type factoryServerConfig struct {
 	ServerURL string
 	Token     string
+	Source    string
+}
+
+func resolveFactoryServerConfig() factoryServerConfig {
+	if config := factoryServerConfigFromEnv(); config.Configured() {
+		return config
+	}
+	cred, err := loadCredentials()
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return factoryServerConfig{}
+		}
+		return factoryServerConfig{}
+	}
+	config := factoryServerConfig{
+		ServerURL: strings.TrimSpace(cred.ServerURL),
+		Token:     strings.TrimSpace(cred.Token),
+		Source:    "credentials.json",
+	}
+	if config.Configured() {
+		return config
+	}
+	return factoryServerConfig{}
 }
 
 func factoryServerConfigFromEnv() factoryServerConfig {
-	return factoryServerConfig{
+	config := factoryServerConfig{
 		ServerURL: strings.TrimSpace(os.Getenv("MSCLI_FACTORY_SERVER_URL")),
 		Token:     strings.TrimSpace(os.Getenv("MSCLI_FACTORY_TOKEN")),
 	}
+	if config.Configured() {
+		config.Source = "env"
+	}
+	return config
 }
 
 func (c factoryServerConfig) Configured() bool {
@@ -465,7 +623,7 @@ func (a *Application) cmdFactoryCardCreateFromLastRun() {
 		a.replyFactory(fmt.Sprintf("create draft card failed: %v", err))
 		return
 	}
-	message := fmt.Sprintf("created draft card: %s", path)
+	message := fmt.Sprintf("created draft card: %s\nnext:\n  /factory card submit %s", path, path)
 	if selected.Warning != "" {
 		message = selected.Warning + "\n" + message
 	}

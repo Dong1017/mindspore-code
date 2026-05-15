@@ -281,6 +281,44 @@ func TestSaveSnapshotWithUsageOnlyWritesContextBoundaryAfterCompaction(t *testin
 	}
 }
 
+func TestLoadTrajectorySkipsCheckpointRecordsForReplay(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	workDir := t.TempDir()
+	s, err := Create(workDir, "system prompt")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.Activate(); err != nil {
+		t.Fatalf("activate session: %v", err)
+	}
+	if err := s.AppendUserInput("user request"); err != nil {
+		t.Fatalf("append user input: %v", err)
+	}
+	if err := s.AppendAssistant("assistant reply"); err != nil {
+		t.Fatalf("append assistant reply: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("close session: %v", err)
+	}
+
+	loaded, err := LoadByID(workDir, s.ID())
+	if err != nil {
+		t.Fatalf("load session with checkpoint: %v", err)
+	}
+	t.Cleanup(func() { _ = loaded.Close() })
+
+	_, messages := loaded.RestoreContext()
+	if got, want := len(messages), 2; got != want {
+		t.Fatalf("restored message count = %d, want %d", got, want)
+	}
+	for _, message := range messages {
+		if strings.Contains(message.Content, "checkpoint") {
+			t.Fatalf("checkpoint content replayed as message: %#v", message)
+		}
+	}
+}
+
 func TestRestoreContextReconstructsFromCompactBoundaryAndLaterTrajectory(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 

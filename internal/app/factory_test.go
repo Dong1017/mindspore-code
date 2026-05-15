@@ -22,22 +22,24 @@ func TestCmdFactoryHelpRoutes(t *testing.T) {
 		name         string
 		input        string
 		want         string
+		wantRawANSI  bool
 		placeholders []string
 	}{
-		{"top", "", "Factory commands:", []string{"{card-path}", "{card-id}", "{cards-dir}", "{output-pack}", "{pack-path}", "[{source-path}]", "{diagnose text}"}},
-		{"card", "card", "Factory card commands:", []string{"{card-path}", "{card-id}"}},
-		{"pack", "pack", "Factory pack commands:", []string{"{cards-dir}", "{output-pack}", "{pack-path}", "[{source-path}]", "{diagnose text}"}},
-		{"unknown top", "unknown", "Factory commands:", []string{"{card-path}", "{card-id}", "{cards-dir}", "{output-pack}", "{pack-path}", "[{source-path}]", "{diagnose text}"}},
-		{"unknown card", "card publish", "Factory card commands:", []string{"{card-path}", "{card-id}"}},
-		{"unknown pack", "pack unknown", "Factory pack commands:", []string{"{cards-dir}", "{output-pack}", "{pack-path}", "[{source-path}]", "{diagnose text}"}},
+		{"top", "", "Factory commands:", true, []string{"{card-path}", "{card-id}", "{cards-dir}", "{output-pack}", "{pack-path}", "[{source-path}]", "{diagnose text}", "/factory status"}},
+		{"status", "status unexpected", "Usage: /factory status", false, nil},
+		{"card", "card", "Factory card commands:", true, []string{"{card-path}", "{card-id}"}},
+		{"pack", "pack", "Factory pack commands:", true, []string{"{cards-dir}", "{output-pack}", "{pack-path}", "[{source-path}]", "{diagnose text}"}},
+		{"unknown top", "unknown", "Factory commands:", true, []string{"{card-path}", "{card-id}", "{cards-dir}", "{output-pack}", "{pack-path}", "[{source-path}]", "{diagnose text}"}},
+		{"unknown card", "card publish", "Factory card commands:", true, []string{"{card-path}", "{card-id}"}},
+		{"unknown pack", "pack unknown", "Factory pack commands:", true, []string{"{cards-dir}", "{output-pack}", "{pack-path}", "[{source-path}]", "{diagnose text}"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			app := &Application{EventCh: make(chan model.Event, 4)}
 			app.cmdFactory(tc.input)
 			ev := <-app.EventCh
-			if !ev.RawANSI {
-				t.Fatalf("RawANSI = false, want true for multiline factory help")
+			if ev.RawANSI != tc.wantRawANSI {
+				t.Fatalf("RawANSI = %t, want %t", ev.RawANSI, tc.wantRawANSI)
 			}
 			for _, want := range append([]string{tc.want}, tc.placeholders...) {
 				if !strings.Contains(ev.Message, want) {
@@ -74,11 +76,10 @@ func TestCmdFactoryCardSubmitCreatesBundle(t *testing.T) {
 
 	app.cmdFactory("card submit " + matches[0])
 	ev := <-app.EventCh
-	if !strings.Contains(ev.Message, "created local review item:") {
-		t.Fatalf("Message = %q, want local review item", ev.Message)
-	}
-	if !strings.Contains(ev.Message, "next: /factory card review ") {
-		t.Fatalf("Message = %q, want review next step", ev.Message)
+	for _, want := range []string{"created local review item:", "next:", "/factory card review "} {
+		if !strings.Contains(ev.Message, want) {
+			t.Fatalf("Message = %q, want %q", ev.Message, want)
+		}
 	}
 	bundleMatches, err := filepath.Glob(filepath.Join(dir, "factory", "submissions", "*", "validation.json"))
 	if err != nil {
@@ -127,6 +128,11 @@ func TestCmdFactoryCardCreatePreferredCommandWritesDraft(t *testing.T) {
 	if !strings.Contains(ev.Message, "created draft card:") {
 		t.Fatalf("Message = %q, want created draft", ev.Message)
 	}
+	for _, want := range []string{"next:", "/factory card submit "} {
+		if !strings.Contains(ev.Message, want) {
+			t.Fatalf("Message = %q, want %q", ev.Message, want)
+		}
+	}
 	assertDraftContains(t, dir, "torch_npu")
 }
 
@@ -146,7 +152,7 @@ func TestFactoryCardReviewRendersLocalReviewItem(t *testing.T) {
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("card review " + cardID)
 	ev := <-app.EventCh
-	for _, want := range []string{"factory card review:", "case.problem_type:", "validation:", "Manual review required"} {
+	for _, want := range []string{"factory card review:", "case.problem_type:", "validation:", "Manual review required", "next:", "/factory card review " + cardID + " --approve --confidence observed --rationale \"{manual rationale}\""} {
 		if !strings.Contains(ev.Message, want) {
 			t.Fatalf("Message = %q, want %q", ev.Message, want)
 		}
@@ -163,7 +169,7 @@ func TestFactoryCardReviewApproveWritesApprovedCard(t *testing.T) {
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("card review " + cardID + " --approve --confidence observed --rationale \"manual review passed\"")
 	ev := <-app.EventCh
-	for _, want := range []string{"approved local factory card: " + cardID, "governance: lifecycle=stable review_status=approved confidence=observed", "pack build still required: /factory pack build factory/cards {output-pack}"} {
+	for _, want := range []string{"approved local factory card: " + cardID, "governance: lifecycle=stable review_status=approved confidence=observed", "pack build still required: /factory pack build factory/cards {output-pack}", "next:", "/factory pack build factory/cards {output-pack}"} {
 		if !strings.Contains(ev.Message, want) {
 			t.Fatalf("Message = %q, want %q", ev.Message, want)
 		}
@@ -209,6 +215,8 @@ func TestFactoryPackBuildRoutes(t *testing.T) {
 		"source_case_count: 6",
 		"compiled_case_count: 3",
 		"checksum: sha256:",
+		"next:",
+		"/factory pack publish " + output,
 	} {
 		if !strings.Contains(ev.Message, want) {
 			t.Fatalf("Message = %q, want substring %q", ev.Message, want)
@@ -249,7 +257,7 @@ func TestFactoryPackPublishPublishesValidPack(t *testing.T) {
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("pack publish " + source)
 	ev := <-app.EventCh
-	for _, want := range []string{"published factory pack:", "source: " + source, "server: " + server.URL, "pack_id: 9", "pack_name: factory-core", "checksum: sha256:abc"} {
+	for _, want := range []string{"published factory pack:", "source: " + source, "server: " + server.URL, "pack_id: 9", "pack_name: factory-core", "checksum: sha256:abc", "next:", "/factory pack sync"} {
 		if !strings.Contains(ev.Message, want) {
 			t.Fatalf("Message = %q, want %q", ev.Message, want)
 		}
@@ -261,6 +269,7 @@ func TestFactoryPackPublishPublishesValidPack(t *testing.T) {
 
 func TestFactoryPackPublishRequiresServerConfigAndValidPack(t *testing.T) {
 	withFactoryServerEnv(t, "", "")
+	withMissingFactoryCredentials(t)
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("pack publish missing.pack")
 	ev := <-app.EventCh
@@ -307,7 +316,7 @@ func TestFactoryPackSyncRemoteDownloadsAndInstallsLatest(t *testing.T) {
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("pack sync")
 	ev := <-app.EventCh
-	for _, want := range []string{"synced factory pack from server:", "remote_id: 11", "destination:", "card_schema_version: known_issue/v0.5"} {
+	for _, want := range []string{"synced factory pack from server:", "remote_id: 11", "destination:", "card_schema_version: known_issue/v0.5", "next:", "/factory status"} {
 		if !strings.Contains(ev.Message, want) {
 			t.Fatalf("Message = %q, want %q", ev.Message, want)
 		}
@@ -339,15 +348,128 @@ func TestFactoryPackSyncExplicitSourcePathWorks(t *testing.T) {
 	if !strings.Contains(ev.Message, "card_schema_version: known_issue/v0.5") {
 		t.Fatalf("Message = %q, want card schema version", ev.Message)
 	}
+	for _, want := range []string{"next:", "/factory status"} {
+		if !strings.Contains(ev.Message, want) {
+			t.Fatalf("Message = %q, want %q", ev.Message, want)
+		}
+	}
 	assertFileExists(t, filepath.Join(dir, "home", ".mscli", "factory", "factory-core.pack"))
 }
 
 func TestFactoryPackSyncNoConfiguredSourceReturnsClearError(t *testing.T) {
+	withFactoryServerEnv(t, "", "")
+	withMissingFactoryCredentials(t)
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("pack sync")
 	ev := <-app.EventCh
 	if !strings.Contains(ev.Message, "Factory pack source is not configured") {
 		t.Fatalf("Message = %q, want configured source error", ev.Message)
+	}
+}
+
+func TestFactoryStatusMissingLocalPackAndNoServer(t *testing.T) {
+	dir := t.TempDir()
+	withWorkingDir(t, dir)
+	withHomeDir(t, filepath.Join(dir, "home"))
+	withFactoryServerEnv(t, "", "")
+	withMissingFactoryCredentials(t)
+
+	app := &Application{EventCh: make(chan model.Event, 4)}
+	app.cmdFactory("status")
+	ev := <-app.EventCh
+	for _, want := range []string{
+		"factory status:",
+		"local_pack_installed: false",
+		"local_pack_path:",
+		"server_configured: false",
+		"config_source: none",
+		"draft_cards: 0",
+		"review_items: 0",
+		"approved_cards: 0",
+	} {
+		if !strings.Contains(ev.Message, want) {
+			t.Fatalf("Message = %q, want %q", ev.Message, want)
+		}
+	}
+	if strings.Contains(ev.Message, "server_reachable:") {
+		t.Fatalf("Message = %q, should not probe unconfigured server", ev.Message)
+	}
+}
+
+func TestFactoryStatusShowsInstalledPackCountsAndServerLatest(t *testing.T) {
+	source := compileAppTestPack(t)
+	dir := t.TempDir()
+	withWorkingDir(t, dir)
+	withHomeDir(t, filepath.Join(dir, "home"))
+
+	if _, err := pack.Sync(pack.SyncConfig{SourcePath: source}); err != nil {
+		t.Fatalf("Sync(source) error = %v", err)
+	}
+	writeAppTestFile(t, filepath.Join(dir, "factory", "cards", "drafts", "draft.yaml"), "draft")
+	writeAppTestFile(t, filepath.Join(dir, "factory", "cards", "approved.yaml"), "approved")
+	writeAppTestFile(t, filepath.Join(dir, "factory", "submissions", "item-1", "validation.json"), "{}")
+
+	installed, err := pack.Load(filepath.Join(dir, "home", ".mscli", "factory", "factory-core.pack"))
+	if err != nil {
+		t.Fatalf("Load(installed) error = %v", err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/factory/packs/latest" || r.Method != http.MethodGet {
+			t.Fatalf("request = %s %s, want GET /factory/packs/latest", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer secret" {
+			t.Fatalf("Authorization = %q, want bearer", r.Header.Get("Authorization"))
+		}
+		_, _ = fmt.Fprintf(w, `{"id":13,"pack_name":"factory-core","pack_version":"1","schema_version":"1","card_schema_version":"known_issue/v0.5","compiled_case_count":3,"checksum":%q,"publisher":"alice","created_at":"2026-05-14T00:00:00Z"}`, installed.Manifest.Checksum)
+	}))
+	defer server.Close()
+	withFactoryServerEnv(t, server.URL, "secret")
+
+	app := &Application{EventCh: make(chan model.Event, 4)}
+	app.cmdFactory("status")
+	ev := <-app.EventCh
+	for _, want := range []string{
+		"local_pack_installed: true",
+		"local_pack_name: factory-core",
+		"local_compiled_case_count: 3",
+		"local_checksum: sha256:",
+		"server_configured: true",
+		"config_source: env",
+		"server_reachable: true",
+		"server_pack_id: 13",
+		"server_checksum: " + installed.Manifest.Checksum,
+		"local_matches_server_latest: true",
+		"draft_cards: 1",
+		"review_items: 1",
+		"approved_cards: 1",
+	} {
+		if !strings.Contains(ev.Message, want) {
+			t.Fatalf("Message = %q, want %q", ev.Message, want)
+		}
+	}
+}
+
+func TestFactoryStatusServerUnreachableDoesNotFailWholeCommand(t *testing.T) {
+	dir := t.TempDir()
+	withWorkingDir(t, dir)
+	withHomeDir(t, filepath.Join(dir, "home"))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, strings.Repeat("server unavailable ", 40), http.StatusServiceUnavailable)
+	}))
+	serverURL := server.URL
+	server.Close()
+	withFactoryServerEnv(t, serverURL, "secret")
+
+	app := &Application{EventCh: make(chan model.Event, 4)}
+	app.cmdFactory("status")
+	ev := <-app.EventCh
+	for _, want := range []string{"factory status:", "server_configured: true", "config_source: env", "server_reachable: false", "server_reason:", "draft_cards: 0"} {
+		if !strings.Contains(ev.Message, want) {
+			t.Fatalf("Message = %q, want %q", ev.Message, want)
+		}
+	}
+	if len(ev.Message) > 1200 {
+		t.Fatalf("status message length = %d, want bounded", len(ev.Message))
 	}
 }
 
@@ -593,6 +715,75 @@ func withFactoryServerEnv(t *testing.T, serverURL, token string) {
 		_ = os.Setenv("MSCLI_FACTORY_SERVER_URL", oldURL)
 		_ = os.Setenv("MSCLI_FACTORY_TOKEN", oldToken)
 	})
+}
+
+func TestFactoryServerConfigResolution(t *testing.T) {
+	t.Run("env config works", func(t *testing.T) {
+		withFactoryServerEnv(t, "http://env", "env-token")
+		credentialsPathOverride = filepath.Join(t.TempDir(), "credentials.json")
+		t.Cleanup(func() { credentialsPathOverride = "" })
+
+		config := resolveFactoryServerConfig()
+		if config.ServerURL != "http://env" || config.Token != "env-token" || config.Source != "env" {
+			t.Fatalf("config = %+v, want env config", config)
+		}
+	})
+
+	t.Run("credentials config works", func(t *testing.T) {
+		withFactoryServerEnv(t, "", "")
+		writeFactoryCredentials(t, `{"server_url":"http://cred","token":"cred-token","user":"alice","role":"admin"}`)
+
+		config := resolveFactoryServerConfig()
+		if config.ServerURL != "http://cred" || config.Token != "cred-token" || config.Source != "credentials.json" {
+			t.Fatalf("config = %+v, want credentials config", config)
+		}
+	})
+
+	t.Run("env overrides credentials", func(t *testing.T) {
+		withFactoryServerEnv(t, "http://env", "env-token")
+		writeFactoryCredentials(t, `{"server_url":"http://cred","token":"cred-token"}`)
+
+		config := resolveFactoryServerConfig()
+		if config.ServerURL != "http://env" || config.Token != "env-token" || config.Source != "env" {
+			t.Fatalf("config = %+v, want env override", config)
+		}
+	})
+
+	t.Run("missing both is not configured", func(t *testing.T) {
+		withFactoryServerEnv(t, "", "")
+		credentialsPathOverride = filepath.Join(t.TempDir(), "missing.json")
+		t.Cleanup(func() { credentialsPathOverride = "" })
+
+		config := resolveFactoryServerConfig()
+		if config.Configured() || config.Source != "" {
+			t.Fatalf("config = %+v, want not configured", config)
+		}
+	})
+}
+
+func writeFactoryCredentials(t *testing.T, content string) {
+	t.Helper()
+	credentialsPathOverride = filepath.Join(t.TempDir(), "credentials.json")
+	t.Cleanup(func() { credentialsPathOverride = "" })
+	if err := os.WriteFile(credentialsPathOverride, []byte(content), 0o600); err != nil {
+		t.Fatalf("write credentials: %v", err)
+	}
+}
+
+func withMissingFactoryCredentials(t *testing.T) {
+	t.Helper()
+	credentialsPathOverride = filepath.Join(t.TempDir(), "missing.json")
+	t.Cleanup(func() { credentialsPathOverride = "" })
+}
+
+func writeAppTestFile(t *testing.T, path string, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
 }
 
 func assertFileExists(t *testing.T, path string) {
