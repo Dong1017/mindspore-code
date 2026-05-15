@@ -281,6 +281,63 @@ func TestSaveSnapshotWithUsageOnlyWritesContextBoundaryAfterCompaction(t *testin
 	}
 }
 
+func TestLoadManualCheckpointTrajectorySkipsCheckpointForReplay(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	workDir := t.TempDir()
+	absWorkDir, err := filepath.Abs(workDir)
+	if err != nil {
+		t.Fatalf("abs work dir: %v", err)
+	}
+	sessionID := "sess_manual_checkpoint"
+	path := trajectoryPath(workDirKey(absWorkDir), sessionID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir trajectory dir: %v", err)
+	}
+
+	now := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	records := []any{
+		Meta{Type: recordTypeMeta, Version: formatVersion, SessionID: sessionID, WorkDir: absWorkDir, WorkDirKey: workDirKey(absWorkDir), SystemPrompt: "system prompt", CreatedAt: now, UpdatedAt: now},
+		CheckpointRecord{Type: recordTypeCheckpoint, Timestamp: now.Add(time.Second), MessageID: "msg-checkpoint", Preview: "checkpoint preview should not replay", ContextEntryCount: 1},
+		MessageRecord{Type: recordTypeUser, Timestamp: now.Add(2 * time.Second), MessageID: "msg-user", Content: "user request"},
+		MessageRecord{Type: recordTypeAssistant, Timestamp: now.Add(3 * time.Second), MessageID: "msg-assistant", Content: "assistant reply"},
+	}
+	var lines []string
+	for _, record := range records {
+		data, err := json.Marshal(record)
+		if err != nil {
+			t.Fatalf("marshal record: %v", err)
+		}
+		lines = append(lines, string(data))
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatalf("write trajectory: %v", err)
+	}
+
+	loaded, err := LoadByID(workDir, sessionID)
+	if err != nil {
+		t.Fatalf("load manual checkpoint trajectory: %v", err)
+	}
+	t.Cleanup(func() { _ = loaded.Close() })
+
+	_, messages := loaded.RestoreContext()
+	if got, want := len(messages), 2; got != want {
+		t.Fatalf("restored message count = %d, want %d", got, want)
+	}
+	if messages[0].Role != "user" || messages[0].Content != "user request" {
+		t.Fatalf("first message = %#v, want user request", messages[0])
+	}
+	if messages[1].Role != "assistant" || messages[1].Content != "assistant reply" {
+		t.Fatalf("second message = %#v, want assistant reply", messages[1])
+	}
+	for _, message := range messages {
+		if strings.Contains(message.Content, "checkpoint") {
+			t.Fatalf("checkpoint content replayed as message: %#v", message)
+		}
+	}
+}
+
 func TestLoadTrajectorySkipsCheckpointRecordsForReplay(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
