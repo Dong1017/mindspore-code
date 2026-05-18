@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,41 +18,117 @@ import (
 	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
 
+func runFactoryCLI(args []string, stdout io.Writer) error {
+	message, err := runFactoryCommand(args, factoryCommandOptions{Surface: factorySurfaceCLI})
+	if err != nil {
+		return err
+	}
+	if message == "" {
+		return nil
+	}
+	_, err = fmt.Fprintln(stdout, message)
+	return err
+}
+
+type factorySurface string
+
+const (
+	factorySurfaceTUI factorySurface = "tui"
+	factorySurfaceCLI factorySurface = "cli"
+)
+
+type factoryCommandOptions struct {
+	Surface factorySurface
+}
+
+func runFactoryCommand(args []string, opts factoryCommandOptions) (string, error) {
+	if len(args) == 0 {
+		return renderFactoryHelpForSurface(opts.Surface), nil
+	}
+	switch args[0] {
+	case "status":
+		return runFactoryStatus(args[1:], opts)
+	case "card":
+		return runFactoryCard(args[1:], opts)
+	case "pack":
+		return runFactoryPack(args[1:], opts)
+	default:
+		if opts.Surface == factorySurfaceCLI {
+			return "", fmt.Errorf("unsupported factory command: %s\n%s", args[0], renderFactoryHelpForSurface(opts.Surface))
+		}
+		return renderFactoryHelpForSurface(opts.Surface), nil
+	}
+}
+
+func runFactoryStatus(args []string, opts factoryCommandOptions) (string, error) {
+	if len(args) != 0 {
+		return factoryUsageError(opts.Surface, "status"), nil
+	}
+	return renderFactoryStatus(), nil
+}
+
+func runFactoryCard(args []string, opts factoryCommandOptions) (string, error) {
+	if len(args) == 0 {
+		return renderFactoryCardHelpForSurface(opts.Surface), nil
+	}
+	switch args[0] {
+	case "submit":
+		return runFactoryCardSubmit(args[1:], opts)
+	case "review":
+		return runFactoryCardReview(args[1:], opts)
+	case "create":
+		if opts.Surface == factorySurfaceCLI {
+			return "", fmt.Errorf("mscli factory card create is not supported in the non-interactive CLI because it depends on the current TUI session's latest /diagnose or /fix summary")
+		}
+		return "", fmt.Errorf("factory card create is handled by the interactive TUI")
+	default:
+		if opts.Surface == factorySurfaceCLI {
+			return "", fmt.Errorf("unsupported factory card command: %s\n%s", args[0], renderFactoryCardHelpForSurface(opts.Surface))
+		}
+		return renderFactoryCardHelpForSurface(opts.Surface), nil
+	}
+}
+
+func runFactoryPack(args []string, opts factoryCommandOptions) (string, error) {
+	if len(args) == 0 {
+		return renderFactoryPackHelpForSurface(opts.Surface), nil
+	}
+	switch args[0] {
+	case "build":
+		return runFactoryPackBuild(args[1:], opts)
+	case "publish":
+		return runFactoryPackPublish(args[1:], opts)
+	case "sync":
+		return runFactoryPackSync(args[1:], opts)
+	case "match-debug":
+		return runFactoryPackMatchDebug(args[1:], opts)
+	default:
+		if opts.Surface == factorySurfaceCLI {
+			return "", fmt.Errorf("unsupported factory pack command: %s\n%s", args[0], renderFactoryPackHelpForSurface(opts.Surface))
+		}
+		return renderFactoryPackHelpForSurface(opts.Surface), nil
+	}
+}
+
 func (a *Application) cmdFactory(input string) {
 	args, err := parseFactoryArgs(input)
 	if err != nil {
 		a.replyFactory(fmt.Sprintf("parse /factory command failed: %v", err))
 		return
 	}
-	if len(args) == 0 {
-		a.replyFactory(renderFactoryHelp())
+	if len(args) >= 2 && args[0] == "card" && args[1] == "create" {
+		a.cmdFactoryCardCreate(args[2:])
 		return
 	}
-	switch args[0] {
-	case "status":
-		a.cmdFactoryStatus(args[1:])
-	case "card":
-		a.cmdFactoryCard(args[1:])
-	case "pack":
-		a.cmdFactoryPack(args[1:])
-	default:
-		a.replyFactory(renderFactoryHelp())
-	}
-}
-
-func renderFactoryStatusHelp() string {
-	return "Usage: /factory status"
-}
-
-func (a *Application) cmdFactoryStatus(args []string) {
-	if len(args) != 0 {
-		a.replyFactory(renderFactoryStatusHelp())
+	message, err := runFactoryCommand(args, factoryCommandOptions{Surface: factorySurfaceTUI})
+	if err != nil {
+		a.replyFactory(err.Error())
 		return
 	}
-	a.replyFactory(a.renderFactoryStatus())
+	a.replyFactory(message)
 }
 
-func (a *Application) renderFactoryStatus() string {
+func renderFactoryStatus() string {
 	var b strings.Builder
 	b.WriteString("factory status:")
 
@@ -166,46 +243,72 @@ func countDirs(root string) int {
 	return count
 }
 
-func (a *Application) cmdFactoryCard(args []string) {
-	if len(args) == 0 {
-		a.replyFactory(renderFactoryCardHelp())
-		return
-	}
-	switch args[0] {
-	case "create":
-		a.cmdFactoryCardCreate(args[1:])
-	case "submit":
-		a.cmdFactoryCardSubmit(args[1:])
-	case "review":
-		a.cmdFactoryCardReview(args[1:])
-	default:
-		a.replyFactory(renderFactoryCardHelp())
-	}
-}
-
-func (a *Application) cmdFactoryPack(args []string) {
-	if len(args) == 0 {
-		a.replyFactory(renderFactoryPackHelp())
-		return
-	}
-	switch args[0] {
-	case "build":
-		a.cmdFactoryPackBuild(args[1:])
-	case "publish":
-		a.cmdFactoryPackPublish(args[1:])
-	case "sync":
-		a.cmdFactoryPackSync(args[1:])
-	case "match-debug":
-		a.cmdFactoryPackMatchDebug(args[1:])
-	default:
-		a.replyFactory(renderFactoryPackHelp())
-	}
-}
-
 func (a *Application) replyFactory(message string) {
 	a.EventCh <- model.Event{Type: model.AgentReply, Message: message, RawANSI: strings.Contains(message, "\n")}
 }
 
+func renderFactoryHelpForSurface(surface factorySurface) string {
+	if surface == factorySurfaceCLI {
+		return "Factory commands:\n\nCard workflow:\n  mscli factory card submit {card-path}\n  mscli factory card review {card-id}\n  mscli factory card review {card-id} --approve --confidence observed --rationale \"{manual rationale}\"\n\nPack workflow:\n  mscli factory pack build {cards-dir} {output-pack}\n  mscli factory pack publish {pack-path}\n  mscli factory pack sync [{source-path}]\n  mscli factory pack match-debug \"{diagnose text}\"\n\nStatus:\n  mscli factory status"
+	}
+	return renderFactoryHelp()
+}
+
+func renderFactoryCardHelpForSurface(surface factorySurface) string {
+	if surface == factorySurfaceCLI {
+		return "Factory card commands:\n  mscli factory card submit {card-path}\n  mscli factory card review {card-id}\n  mscli factory card review {card-id} --approve --confidence observed --rationale \"{manual rationale}\""
+	}
+	return renderFactoryCardHelp()
+}
+
+func renderFactoryPackHelpForSurface(surface factorySurface) string {
+	if surface == factorySurfaceCLI {
+		return "Factory pack commands:\n  mscli factory pack build {cards-dir} {output-pack}\n  mscli factory pack publish {pack-path}\n  mscli factory pack sync [{source-path}]\n  mscli factory pack match-debug \"{diagnose text}\""
+	}
+	return renderFactoryPackHelp()
+}
+
+func factoryUsageError(surface factorySurface, command string) string {
+	switch command {
+	case "status":
+		if surface == factorySurfaceCLI {
+			return "Usage: mscli factory status"
+		}
+		return "Usage: /factory status"
+	case "card submit":
+		if surface == factorySurfaceCLI {
+			return "Usage: mscli factory card submit {card-path}"
+		}
+		return "Usage: /factory card submit {card-path}"
+	case "card review":
+		if surface == factorySurfaceCLI {
+			return "Usage: mscli factory card review {card-id} [--approve --confidence observed --rationale \"{manual rationale}\"]"
+		}
+		return "Usage: /factory card review {card-id} [--approve --confidence observed --rationale \"{manual rationale}\"]"
+	case "pack build":
+		if surface == factorySurfaceCLI {
+			return "Usage: mscli factory pack build {cards-dir} {output-pack}"
+		}
+		return "Usage: /factory pack build {cards-dir} {output-pack}"
+	case "pack publish":
+		if surface == factorySurfaceCLI {
+			return "Usage: mscli factory pack publish {pack-path}"
+		}
+		return "Usage: /factory pack publish {pack-path}"
+	case "pack sync":
+		if surface == factorySurfaceCLI {
+			return "Usage: mscli factory pack sync [{source-path}]"
+		}
+		return "Usage: /factory pack sync [{source-path}]"
+	case "pack match-debug":
+		if surface == factorySurfaceCLI {
+			return "Usage: mscli factory pack match-debug \"{diagnose text}\""
+		}
+		return "Usage: /factory pack match-debug \"{diagnose text}\""
+	default:
+		return renderFactoryHelpForSurface(surface)
+	}
+}
 func renderFactoryHelp() string {
 	return "Factory commands:\n\nCard workflow:\n  /factory card create\n  /factory card submit {card-path}\n  /factory card review {card-id}\n  /factory card review {card-id} --approve --confidence observed --rationale \"{manual rationale}\"\n\nPack workflow:\n  /factory pack build {cards-dir} {output-pack}\n  /factory pack publish {pack-path}\n  /factory pack sync [{source-path}]\n  /factory pack match-debug \"{diagnose text}\"\n\nStatus:\n  /factory status"
 }
@@ -226,40 +329,53 @@ func (a *Application) cmdFactoryCardCreate(args []string) {
 	a.replyFactory("Usage: /factory card create")
 }
 
-func (a *Application) cmdFactoryCardSubmit(args []string) {
+func runFactoryCardSubmit(args []string, opts factoryCommandOptions) (string, error) {
 	if len(args) != 1 {
-		a.replyFactory("Usage: /factory card submit {card-path}")
-		return
+		message := factoryUsageError(opts.Surface, "card submit")
+		if opts.Surface == factorySurfaceCLI {
+			return "", errors.New(message)
+		}
+		return message, nil
 	}
 	bundle, err := card.SubmitDraftCard(args[0], card.SubmitOptions{})
 	if err != nil {
-		a.replyFactory(fmt.Sprintf("submit draft card failed: %v", err))
-		return
+		return "", fmt.Errorf("submit draft card failed: %w", err)
 	}
-	a.replyFactory(fmt.Sprintf("created local review item: %s\nfiles: %s\nnext:\n  /factory card review %s", bundle.CardID, filepath.ToSlash(bundle.Path)+"/", bundle.CardID))
+	next := "/factory card review " + bundle.CardID
+	if opts.Surface == factorySurfaceCLI {
+		next = "mscli factory card review " + bundle.CardID
+	}
+	return fmt.Sprintf("created local review item: %s\nfiles: %s\nnext:\n  %s", bundle.CardID, filepath.ToSlash(bundle.Path)+"/", next), nil
 }
 
-func (a *Application) cmdFactoryCardReview(args []string) {
+func runFactoryCardReview(args []string, opts factoryCommandOptions) (string, error) {
 	if len(args) == 1 {
 		view, err := card.RenderReviewItem(args[0], card.ReviewOptions{})
 		if err != nil {
-			a.replyFactory(fmt.Sprintf("review card failed: %v", err))
-			return
+			return "", fmt.Errorf("review card failed: %w", err)
 		}
-		view += fmt.Sprintf("\nnext:\n  /factory card review %s --approve --confidence observed --rationale \"{manual rationale}\"", args[0])
-		a.replyFactory(view)
-		return
+		next := fmt.Sprintf("/factory card review %s --approve --confidence observed --rationale \"{manual rationale}\"", args[0])
+		if opts.Surface == factorySurfaceCLI {
+			next = fmt.Sprintf("mscli factory card review %s --approve --confidence observed --rationale \"{manual rationale}\"", args[0])
+		}
+		return view + "\nnext:\n  " + next, nil
 	}
 	if len(args) == 6 && args[1] == "--approve" && args[2] == "--confidence" && args[4] == "--rationale" {
 		result, err := card.ApproveReviewItem(args[0], card.ApprovalOptions{Confidence: args[3], Rationale: args[5]})
 		if err != nil {
-			a.replyFactory(fmt.Sprintf("approve review card failed: %v", err))
-			return
+			return "", fmt.Errorf("approve review card failed: %w", err)
 		}
-		a.replyFactory(fmt.Sprintf("approved local factory card: %s\nfile: %s\ngovernance: lifecycle=stable review_status=approved confidence=observed\npack build still required: /factory pack build factory/cards {output-pack}\nnext:\n  /factory pack build factory/cards {output-pack}", result.CardID, result.Path))
-		return
+		next := "/factory pack build factory/cards {output-pack}"
+		if opts.Surface == factorySurfaceCLI {
+			next = "mscli factory pack build factory/cards {output-pack}"
+		}
+		return fmt.Sprintf("approved local factory card: %s\nfile: %s\ngovernance: lifecycle=stable review_status=approved confidence=observed\npack build still required: %s\nnext:\n  %s", result.CardID, result.Path, next, next), nil
 	}
-	a.replyFactory("Usage: /factory card review {card-id} [--approve --confidence observed --rationale \"{manual rationale}\"]")
+	message := factoryUsageError(opts.Surface, "card review")
+	if opts.Surface == factorySurfaceCLI {
+		return "", errors.New(message)
+	}
+	return message, nil
 }
 
 func parseFactoryArgs(input string) ([]string, error) {
@@ -291,43 +407,53 @@ func parseFactoryArgs(input string) ([]string, error) {
 	return args, nil
 }
 
-func (a *Application) cmdFactoryPackBuild(args []string) {
+func runFactoryPackBuild(args []string, opts factoryCommandOptions) (string, error) {
 	if len(args) != 2 {
-		a.replyFactory("Usage: /factory pack build {cards-dir} {output-pack}")
-		return
+		message := factoryUsageError(opts.Surface, "pack build")
+		if opts.Surface == factorySurfaceCLI {
+			return "", errors.New(message)
+		}
+		return message, nil
 	}
 	cardsDir, outputPack := args[0], args[1]
 	result, err := compiler.CompilePack(cardsDir, outputPack)
 	if err != nil {
-		a.replyFactory(fmt.Sprintf("build factory pack failed: %v", err))
-		return
+		return "", fmt.Errorf("build factory pack failed: %w", err)
 	}
-	a.replyFactory(renderFactoryPackBuildResult(cardsDir, result) + "\nnext:\n  /factory pack publish " + result.OutputPath)
+	next := "/factory pack publish " + result.OutputPath
+	if opts.Surface == factorySurfaceCLI {
+		next = "mscli factory pack publish " + result.OutputPath
+	}
+	return renderFactoryPackBuildResult(cardsDir, result) + "\nnext:\n  " + next, nil
 }
 
-func (a *Application) cmdFactoryPackPublish(args []string) {
+func runFactoryPackPublish(args []string, opts factoryCommandOptions) (string, error) {
 	if len(args) != 1 {
-		a.replyFactory("Usage: /factory pack publish {pack-path}")
-		return
+		message := factoryUsageError(opts.Surface, "pack publish")
+		if opts.Surface == factorySurfaceCLI {
+			return "", errors.New(message)
+		}
+		return message, nil
 	}
 	config := resolveFactoryServerConfig()
 	if !config.Configured() {
-		a.replyFactory("Factory pack server is not configured. Pass a local source path, set MSCLI_FACTORY_SERVER_URL/MSCLI_FACTORY_TOKEN, or login/create ~/.mscli/credentials.json.")
-		return
+		return "", errors.New("Factory pack server is not configured. Pass a local source path, set MSCLI_FACTORY_SERVER_URL/MSCLI_FACTORY_TOKEN, or login/create ~/.mscli/credentials.json.")
 	}
 	packPath := args[0]
 	if _, err := pack.Load(packPath); err != nil {
-		a.replyFactory(fmt.Sprintf("publish factory pack failed: validate pack: %v", err))
-		return
+		return "", fmt.Errorf("publish factory pack failed: validate pack: %w", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	metadata, err := (&remote.Client{BaseURL: config.ServerURL, Token: config.Token}).PublishPack(ctx, packPath)
 	if err != nil {
-		a.replyFactory(fmt.Sprintf("publish factory pack failed: %v", err))
-		return
+		return "", fmt.Errorf("publish factory pack failed: %w", err)
 	}
-	a.replyFactory(renderFactoryPackPublishResult(packPath, config.ServerURL, metadata) + "\nnext:\n  /factory pack sync")
+	next := "/factory pack sync"
+	if opts.Surface == factorySurfaceCLI {
+		next = "mscli factory pack sync"
+	}
+	return renderFactoryPackPublishResult(packPath, config.ServerURL, metadata) + "\nnext:\n  " + next, nil
 }
 
 func renderFactoryPackBuildResult(cardsDir string, result *compiler.BuildSummary) string {
@@ -343,41 +469,40 @@ func renderFactoryPackBuildResult(cardsDir string, result *compiler.BuildSummary
 	)
 }
 
-func (a *Application) cmdFactoryPackSync(args []string) {
+func runFactoryPackSync(args []string, opts factoryCommandOptions) (string, error) {
 	if len(args) > 1 {
-		a.replyFactory("Usage: /factory pack sync [{source-path}]")
-		return
+		message := factoryUsageError(opts.Surface, "pack sync")
+		if opts.Surface == factorySurfaceCLI {
+			return "", errors.New(message)
+		}
+		return message, nil
 	}
 	if len(args) == 1 {
-		a.syncFactoryPackFromLocalSource(args[0])
-		return
+		return syncFactoryPackFromLocalSource(args[0], opts)
 	}
 	config := resolveFactoryServerConfig()
 	if config.Configured() {
-		a.syncFactoryPackFromRemote(config)
-		return
+		return syncFactoryPackFromRemote(config, opts)
 	}
-	if source := a.factoryPackSource(); strings.TrimSpace(source) != "" {
-		a.syncFactoryPackFromLocalSource(source)
-		return
-	}
-	a.replyFactory("Factory pack source is not configured. Pass a local source path, set MSCLI_FACTORY_SERVER_URL/MSCLI_FACTORY_TOKEN, or login/create ~/.mscli/credentials.json.")
+	return "", errors.New("Factory pack source is not configured. Pass a local source path, set MSCLI_FACTORY_SERVER_URL/MSCLI_FACTORY_TOKEN, or login/create ~/.mscli/credentials.json.")
 }
 
-func (a *Application) syncFactoryPackFromLocalSource(source string) {
+func syncFactoryPackFromLocalSource(source string, opts factoryCommandOptions) (string, error) {
 	result, err := pack.Sync(pack.SyncConfig{SourcePath: source})
 	if err != nil {
-		a.replyFactory(factoryPackSyncFailureMessage(err))
-		return
+		return "", errors.New(factoryPackSyncFailureMessage(err))
 	}
-	a.replyFactory(renderFactoryPackSyncResult(result) + "\nnext:\n  /factory status")
+	next := "/factory status"
+	if opts.Surface == factorySurfaceCLI {
+		next = "mscli factory status"
+	}
+	return renderFactoryPackSyncResult(result) + "\nnext:\n  " + next, nil
 }
 
-func (a *Application) syncFactoryPackFromRemote(config factoryServerConfig) {
+func syncFactoryPackFromRemote(config factoryServerConfig, opts factoryCommandOptions) (string, error) {
 	tmp, err := os.CreateTemp("", "factory-remote-*.pack")
 	if err != nil {
-		a.replyFactory(fmt.Sprintf("sync factory pack failed: create temp pack: %v", err))
-		return
+		return "", fmt.Errorf("sync factory pack failed: create temp pack: %w", err)
 	}
 	tmpPath := tmp.Name()
 	_ = tmp.Close()
@@ -387,15 +512,17 @@ func (a *Application) syncFactoryPackFromRemote(config factoryServerConfig) {
 	defer cancel()
 	metadata, err := (&remote.Client{BaseURL: config.ServerURL, Token: config.Token}).DownloadLatestPack(ctx, tmpPath)
 	if err != nil {
-		a.replyFactory(fmt.Sprintf("sync factory pack failed: %v", err))
-		return
+		return "", fmt.Errorf("sync factory pack failed: %w", err)
 	}
 	result, err := pack.Sync(pack.SyncConfig{SourcePath: tmpPath})
 	if err != nil {
-		a.replyFactory(factoryPackSyncFailureMessage(err))
-		return
+		return "", errors.New(factoryPackSyncFailureMessage(err))
 	}
-	a.replyFactory(renderFactoryPackRemoteSyncResult(metadata, result) + "\nnext:\n  /factory status")
+	next := "/factory status"
+	if opts.Surface == factorySurfaceCLI {
+		next = "mscli factory status"
+	}
+	return renderFactoryPackRemoteSyncResult(metadata, result) + "\nnext:\n  " + next, nil
 }
 
 func factoryPackSyncFailureMessage(err error) string {
@@ -484,27 +611,28 @@ func (c factoryServerConfig) Configured() bool {
 	return c.ServerURL != "" && c.Token != ""
 }
 
-func (a *Application) cmdFactoryPackMatchDebug(args []string) {
+func runFactoryPackMatchDebug(args []string, opts factoryCommandOptions) (string, error) {
 	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
-		a.replyFactory("Usage: /factory pack match-debug \"{diagnose text}\"")
-		return
+		message := factoryUsageError(opts.Surface, "pack match-debug")
+		if opts.Surface == factorySurfaceCLI {
+			return "", errors.New(message)
+		}
+		return message, nil
 	}
 	loadedPack, err := pack.LoadDefault(pack.LoadConfig{})
 	if err != nil {
-		a.replyFactory(renderFactoryPackMatchDebugResult(factoryPackMatchDebugResult{
+		return renderFactoryPackMatchDebugResult(factoryPackMatchDebugResult{
 			PackLoadStatus: "failed",
 			FallbackReason: fmt.Sprintf("pack load failed: %v", err),
-		}))
-		return
+		}), nil
 	}
 	matches, err := loadedPack.MatchCases(factoryMatchDebugContext(args[0]).ToFingerprint(), pack.MatchOptions{})
 	if err != nil {
-		a.replyFactory(renderFactoryPackMatchDebugResult(factoryPackMatchDebugResult{
+		return renderFactoryPackMatchDebugResult(factoryPackMatchDebugResult{
 			PackLoadStatus:  "loaded",
 			ManifestSummary: factoryPackManifestSummary(loadedPack.Manifest),
 			FallbackReason:  fmt.Sprintf("match failed: %v", err),
-		}))
-		return
+		}), nil
 	}
 	result := factoryPackMatchDebugResult{
 		PackLoadStatus:   "loaded",
@@ -520,7 +648,7 @@ func (a *Application) cmdFactoryPackMatchDebug(args []string) {
 	} else {
 		result.Match = &matches[0]
 	}
-	a.replyFactory(renderFactoryPackMatchDebugResult(result))
+	return renderFactoryPackMatchDebugResult(result), nil
 }
 
 type factoryPackMatchDebugResult struct {
@@ -588,10 +716,6 @@ func factoryMatchDebugKeywords(text string) []string {
 		}
 	}
 	return keywords
-}
-
-func (a *Application) factoryPackSource() string {
-	return ""
 }
 
 func renderFactoryPackSyncResult(result *pack.SyncResult) string {
