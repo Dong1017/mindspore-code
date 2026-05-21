@@ -2,69 +2,35 @@ schema_version: known_issue/v0.5
 kind: known_issue
 id: stable-mindspore-compile
 title: MindSpore compile failure
-tags:
-  - mindspore
-  - compile
+tags: [mindspore, compile]
 case:
   problem_type: failure
   stage: compile
   domain: mindspore
   hardware: ascend
   severity: medium
-  occurrence_count: 1
   environment:
     frameworks:
       - name: mindspore
         version: "2.7.1"
-        branch: ""
-        commit: ""
     runtime:
       cann_version: "8.0"
       python_version: "3.10"
-    model:
-      pattern: ""
-      execution_mode: unknown
-      optimization: ""
-      input_reuse: ""
-      dtype: ""
-      input_shapes:
-        original_report: ""
-        regression_note: ""
-    affected:
-      - torch_npu 2.7.1.post2
-    fixed_by:
-      - source CANN environment
 match:
-  keywords:
-    - mindspore
-    - graph compile
-  regex:
-    - "Graph compile.*failed"
+  keywords: [mindspore, graph compile]
+  regex: ["Graph compile.*failed"]
 guidance:
   symptom: MindSpore graph compile fails
-  trigger_signals:
-    - compile
-    - mindspore
-  representative_errors:
-    - Graph compile failed in MindSpore
+  trigger_signals: [compile, mindspore]
   diagnosis: MindSpore graph compilation fails before execution.
-  diagnosis_details:
-    - The graph compiler rejects the current operator pattern.
-  actions:
-    - Collect graph compiler diagnostics.
+  diagnosis_details: [The graph compiler rejects the current operator pattern.]
+  actions: [Collect graph compiler diagnostics.]
   fix: Adjust the unsupported graph pattern or runtime configuration.
-  why_it_works:
-    - The adjusted graph avoids the unsupported compile path.
   verification: Run graph compile smoke test.
   non_causes: []
 provenance:
-  references:
-    - issue-123
-  notes: Reviewed known import failure
-  expected_behavior:
-    - MindSpore graph compiles successfully.
-  regression_tests:
-    - test:torch_npu_import
+  references: [issue-123]
+  expected_behavior: [MindSpore graph compiles successfully.]
 governance:
   confidence: observed
   lifecycle: stable

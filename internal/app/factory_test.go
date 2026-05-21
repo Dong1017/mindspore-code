@@ -41,11 +41,7 @@ func TestCmdFactoryHelpRoutes(t *testing.T) {
 			if ev.RawANSI != tc.wantRawANSI {
 				t.Fatalf("RawANSI = %t, want %t", ev.RawANSI, tc.wantRawANSI)
 			}
-			for _, want := range append([]string{tc.want}, tc.placeholders...) {
-				if !strings.Contains(ev.Message, want) {
-					t.Fatalf("Message = %q, want %q", ev.Message, want)
-				}
-			}
+			assertContainsAll(t, ev.Message, append([]string{tc.want}, tc.placeholders...)...)
 			if strings.Contains(ev.Message, "<card-path>") || strings.Contains(ev.Message, "<card-id>") || strings.Contains(ev.Message, "<cards-dir>") || strings.Contains(ev.Message, "<output-pack>") || strings.Contains(ev.Message, "<diagnose text>") {
 				t.Fatalf("Message = %q, should not contain angle placeholder", ev.Message)
 			}
@@ -76,11 +72,7 @@ func TestCmdFactoryCardSubmitCreatesBundle(t *testing.T) {
 
 	app.cmdFactory("card submit " + matches[0])
 	ev := <-app.EventCh
-	for _, want := range []string{"created local review item:", "next:", "/factory card review "} {
-		if !strings.Contains(ev.Message, want) {
-			t.Fatalf("Message = %q, want %q", ev.Message, want)
-		}
-	}
+	assertContainsAll(t, ev.Message, "created local review item:", "next:", "/factory card review ")
 	bundleMatches, err := filepath.Glob(filepath.Join(dir, "factory", "submissions", "*", "validation.json"))
 	if err != nil {
 		t.Fatalf("glob validation: %v", err)
@@ -128,11 +120,7 @@ func TestCmdFactoryCardCreatePreferredCommandWritesDraft(t *testing.T) {
 	if !strings.Contains(ev.Message, "created draft card:") {
 		t.Fatalf("Message = %q, want created draft", ev.Message)
 	}
-	for _, want := range []string{"next:", "/factory card submit "} {
-		if !strings.Contains(ev.Message, want) {
-			t.Fatalf("Message = %q, want %q", ev.Message, want)
-		}
-	}
+	assertContainsAll(t, ev.Message, "next:", "/factory card submit ")
 	assertDraftContains(t, dir, "torch_npu")
 }
 
@@ -152,11 +140,7 @@ func TestFactoryCardReviewRendersLocalReviewItem(t *testing.T) {
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("card review " + cardID)
 	ev := <-app.EventCh
-	for _, want := range []string{"factory card review:", "case.problem_type:", "validation:", "Manual review required", "next:", "/factory card review " + cardID + " --approve --confidence observed --rationale \"{manual rationale}\""} {
-		if !strings.Contains(ev.Message, want) {
-			t.Fatalf("Message = %q, want %q", ev.Message, want)
-		}
-	}
+	assertContainsAll(t, ev.Message, "factory card review:", "case.problem_type:", "validation:", "Manual review required", "next:", "/factory card review "+cardID+" --approve --confidence observed --rationale \"{manual rationale}\"")
 	if _, err := os.Stat(filepath.Join(dir, "factory", "cards", cardID+".yaml")); !os.IsNotExist(err) {
 		t.Fatalf("approved card stat err = %v, want not exist", err)
 	}
@@ -169,11 +153,7 @@ func TestFactoryCardReviewApproveWritesApprovedCard(t *testing.T) {
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("card review " + cardID + " --approve --confidence observed --rationale \"manual review passed\"")
 	ev := <-app.EventCh
-	for _, want := range []string{"approved local factory card: " + cardID, "governance: lifecycle=stable review_status=approved confidence=observed", "pack build still required: /factory pack build factory/cards {output-pack}", "next:", "/factory pack build factory/cards {output-pack}"} {
-		if !strings.Contains(ev.Message, want) {
-			t.Fatalf("Message = %q, want %q", ev.Message, want)
-		}
-	}
+	assertContainsAll(t, ev.Message, "approved local factory card: "+cardID, "governance: lifecycle=stable review_status=approved confidence=observed", "pack build still required: /factory pack build factory/cards {output-pack}", "next:", "/factory pack build factory/cards {output-pack}")
 	approved, err := card.LoadFile(filepath.Join(dir, "factory", "cards", cardID+".yaml"))
 	if err != nil {
 		t.Fatalf("LoadFile(approved) error = %v", err)
@@ -206,9 +186,9 @@ func TestFactoryPackBuildRoutes(t *testing.T) {
 	if len(strings.Split(ev.Message, "\n")) < 2 {
 		t.Fatalf("Message = %q, want multiline output", ev.Message)
 	}
-	for _, want := range []string{
-		"cards_dir: " + sourceDir,
-		"output: " + output,
+	assertContainsAll(t, ev.Message,
+		"cards_dir: "+sourceDir,
+		"output: "+output,
 		"pack_name: factory-core",
 		"schema_version: 1",
 		"card_schema_version: known_issue/v0.5",
@@ -216,12 +196,8 @@ func TestFactoryPackBuildRoutes(t *testing.T) {
 		"compiled_case_count: 3",
 		"checksum: sha256:",
 		"next:",
-		"/factory pack publish " + output,
-	} {
-		if !strings.Contains(ev.Message, want) {
-			t.Fatalf("Message = %q, want substring %q", ev.Message, want)
-		}
-	}
+		"/factory pack publish "+output,
+	)
 	if _, err := pack.Load(output); err != nil {
 		t.Fatalf("Load(built) error = %v", err)
 	}
@@ -257,11 +233,7 @@ func TestFactoryPackPublishPublishesValidPack(t *testing.T) {
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("pack publish " + source)
 	ev := <-app.EventCh
-	for _, want := range []string{"published factory pack:", "source: " + source, "server: " + server.URL, "pack_id: 9", "pack_name: factory-core", "checksum: sha256:abc", "next:", "/factory pack sync"} {
-		if !strings.Contains(ev.Message, want) {
-			t.Fatalf("Message = %q, want %q", ev.Message, want)
-		}
-	}
+	assertContainsAll(t, ev.Message, "published factory pack:", "source: "+source, "server: "+server.URL, "pack_id: 9", "pack_name: factory-core", "checksum: sha256:abc", "next:", "/factory pack sync")
 	if !sawAuth {
 		t.Fatal("publish did not send bearer token")
 	}
@@ -316,11 +288,7 @@ func TestFactoryPackSyncRemoteDownloadsAndInstallsLatest(t *testing.T) {
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("pack sync")
 	ev := <-app.EventCh
-	for _, want := range []string{"synced factory pack from server:", "remote_id: 11", "destination:", "card_schema_version: known_issue/v0.5", "next:", "/factory status"} {
-		if !strings.Contains(ev.Message, want) {
-			t.Fatalf("Message = %q, want %q", ev.Message, want)
-		}
-	}
+	assertContainsAll(t, ev.Message, "synced factory pack from server:", "remote_id: 11", "destination:", "card_schema_version: known_issue/v0.5", "next:", "/factory status")
 	assertFileExists(t, filepath.Join(dir, "home", ".mscli", "factory", "factory-core.pack"))
 }
 
@@ -348,11 +316,7 @@ func TestFactoryPackSyncExplicitSourcePathWorks(t *testing.T) {
 	if !strings.Contains(ev.Message, "card_schema_version: known_issue/v0.5") {
 		t.Fatalf("Message = %q, want card schema version", ev.Message)
 	}
-	for _, want := range []string{"next:", "/factory status"} {
-		if !strings.Contains(ev.Message, want) {
-			t.Fatalf("Message = %q, want %q", ev.Message, want)
-		}
-	}
+	assertContainsAll(t, ev.Message, "next:", "/factory status")
 	assertFileExists(t, filepath.Join(dir, "home", ".mscli", "factory", "factory-core.pack"))
 }
 
@@ -377,20 +341,16 @@ func TestFactoryStatusMissingLocalPackAndNoServer(t *testing.T) {
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("status")
 	ev := <-app.EventCh
-	for _, want := range []string{
+	assertContainsAll(t, ev.Message,
 		"factory status:",
 		"local_pack_installed: false",
-		"local_pack_path:",
+		"local_pack_reason: not installed",
 		"server_configured: false",
 		"config_source: none",
 		"draft_cards: 0",
 		"review_items: 0",
 		"approved_cards: 0",
-	} {
-		if !strings.Contains(ev.Message, want) {
-			t.Fatalf("Message = %q, want %q", ev.Message, want)
-		}
-	}
+	)
 	if strings.Contains(ev.Message, "server_reachable:") {
 		t.Fatalf("Message = %q, should not probe unconfigured server", ev.Message)
 	}
@@ -428,7 +388,7 @@ func TestFactoryStatusShowsInstalledPackCountsAndServerLatest(t *testing.T) {
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("status")
 	ev := <-app.EventCh
-	for _, want := range []string{
+	assertContainsAll(t, ev.Message,
 		"local_pack_installed: true",
 		"local_pack_name: factory-core",
 		"local_compiled_case_count: 3",
@@ -437,16 +397,12 @@ func TestFactoryStatusShowsInstalledPackCountsAndServerLatest(t *testing.T) {
 		"config_source: env",
 		"server_reachable: true",
 		"server_pack_id: 13",
-		"server_checksum: " + installed.Manifest.Checksum,
+		"server_checksum: "+installed.Manifest.Checksum,
 		"local_matches_server_latest: true",
 		"draft_cards: 1",
 		"review_items: 1",
 		"approved_cards: 1",
-	} {
-		if !strings.Contains(ev.Message, want) {
-			t.Fatalf("Message = %q, want %q", ev.Message, want)
-		}
-	}
+	)
 }
 
 func TestFactoryStatusServerUnreachableDoesNotFailWholeCommand(t *testing.T) {
@@ -463,11 +419,7 @@ func TestFactoryStatusServerUnreachableDoesNotFailWholeCommand(t *testing.T) {
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("status")
 	ev := <-app.EventCh
-	for _, want := range []string{"factory status:", "server_configured: true", "config_source: env", "server_reachable: false", "server_reason:", "draft_cards: 0"} {
-		if !strings.Contains(ev.Message, want) {
-			t.Fatalf("Message = %q, want %q", ev.Message, want)
-		}
-	}
+	assertContainsAll(t, ev.Message, "factory status:", "server_configured: true", "config_source: env", "server_reachable: false", "server_reason:", "draft_cards: 0")
 	if len(ev.Message) > 1200 {
 		t.Fatalf("status message length = %d, want bounded", len(ev.Message))
 	}
@@ -486,7 +438,7 @@ func TestFactoryPackMatchDebugShowsMatch(t *testing.T) {
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("pack match-debug \"ImportError: torch_npu failed because CANN runtime dependency is missing\"")
 	ev := <-app.EventCh
-	for _, want := range []string{
+	assertContainsAll(t, ev.Message,
 		"factory pack match-debug:",
 		"pack_load_status: loaded",
 		"manifest_summary: factory-core schema=1 card_schema=known_issue/v0.5 cases=3",
@@ -495,11 +447,7 @@ func TestFactoryPackMatchDebugShowsMatch(t *testing.T) {
 		"matched_case_id: stable-ascend-import",
 		"score:",
 		"why_matched:",
-	} {
-		if !strings.Contains(ev.Message, want) {
-			t.Fatalf("Message = %q, want %q", ev.Message, want)
-		}
-	}
+	)
 	for _, forbidden := range []string{"schema_version:", "CREATE TABLE", "INSERT INTO", "ImportError: torch_npu failed because CANN runtime dependency is missing"} {
 		if strings.Contains(ev.Message, forbidden) {
 			t.Fatalf("Message = %q, should not contain %q", ev.Message, forbidden)
@@ -520,11 +468,7 @@ func TestFactoryPackMatchDebugNoMatch(t *testing.T) {
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("pack match-debug \"validation labels are imbalanced and accuracy drifts slowly\"")
 	ev := <-app.EventCh
-	for _, want := range []string{"pack_load_status: loaded", "candidate_count: 0", "emitted_hint_count: 0", "fallback_reason: no match"} {
-		if !strings.Contains(ev.Message, want) {
-			t.Fatalf("Message = %q, want %q", ev.Message, want)
-		}
-	}
+	assertContainsAll(t, ev.Message, "pack_load_status: loaded", "candidate_count: 0", "emitted_hint_count: 0", "fallback_reason: no match")
 }
 
 func TestFactoryPackMatchDebugMissingPack(t *testing.T) {
@@ -533,11 +477,7 @@ func TestFactoryPackMatchDebugMissingPack(t *testing.T) {
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("pack match-debug \"ImportError torch_npu\"")
 	ev := <-app.EventCh
-	for _, want := range []string{"pack_load_status: failed", "candidate_count: 0", "emitted_hint_count: 0", "fallback_reason: pack load failed"} {
-		if !strings.Contains(ev.Message, want) {
-			t.Fatalf("Message = %q, want %q", ev.Message, want)
-		}
-	}
+	assertContainsAll(t, ev.Message, "pack_load_status: failed", "candidate_count: 0", "emitted_hint_count: 0", "fallback_reason: pack load failed")
 }
 func TestFactoryPackMatchDebugBoundsLongInput(t *testing.T) {
 	sourceDir, err := filepath.Abs(filepath.FromSlash("../factory/compiler/testdata/cards"))
@@ -571,6 +511,15 @@ func TestStoreFixRunSummaryDoesNotWriteFiles(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "factory")); !os.IsNotExist(err) {
 		t.Fatalf("factory dir stat err = %v, want not exist", err)
+	}
+}
+
+func assertContainsAll(t *testing.T, message string, wants ...string) {
+	t.Helper()
+	for _, want := range wants {
+		if !strings.Contains(message, want) {
+			t.Fatalf("Message = %q, want %q", message, want)
+		}
 	}
 }
 
@@ -672,12 +621,7 @@ func createPackReadyReviewBundle(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("LoadFile(review card) error = %v", err)
 	}
-	loaded.Match.Keywords = []string{"torch_npu"}
-	loaded.Guidance.Symptom = "ImportError mentions torch_npu on Ascend"
-	loaded.Guidance.Diagnosis = "CANN runtime is not visible"
-	loaded.Guidance.Verification = "Run python import smoke test"
-	loaded.Provenance.References = []string{"local review evidence"}
-	loaded.Provenance.ExpectedBehavior = []string{"torch_npu imports"}
+	makeCardPackReady(t, loaded)
 	data, err := yaml.Marshal(loaded)
 	if err != nil {
 		t.Fatalf("marshal review card: %v", err)
@@ -686,6 +630,16 @@ func createPackReadyReviewBundle(t *testing.T) string {
 		t.Fatalf("write pack ready review card: %v", err)
 	}
 	return cardID
+}
+
+func makeCardPackReady(t *testing.T, loaded *card.KnownIssueCard) {
+	t.Helper()
+	loaded.Match.Keywords = []string{"torch_npu"}
+	loaded.Guidance.Symptom = "ImportError mentions torch_npu on Ascend"
+	loaded.Guidance.Diagnosis = "CANN runtime is not visible"
+	loaded.Guidance.Verification = "Run python import smoke test"
+	loaded.Provenance.References = []string{"local review evidence"}
+	loaded.Provenance.ExpectedBehavior = []string{"torch_npu imports"}
 }
 
 func compileAppTestPack(t *testing.T) string {

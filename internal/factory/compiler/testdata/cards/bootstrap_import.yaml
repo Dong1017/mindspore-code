@@ -2,68 +2,26 @@ schema_version: known_issue/v0.5
 kind: known_issue
 id: bootstrap-import
 title: Torch NPU import failure
-tags:
-  - torch_npu
-  - import
+tags: [torch_npu, import]
 case:
   problem_type: failure
   stage: import
   domain: torch_npu
   hardware: ascend
-  severity: medium
-  occurrence_count: 1
-  environment:
-    frameworks:
-      - name: torch_npu
-        version: "2.7.1"
-        branch: ""
-        commit: ""
-    runtime:
-      cann_version: "8.0"
-      python_version: "3.10"
-    model:
-      pattern: ""
-      execution_mode: unknown
-      optimization: ""
-      input_reuse: ""
-      dtype: ""
-      input_shapes:
-        original_report: ""
-        regression_note: ""
-    affected:
-      - torch_npu 2.7.1.post2
-    fixed_by:
-      - source CANN environment
 match:
-  keywords:
-    - torch_npu
-  regex:
-    - "ImportError:.*torch_npu"
+  keywords: [torch_npu]
+  regex: ["ImportError:.*torch_npu"]
 guidance:
   symptom: torch_npu import fails with missing CANN runtime
-  trigger_signals:
-    - ImportError
-    - torch_npu
-  representative_errors:
-    - ImportError while importing torch_npu
+  trigger_signals: [ImportError, torch_npu]
   diagnosis: CANN runtime is not visible to torch_npu during import.
-  diagnosis_details:
-    - The import path reaches torch_npu but cannot resolve the runtime dependency.
-  actions:
-    - Source the CANN set_env script.
+  actions: [Source the CANN set_env script.]
   fix: Activate the CANN environment before importing torch_npu.
-  why_it_works:
-    - The CANN environment exposes runtime libraries required by torch_npu.
   verification: Run a minimal torch_npu import command.
   non_causes: []
 provenance:
-  references:
-    - issue-123
-  notes: Reviewed known import failure
-  expected_behavior:
-    - torch_npu imports without runtime dependency errors.
-  regression_tests:
-    - test:torch_npu_import
+  references: [issue-123]
+  expected_behavior: [torch_npu imports without runtime dependency errors.]
 governance:
   confidence: observed
   lifecycle: stable
