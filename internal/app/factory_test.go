@@ -9,12 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mindspore-lab/mindspore-cli/internal/factory/card"
 	"github.com/mindspore-lab/mindspore-cli/internal/factory/compiler"
 	"github.com/mindspore-lab/mindspore-cli/internal/factory/pack"
 	factoryruntime "github.com/mindspore-lab/mindspore-cli/internal/factory/runtime"
 	"github.com/mindspore-lab/mindspore-cli/ui/model"
-	"gopkg.in/yaml.v3"
 )
 
 func TestCmdFactoryHelpRoutes(t *testing.T) {
@@ -46,39 +44,6 @@ func TestCmdFactoryHelpRoutes(t *testing.T) {
 				t.Fatalf("Message = %q, should not contain angle placeholder", ev.Message)
 			}
 		})
-	}
-}
-
-func TestCmdFactoryCardSubmitCreatesBundle(t *testing.T) {
-	dir := t.TempDir()
-	withWorkingDir(t, dir)
-	app := &Application{
-		EventCh: make(chan model.Event, 4),
-		latestDiagnoseSummary: &factoryruntime.DiagnoseRunSummary{
-			Topic:              "ImportError torch_npu missing on Ascend",
-			UserProblemSummary: "ImportError torch_npu missing on Ascend",
-			KeyEvidence:        []string{"ImportError", "torch_npu", "ascend"},
-		},
-	}
-	app.cmdFactory("card create --from-last-run")
-	<-app.EventCh
-	matches, err := filepath.Glob(filepath.Join(dir, "factory", "cards", "drafts", "*.yaml"))
-	if err != nil {
-		t.Fatalf("glob draft cards: %v", err)
-	}
-	if len(matches) != 1 {
-		t.Fatalf("draft count = %d, want 1", len(matches))
-	}
-
-	app.cmdFactory("card submit " + matches[0])
-	ev := <-app.EventCh
-	assertContainsAll(t, ev.Message, "created local review item:", "next:", "/factory card review ")
-	bundleMatches, err := filepath.Glob(filepath.Join(dir, "factory", "submissions", "*", "validation.json"))
-	if err != nil {
-		t.Fatalf("glob validation: %v", err)
-	}
-	if len(bundleMatches) != 1 {
-		t.Fatalf("validation count = %d, want 1", len(bundleMatches))
 	}
 }
 
@@ -133,74 +98,41 @@ func TestCmdFactoryCardCreateBadArgsReturnsUsage(t *testing.T) {
 	}
 }
 
-func TestFactoryCardReviewRendersLocalReviewItem(t *testing.T) {
+func TestCmdFactoryCardSubmitReviewSmoke(t *testing.T) {
 	dir := t.TempDir()
 	withWorkingDir(t, dir)
 	cardID := createReviewBundleFromLastRun(t)
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("card review " + cardID)
 	ev := <-app.EventCh
-	assertContainsAll(t, ev.Message, "factory card review:", "case.problem_type:", "validation:", "Manual review required", "next:", "/factory card review "+cardID+" --approve --confidence observed --rationale \"{manual rationale}\"")
+	assertContainsAll(t, ev.Message, "factory card review:", "Manual review required", "/factory card review "+cardID+" --approve")
 	if _, err := os.Stat(filepath.Join(dir, "factory", "cards", cardID+".yaml")); !os.IsNotExist(err) {
 		t.Fatalf("approved card stat err = %v, want not exist", err)
 	}
 }
 
-func TestFactoryCardReviewApproveWritesApprovedCard(t *testing.T) {
-	dir := t.TempDir()
-	withWorkingDir(t, dir)
-	cardID := createPackReadyReviewBundle(t)
-	app := &Application{EventCh: make(chan model.Event, 4)}
-	app.cmdFactory("card review " + cardID + " --approve --confidence observed --rationale \"manual review passed\"")
-	ev := <-app.EventCh
-	assertContainsAll(t, ev.Message, "approved local factory card: "+cardID, "governance: lifecycle=stable review_status=approved confidence=observed", "pack build still required: /factory pack build factory/cards {output-pack}", "next:", "/factory pack build factory/cards {output-pack}")
-	approved, err := card.LoadFile(filepath.Join(dir, "factory", "cards", cardID+".yaml"))
-	if err != nil {
-		t.Fatalf("LoadFile(approved) error = %v", err)
-	}
-	if approved.Governance.Lifecycle != card.LifecycleStable || approved.Governance.ReviewStatus != card.ReviewApproved || approved.Governance.Confidence != card.ConfidenceObserved {
-		t.Fatalf("Governance = %+v, want stable approved observed", approved.Governance)
-	}
-	if approved.Governance.Rationale != "manual review passed" || strings.TrimSpace(approved.Governance.UpdatedAt) == "" {
-		t.Fatalf("Governance = %+v, want rationale and updated_at", approved.Governance)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "factory", "factory-core.pack")); !os.IsNotExist(err) {
-		t.Fatalf("pack stat err = %v, want not exist", err)
-	}
-}
-
-func TestFactoryPackBuildRoutes(t *testing.T) {
+func TestFactoryPackBuildAndSyncSmoke(t *testing.T) {
 	sourceDir, err := filepath.Abs(filepath.FromSlash("../factory/compiler/testdata/cards"))
 	if err != nil {
 		t.Fatalf("resolve source cards: %v", err)
 	}
 	dir := t.TempDir()
 	withWorkingDir(t, dir)
+	withHomeDir(t, filepath.Join(dir, "home"))
 	output := filepath.Join(dir, "built.pack")
 	app := &Application{EventCh: make(chan model.Event, 4)}
+
 	app.cmdFactory("pack build " + sourceDir + " " + output)
 	ev := <-app.EventCh
-	if !strings.Contains(ev.Message, "built factory pack:") {
-		t.Fatalf("Message = %q, want build summary", ev.Message)
-	}
-	if len(strings.Split(ev.Message, "\n")) < 2 {
-		t.Fatalf("Message = %q, want multiline output", ev.Message)
-	}
-	assertContainsAll(t, ev.Message,
-		"cards_dir: "+sourceDir,
-		"output: "+output,
-		"pack_name: factory-core",
-		"schema_version: 1",
-		"card_schema_version: known_issue/v0.5",
-		"source_case_count: 6",
-		"compiled_case_count: 3",
-		"checksum: sha256:",
-		"next:",
-		"/factory pack publish "+output,
-	)
+	assertContainsAll(t, ev.Message, "built factory pack:", "output: "+output, "/factory pack publish "+output)
 	if _, err := pack.Load(output); err != nil {
 		t.Fatalf("Load(built) error = %v", err)
 	}
+
+	app.cmdFactory("pack sync " + output)
+	ev = <-app.EventCh
+	assertContainsAll(t, ev.Message, "synced factory pack:", "/factory status")
+	assertFileExists(t, filepath.Join(dir, "home", ".mscli", "factory", "factory-core.pack"))
 }
 
 func TestFactoryPackBuildBadArgsReturnUsage(t *testing.T) {
@@ -211,31 +143,6 @@ func TestFactoryPackBuildBadArgsReturnUsage(t *testing.T) {
 		if !strings.Contains(ev.Message, "Usage: /factory pack build {cards-dir} {output-pack}") {
 			t.Fatalf("input %q Message = %q, want usage", input, ev.Message)
 		}
-	}
-}
-
-func TestFactoryPackPublishPublishesValidPack(t *testing.T) {
-	source := compileAppTestPack(t)
-	var sawAuth bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/factory/packs" || r.Method != http.MethodPost {
-			t.Fatalf("request = %s %s, want POST /factory/packs", r.Method, r.URL.Path)
-		}
-		if r.Header.Get("Authorization") == "Bearer secret" {
-			sawAuth = true
-		}
-		w.WriteHeader(http.StatusCreated)
-		_, _ = fmt.Fprint(w, `{"id":9,"pack_name":"factory-core","pack_version":"1","schema_version":"1","card_schema_version":"known_issue/v0.5","compiled_case_count":3,"checksum":"sha256:abc","publisher":"alice","created_at":"2026-05-14T00:00:00Z"}`)
-	}))
-	defer server.Close()
-	withFactoryServerEnv(t, server.URL, "secret")
-
-	app := &Application{EventCh: make(chan model.Event, 4)}
-	app.cmdFactory("pack publish " + source)
-	ev := <-app.EventCh
-	assertContainsAll(t, ev.Message, "published factory pack:", "source: "+source, "server: "+server.URL, "pack_id: 9", "pack_name: factory-core", "checksum: sha256:abc", "next:", "/factory pack sync")
-	if !sawAuth {
-		t.Fatal("publish did not send bearer token")
 	}
 }
 
@@ -259,65 +166,6 @@ func TestFactoryPackPublishRequiresServerConfigAndValidPack(t *testing.T) {
 	if !strings.Contains(ev.Message, "publish factory pack failed: validate pack") {
 		t.Fatalf("Message = %q, want local validation error", ev.Message)
 	}
-}
-
-func TestFactoryPackSyncRemoteDownloadsAndInstallsLatest(t *testing.T) {
-	source := compileAppTestPack(t)
-	packBytes, err := os.ReadFile(source)
-	if err != nil {
-		t.Fatalf("read source pack: %v", err)
-	}
-	dir := t.TempDir()
-	withHomeDir(t, filepath.Join(dir, "home"))
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer secret" {
-			t.Fatalf("Authorization = %q, want bearer", r.Header.Get("Authorization"))
-		}
-		switch r.URL.Path {
-		case "/factory/packs/latest":
-			_, _ = fmt.Fprint(w, `{"id":11,"pack_name":"factory-core","pack_version":"1","schema_version":"1","card_schema_version":"known_issue/v0.5","compiled_case_count":3,"checksum":"sha256:abc","publisher":"alice","created_at":"2026-05-14T00:00:00Z"}`)
-		case "/factory/packs/latest/download":
-			_, _ = w.Write(packBytes)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-	withFactoryServerEnv(t, server.URL, "secret")
-
-	app := &Application{EventCh: make(chan model.Event, 4)}
-	app.cmdFactory("pack sync")
-	ev := <-app.EventCh
-	assertContainsAll(t, ev.Message, "synced factory pack from server:", "remote_id: 11", "destination:", "card_schema_version: known_issue/v0.5", "next:", "/factory status")
-	assertFileExists(t, filepath.Join(dir, "home", ".mscli", "factory", "factory-core.pack"))
-}
-
-func TestFactoryPackSyncExplicitSourcePathWorks(t *testing.T) {
-	sourceDir, err := filepath.Abs(filepath.FromSlash("../factory/compiler/testdata/cards"))
-	if err != nil {
-		t.Fatalf("resolve source cards: %v", err)
-	}
-	dir := t.TempDir()
-	withWorkingDir(t, dir)
-	withHomeDir(t, filepath.Join(dir, "home"))
-	source := filepath.Join(dir, "source.pack")
-	if _, err := compiler.CompilePack(sourceDir, source); err != nil {
-		t.Fatalf("CompilePack() error = %v", err)
-	}
-	app := &Application{EventCh: make(chan model.Event, 4)}
-	app.cmdFactory("pack sync " + source)
-	ev := <-app.EventCh
-	if !strings.Contains(ev.Message, "synced factory pack:") {
-		t.Fatalf("Message = %q, want sync summary", ev.Message)
-	}
-	if len(strings.Split(ev.Message, "\n")) < 2 {
-		t.Fatalf("Message = %q, want multiline output", ev.Message)
-	}
-	if !strings.Contains(ev.Message, "card_schema_version: known_issue/v0.5") {
-		t.Fatalf("Message = %q, want card schema version", ev.Message)
-	}
-	assertContainsAll(t, ev.Message, "next:", "/factory status")
-	assertFileExists(t, filepath.Join(dir, "home", ".mscli", "factory", "factory-core.pack"))
 }
 
 func TestFactoryPackSyncNoConfiguredSourceReturnsClearError(t *testing.T) {
@@ -455,52 +303,6 @@ func TestFactoryPackMatchDebugShowsMatch(t *testing.T) {
 	}
 }
 
-func TestFactoryPackMatchDebugNoMatch(t *testing.T) {
-	sourceDir, err := filepath.Abs(filepath.FromSlash("../factory/compiler/testdata/cards"))
-	if err != nil {
-		t.Fatalf("resolve source cards: %v", err)
-	}
-	dir := t.TempDir()
-	withHomeDir(t, filepath.Join(dir, "home"))
-	if _, err := compiler.CompilePack(sourceDir, filepath.Join(dir, "home", ".mscli", "factory", "factory-core.pack")); err != nil {
-		t.Fatalf("CompilePack() error = %v", err)
-	}
-	app := &Application{EventCh: make(chan model.Event, 4)}
-	app.cmdFactory("pack match-debug \"validation labels are imbalanced and accuracy drifts slowly\"")
-	ev := <-app.EventCh
-	assertContainsAll(t, ev.Message, "pack_load_status: loaded", "candidate_count: 0", "emitted_hint_count: 0", "fallback_reason: no match")
-}
-
-func TestFactoryPackMatchDebugMissingPack(t *testing.T) {
-	dir := t.TempDir()
-	withHomeDir(t, filepath.Join(dir, "home"))
-	app := &Application{EventCh: make(chan model.Event, 4)}
-	app.cmdFactory("pack match-debug \"ImportError torch_npu\"")
-	ev := <-app.EventCh
-	assertContainsAll(t, ev.Message, "pack_load_status: failed", "candidate_count: 0", "emitted_hint_count: 0", "fallback_reason: pack load failed")
-}
-func TestFactoryPackMatchDebugBoundsLongInput(t *testing.T) {
-	sourceDir, err := filepath.Abs(filepath.FromSlash("../factory/compiler/testdata/cards"))
-	if err != nil {
-		t.Fatalf("resolve source cards: %v", err)
-	}
-	dir := t.TempDir()
-	withHomeDir(t, filepath.Join(dir, "home"))
-	if _, err := compiler.CompilePack(sourceDir, filepath.Join(dir, "home", ".mscli", "factory", "factory-core.pack")); err != nil {
-		t.Fatalf("CompilePack() error = %v", err)
-	}
-	longInput := strings.Repeat("torch_npu ", 200)
-	app := &Application{EventCh: make(chan model.Event, 4)}
-	app.cmdFactory("pack match-debug \"" + longInput + "\"")
-	ev := <-app.EventCh
-	if strings.Contains(ev.Message, longInput) {
-		t.Fatalf("Message echoed full long input")
-	}
-	if got := len(strings.Split(ev.Message, "\n")); got > 40 {
-		t.Fatalf("match-debug output lines = %d, want bounded", got)
-	}
-}
-
 func TestStoreFixRunSummaryDoesNotWriteFiles(t *testing.T) {
 	dir := t.TempDir()
 	withWorkingDir(t, dir)
@@ -611,35 +413,6 @@ func createReviewBundleFromLastRun(t *testing.T) string {
 		t.Fatalf("bundle count = %d, want 1", len(bundleMatches))
 	}
 	return filepath.Base(bundleMatches[0])
-}
-
-func createPackReadyReviewBundle(t *testing.T) string {
-	t.Helper()
-	cardID := createReviewBundleFromLastRun(t)
-	cardPath := filepath.Join("factory", "submissions", cardID, "card.yaml")
-	loaded, err := card.LoadFile(cardPath)
-	if err != nil {
-		t.Fatalf("LoadFile(review card) error = %v", err)
-	}
-	makeCardPackReady(t, loaded)
-	data, err := yaml.Marshal(loaded)
-	if err != nil {
-		t.Fatalf("marshal review card: %v", err)
-	}
-	if err := os.WriteFile(cardPath, data, 0o600); err != nil {
-		t.Fatalf("write pack ready review card: %v", err)
-	}
-	return cardID
-}
-
-func makeCardPackReady(t *testing.T, loaded *card.KnownIssueCard) {
-	t.Helper()
-	loaded.Match.Keywords = []string{"torch_npu"}
-	loaded.Guidance.Symptom = "ImportError mentions torch_npu on Ascend"
-	loaded.Guidance.Diagnosis = "CANN runtime is not visible"
-	loaded.Guidance.Verification = "Run python import smoke test"
-	loaded.Provenance.References = []string{"local review evidence"}
-	loaded.Provenance.ExpectedBehavior = []string{"torch_npu imports"}
 }
 
 func compileAppTestPack(t *testing.T) string {

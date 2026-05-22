@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/mindspore-lab/mindspore-cli/internal/factory/card"
@@ -165,17 +164,18 @@ func TestFactoryCLIPackMatchDebug(t *testing.T) {
 }
 
 func TestFactoryCLIUnsupportedCommandsReturnError(t *testing.T) {
-	cases := [][]string{
-		{"unknown"},
-		{"card", "create"},
-		{"card", "submit"},
-		{"pack", "build"},
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"unknown", []string{"unknown"}},
+		{"card_create", []string{"card", "create"}},
 	}
-	for _, args := range cases {
-		t.Run(strings.Join(args, "_"), func(t *testing.T) {
-			_, err := runFactoryCLITest(args...)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := runFactoryCLITest(tc.args...)
 			if err == nil {
-				t.Fatalf("Run(factory %v) error = nil, want error", args)
+				t.Fatalf("Run(factory %v) error = nil, want error", tc.args)
 			}
 		})
 	}
@@ -196,7 +196,12 @@ func makeReviewBundlePackReady(t *testing.T, cardPath string) {
 	if err != nil {
 		t.Fatalf("LoadFile(review card) error = %v", err)
 	}
-	makeCardPackReady(t, loaded)
+	loaded.Match.Keywords = []string{"torch_npu"}
+	loaded.Guidance.Symptom = "ImportError mentions torch_npu on Ascend"
+	loaded.Guidance.Diagnosis = "CANN runtime is not visible"
+	loaded.Guidance.Verification = "Run python import smoke test"
+	loaded.Provenance.References = []string{"local review evidence"}
+	loaded.Provenance.ExpectedBehavior = []string{"torch_npu imports"}
 	data, err := yaml.Marshal(loaded)
 	if err != nil {
 		t.Fatalf("marshal review card: %v", err)

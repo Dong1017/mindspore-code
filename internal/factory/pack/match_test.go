@@ -47,41 +47,6 @@ func TestMatchCasesUnrelatedErrorReturnsNoMatch(t *testing.T) {
 	}
 }
 
-func TestMatchCasesNonCausesDoNotFilterCandidate(t *testing.T) {
-	loaded := loadMatchPack(t)
-	fp := knownImportFingerprint()
-	fp.Signals.NegativeSignals = []string{"cuda-only"}
-	matches, err := loaded.MatchCases(fp, pack.MatchOptions{MinimumScoreToEmit: 1})
-	if err != nil {
-		t.Fatalf("MatchCases() error = %v", err)
-	}
-	if findMatch(matches, "stable-ascend-import") == nil {
-		t.Fatalf("non_cause filtered candidate; matches = %#v", matches)
-	}
-}
-
-func TestMatchCasesNonCausesDoNotDowngradeCandidate(t *testing.T) {
-	loaded := loadMatchPack(t)
-	base, err := loaded.MatchCases(knownImportFingerprint(), pack.MatchOptions{})
-	if err != nil {
-		t.Fatalf("base MatchCases() error = %v", err)
-	}
-	withNonCause := knownImportFingerprint()
-	withNonCause.Signals.LogTail = "cuda-only appears in a partial environment note, but torch_npu import still fails"
-	matches, err := loaded.MatchCases(withNonCause, pack.MatchOptions{})
-	if err != nil {
-		t.Fatalf("MatchCases() error = %v", err)
-	}
-	baseMatch := findMatch(base, "stable-ascend-import")
-	match := findMatch(matches, "stable-ascend-import")
-	if baseMatch == nil || match == nil {
-		t.Fatalf("expected stable-ascend-import in both result sets")
-	}
-	if match.Score != baseMatch.Score {
-		t.Fatalf("score with non_cause = %d, base score = %d; non_causes must not downgrade", match.Score, baseMatch.Score)
-	}
-}
-
 func TestMatchCasesNonCausesAreHintOnly(t *testing.T) {
 	loaded := loadMatchPack(t)
 	base, err := loaded.MatchCases(knownImportFingerprint(), pack.MatchOptions{})

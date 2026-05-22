@@ -90,39 +90,25 @@ func TestLoadTamperedPackFailsChecksumValidation(t *testing.T) {
 	assertErrorContains(t, err, "pack checksum mismatch")
 }
 
-func TestInspectMissingManifestFieldFails(t *testing.T) {
-	path := buildTestPack(t)
-	deleteManifestKey(t, path, pack.ManifestKeyChecksum)
-	_, err := pack.Inspect(path)
-	assertErrorContains(t, err, "manifest missing required field: checksum")
-}
-
-func TestInspectIncompatibleSchemaFails(t *testing.T) {
-	path := buildTestPack(t)
-	updateManifestKey(t, path, pack.ManifestKeySchemaVersion, "999")
-	_, err := pack.Inspect(path)
-	assertErrorContains(t, err, "unsupported pack schema_version")
-}
-
-func TestInspectMissingCardSchemaVersionFails(t *testing.T) {
-	path := buildTestPack(t)
-	deleteManifestKey(t, path, pack.ManifestKeyCardSchemaVersion)
-	_, err := pack.Inspect(path)
-	assertErrorContains(t, err, "manifest missing required field: card_schema_version")
-}
-
-func TestInspectIncompatibleCardSchemaVersionFails(t *testing.T) {
-	path := buildTestPack(t)
-	updateManifestKey(t, path, pack.ManifestKeyCardSchemaVersion, "known_issue/v0.4")
-	_, err := pack.Inspect(path)
-	assertErrorContains(t, err, "unsupported card_schema_version")
-}
-
-func TestInspectInvalidChecksumFails(t *testing.T) {
-	path := buildTestPack(t)
-	updateManifestKey(t, path, pack.ManifestKeyChecksum, "not-a-checksum")
-	_, err := pack.Inspect(path)
-	assertErrorContains(t, err, "invalid manifest checksum format")
+func TestInspectManifestFailures(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(string)
+		want   string
+	}{
+		{"missing checksum", func(path string) { deleteManifestKey(t, path, pack.ManifestKeyChecksum) }, "manifest missing required field: checksum"},
+		{"bad schema", func(path string) { updateManifestKey(t, path, pack.ManifestKeySchemaVersion, "999") }, "unsupported pack schema_version"},
+		{"bad card schema", func(path string) { updateManifestKey(t, path, pack.ManifestKeyCardSchemaVersion, "known_issue/v0.4") }, "unsupported card_schema_version"},
+		{"bad checksum format", func(path string) { updateManifestKey(t, path, pack.ManifestKeyChecksum, "not-a-checksum") }, "invalid manifest checksum format"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := buildTestPack(t)
+			tc.mutate(path)
+			_, err := pack.Inspect(path)
+			assertErrorContains(t, err, tc.want)
+		})
+	}
 }
 
 func TestInspectCorruptPackFails(t *testing.T) {

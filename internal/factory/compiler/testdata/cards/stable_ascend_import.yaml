@@ -8,22 +8,12 @@ case:
   stage: import
   domain: torch_npu
   hardware: ascend
-  severity: medium
-  environment:
-    frameworks:
-      - name: torch_npu
-        version: "2.7.1"
-    runtime:
-      cann_version: "8.0"
-      python_version: "3.10"
 match:
   keywords: [torch_npu, CANN runtime]
   regex: ["ImportError:.*torch_npu"]
 guidance:
   symptom: torch_npu import fails with missing CANN runtime
-  trigger_signals: [ImportError, torch_npu]
   diagnosis: CANN runtime is not visible to torch_npu during import.
-  diagnosis_details: [The import path reaches torch_npu but cannot resolve the runtime dependency.]
   actions: [Source the CANN set_env script.]
   fix: Activate the CANN environment before importing torch_npu.
   verification: Run a minimal torch_npu import command.
@@ -35,5 +25,4 @@ governance:
   confidence: observed
   lifecycle: stable
   review_status: approved
-  rationale: Observed in a reproducible diagnostic run.
-  updated_at: "2026-05-09T00:00:00Z"
+  rationale: observed

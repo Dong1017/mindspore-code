@@ -88,49 +88,47 @@ func TestSyncFileURLSourcePathWorks(t *testing.T) {
 	}
 }
 
-func TestSyncInvalidSourceDoesNotReplaceExistingDestination(t *testing.T) {
-	dest := filepath.Join(t.TempDir(), pack.FileName)
-	writeMarkerPack(t, dest, "existing")
-	source := filepath.Join(t.TempDir(), "invalid.pack")
-	writeMarkerPack(t, source, "invalid")
-	_, err := pack.Sync(pack.SyncConfig{SourcePath: source, DestPath: dest})
-	assertPackErrorContains(t, err, "validate source pack")
-	assertFileContent(t, dest, "existing")
-}
-
-func TestSyncIncompatiblePackSchemaPreservesExistingDestination(t *testing.T) {
-	dest := filepath.Join(t.TempDir(), pack.FileName)
-	writeMarkerPack(t, dest, "existing")
-	source := buildSyncPack(t)
-	updateSyncManifestKey(t, source, pack.ManifestKeySchemaVersion, "999")
-	_, err := pack.Sync(pack.SyncConfig{SourcePath: source, DestPath: dest})
-	assertPackErrorContains(t, err, "unsupported pack schema_version")
-	assertFileContent(t, dest, "existing")
-}
-
-func TestSyncIncompatibleCardSchemaPreservesExistingDestination(t *testing.T) {
-	dest := filepath.Join(t.TempDir(), pack.FileName)
-	writeMarkerPack(t, dest, "existing")
-	source := buildSyncPack(t)
-	updateSyncManifestKey(t, source, pack.ManifestKeyCardSchemaVersion, "known_issue/v0.4")
-	_, err := pack.Sync(pack.SyncConfig{SourcePath: source, DestPath: dest})
-	assertPackErrorContains(t, err, "unsupported card_schema_version")
-	assertFileContent(t, dest, "existing")
-}
-
-func TestSyncChecksumMismatchPreservesExistingDestination(t *testing.T) {
-	dest := filepath.Join(t.TempDir(), pack.FileName)
-	writeMarkerPack(t, dest, "existing")
-	source := buildSyncPack(t)
-	db := openSyncDB(t, source)
-	if _, err := db.Exec(`UPDATE cases SET title = ? WHERE id = ?`, "tampered", "stable-ascend-import"); err != nil {
-		db.Close()
-		t.Fatalf("tamper source: %v", err)
+func TestSyncInvalidSourcePreservesExistingDestination(t *testing.T) {
+	cases := []struct {
+		name   string
+		source func(t *testing.T) string
+		want   string
+	}{
+		{"invalid pack", func(t *testing.T) string {
+			path := filepath.Join(t.TempDir(), "invalid.pack")
+			writeMarkerPack(t, path, "invalid")
+			return path
+		}, "validate source pack"},
+		{"bad schema", func(t *testing.T) string {
+			path := buildSyncPack(t)
+			updateSyncManifestKey(t, path, pack.ManifestKeySchemaVersion, "999")
+			return path
+		}, "unsupported pack schema_version"},
+		{"bad card schema", func(t *testing.T) string {
+			path := buildSyncPack(t)
+			updateSyncManifestKey(t, path, pack.ManifestKeyCardSchemaVersion, "known_issue/v0.4")
+			return path
+		}, "unsupported card_schema_version"},
+		{"checksum mismatch", func(t *testing.T) string {
+			path := buildSyncPack(t)
+			db := openSyncDB(t, path)
+			if _, err := db.Exec(`UPDATE cases SET title = ? WHERE id = ?`, "tampered", "stable-ascend-import"); err != nil {
+				db.Close()
+				t.Fatalf("tamper source: %v", err)
+			}
+			db.Close()
+			return path
+		}, "pack checksum mismatch"},
 	}
-	db.Close()
-	_, err := pack.Sync(pack.SyncConfig{SourcePath: source, DestPath: dest})
-	assertPackErrorContains(t, err, "pack checksum mismatch")
-	assertFileContent(t, dest, "existing")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dest := filepath.Join(t.TempDir(), pack.FileName)
+			writeMarkerPack(t, dest, "existing")
+			_, err := pack.Sync(pack.SyncConfig{SourcePath: tc.source(t), DestPath: dest})
+			assertPackErrorContains(t, err, tc.want)
+			assertFileContent(t, dest, "existing")
+		})
+	}
 }
 
 func TestSyncMissingSourceReturnsClearError(t *testing.T) {

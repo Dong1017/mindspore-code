@@ -42,11 +42,12 @@ func TestCompilePackBuildsSQLitePack(t *testing.T) {
 	if got := queryInt(t, db, `SELECT COUNT(*) FROM cases`); got != 3 {
 		t.Fatalf("cases count = %d, want 3", got)
 	}
-	assertCaseExists(t, db, "stable-ascend-import")
-	assertCaseExists(t, db, "stable-mindspore-compile")
-	assertCaseMissing(t, db, "draft-excluded")
-	assertCaseMissing(t, db, "deprecated-excluded")
-	assertCaseMissing(t, db, "archived-excluded")
+	for _, id := range []string{"stable-ascend-import", "stable-mindspore-compile"} {
+		assertCaseExists(t, db, id)
+	}
+	for _, id := range []string{"draft-excluded", "deprecated-excluded", "archived-excluded"} {
+		assertCaseMissing(t, db, id)
+	}
 
 	manifest := readManifest(t, db)
 	for _, key := range pack.RequiredManifestKeys {

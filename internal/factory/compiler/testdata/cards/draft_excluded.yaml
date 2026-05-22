@@ -13,12 +13,10 @@ match:
   regex: ["ImportError:.*torch_npu"]
 guidance:
   symptom: torch_npu import fails with missing CANN runtime
-  trigger_signals: [ImportError, torch_npu]
   diagnosis: CANN runtime is not visible to torch_npu during import.
   actions: [Source the CANN set_env script.]
   fix: Activate the CANN environment before importing torch_npu.
   verification: Run a minimal torch_npu import command.
-  non_causes: []
 provenance:
   references: [issue-123]
   expected_behavior: [torch_npu imports without runtime dependency errors.]
@@ -26,5 +24,3 @@ governance:
   confidence: bootstrap
   lifecycle: draft
   review_status: pending
-  rationale: Observed in a reproducible diagnostic run.
-  updated_at: "2026-05-09T00:00:00Z"

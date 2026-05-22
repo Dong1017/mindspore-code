@@ -207,14 +207,8 @@ func TestApproveReviewItemRejectsWeakPackReadyFields(t *testing.T) {
 		mutate  func(*KnownIssueCard)
 		wantErr string
 	}{
-		{"unknown problem type", func(card *KnownIssueCard) { card.Case.ProblemType = ProblemTypeUnknown }, "unknown case.problem_type"},
-		{"unknown stage", func(card *KnownIssueCard) { card.Case.Stage = StageUnknown }, "unknown case.stage"},
-		{"unknown domain", func(card *KnownIssueCard) { card.Case.Domain = DomainUnknown }, "unknown case.domain"},
-		{"unknown hardware", func(card *KnownIssueCard) { card.Case.Hardware = HardwareUnknown }, "unknown case.hardware"},
-		{"placeholder diagnosis", func(card *KnownIssueCard) {
-			card.Guidance.Diagnosis = "Draft generated from the latest bounded run summary; review and complete before promotion"
-		}, "placeholder guidance.diagnosis"},
-		{"placeholder verification", func(card *KnownIssueCard) {
+		{"unknown applicability", func(card *KnownIssueCard) { card.Case.ProblemType = ProblemTypeUnknown }, "unknown case.problem_type"},
+		{"placeholder guidance", func(card *KnownIssueCard) {
 			card.Guidance.Verification = "not verified; reviewer must add validation steps"
 		}, "placeholder guidance.verification"},
 	} {

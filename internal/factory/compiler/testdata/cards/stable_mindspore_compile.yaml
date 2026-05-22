@@ -8,22 +8,12 @@ case:
   stage: compile
   domain: mindspore
   hardware: ascend
-  severity: medium
-  environment:
-    frameworks:
-      - name: mindspore
-        version: "2.7.1"
-    runtime:
-      cann_version: "8.0"
-      python_version: "3.10"
 match:
   keywords: [mindspore, graph compile]
   regex: ["Graph compile.*failed"]
 guidance:
   symptom: MindSpore graph compile fails
-  trigger_signals: [compile, mindspore]
   diagnosis: MindSpore graph compilation fails before execution.
-  diagnosis_details: [The graph compiler rejects the current operator pattern.]
   actions: [Collect graph compiler diagnostics.]
   fix: Adjust the unsupported graph pattern or runtime configuration.
   verification: Run graph compile smoke test.
@@ -35,5 +25,4 @@ governance:
   confidence: observed
   lifecycle: stable
   review_status: approved
-  rationale: Observed in a reproducible diagnostic run.
-  updated_at: "2026-05-09T00:00:00Z"
+  rationale: observed

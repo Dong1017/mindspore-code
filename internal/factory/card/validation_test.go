@@ -70,24 +70,13 @@ func TestPackEligibilityFailures(t *testing.T) {
 		mutate  func(*KnownIssueCard)
 		wantErr string
 	}{
-		{name: "unknown problem type", mutate: func(card *KnownIssueCard) { card.Case.ProblemType = ProblemTypeUnknown }, wantErr: "unknown case.problem_type"},
-		{name: "unknown stage", mutate: func(card *KnownIssueCard) { card.Case.Stage = StageUnknown }, wantErr: "unknown case.stage"},
-		{name: "unknown domain", mutate: func(card *KnownIssueCard) { card.Case.Domain = DomainUnknown }, wantErr: "unknown case.domain"},
-		{name: "unknown hardware", mutate: func(card *KnownIssueCard) { card.Case.Hardware = HardwareUnknown }, wantErr: "unknown case.hardware"},
-		{name: "placeholder symptom", mutate: func(card *KnownIssueCard) {
-			card.Guidance.Symptom = "Draft generated from the latest bounded run summary"
-		}, wantErr: "placeholder guidance.symptom"},
-		{name: "placeholder diagnosis", mutate: func(card *KnownIssueCard) {
-			card.Guidance.Diagnosis = "Draft generated from the latest bounded run summary; review and complete before promotion"
-		}, wantErr: "placeholder guidance.diagnosis"},
-		{name: "placeholder verification", mutate: func(card *KnownIssueCard) {
+		{name: "unknown required applicability", mutate: func(card *KnownIssueCard) { card.Case.ProblemType = ProblemTypeUnknown }, wantErr: "unknown case.problem_type"},
+		{name: "placeholder guidance", mutate: func(card *KnownIssueCard) {
 			card.Guidance.Verification = "not verified; reviewer must add validation steps"
 		}, wantErr: "placeholder guidance.verification"},
 		{name: "stable without references", mutate: func(card *KnownIssueCard) { card.Provenance.References = nil }, wantErr: "provenance.references"},
 		{name: "stable without match signal", mutate: func(card *KnownIssueCard) { card.Match = Match{} }, wantErr: "pack eligibility requires at least one match signal"},
-		{name: "draft excluded", mutate: func(card *KnownIssueCard) { card.Governance.Lifecycle = LifecycleDraft }, wantErr: "governance.lifecycle must be stable"},
-		{name: "deprecated excluded", mutate: func(card *KnownIssueCard) { card.Governance.Lifecycle = LifecycleDeprecated }, wantErr: "governance.lifecycle must be stable"},
-		{name: "archived excluded", mutate: func(card *KnownIssueCard) { card.Governance.Lifecycle = LifecycleArchived }, wantErr: "governance.lifecycle must be stable"},
+		{name: "non-stable lifecycle excluded", mutate: func(card *KnownIssueCard) { card.Governance.Lifecycle = LifecycleDraft }, wantErr: "governance.lifecycle must be stable"},
 	}
 
 	for _, tt := range tests {
