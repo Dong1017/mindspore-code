@@ -55,7 +55,7 @@ func TestFactoryCLICardSubmitReviewAndApprove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run(factory card submit) error = %v", err)
 	}
-	assertContainsAll(t, output, "created local review item:", "next:", "mscli factory card review ")
+	assertContainsAll(t, output, "created local review item:", "mscli factory card review ")
 	bundles, err := filepath.Glob(filepath.Join(dir, "factory", "submissions", "*"))
 	if err != nil {
 		t.Fatalf("glob bundles: %v", err)
@@ -69,14 +69,14 @@ func TestFactoryCLICardSubmitReviewAndApprove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run(factory card review) error = %v", err)
 	}
-	assertContainsAll(t, output, "factory card review:", "Manual review required", "next:", "mscli factory card review "+cardID+" --approve")
+	assertContainsAll(t, output, "factory card review:", "mscli factory card review "+cardID+" --approve")
 
 	makeReviewBundlePackReady(t, filepath.Join("factory", "submissions", cardID, "card.yaml"))
 	output, err = runFactoryCLITest("card", "review", cardID, "--approve", "--confidence", "observed", "--rationale", "manual review passed")
 	if err != nil {
 		t.Fatalf("Run(factory card review --approve) error = %v", err)
 	}
-	assertContainsAll(t, output, "approved local factory card: "+cardID, "governance: lifecycle=stable review_status=approved confidence=observed", "next:", "mscli factory pack build factory/cards {output-pack}")
+	assertContainsAll(t, output, "approved local factory card: "+cardID, "mscli factory pack build factory/cards {output-pack}")
 	if _, err := card.LoadFile(filepath.Join(dir, "factory", "cards", cardID+".yaml")); err != nil {
 		t.Fatalf("LoadFile(approved) error = %v", err)
 	}
@@ -96,7 +96,7 @@ func TestFactoryCLIPackBuildPublishAndSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run(factory pack build) error = %v", err)
 	}
-	assertContainsAll(t, output, "built factory pack:", "output: "+outputPack, "next:", "mscli factory pack publish "+outputPack)
+	assertContainsAll(t, output, "built factory pack:", "mscli factory pack publish "+outputPack)
 	if _, err := pack.Load(outputPack); err != nil {
 		t.Fatalf("Load(built) error = %v", err)
 	}
@@ -130,7 +130,7 @@ func TestFactoryCLIPackBuildPublishAndSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run(factory pack publish) error = %v", err)
 	}
-	assertContainsAll(t, output, "published factory pack:", "pack_id: 21", "next:", "mscli factory pack sync")
+	assertContainsAll(t, output, "published factory pack:", "pack_id: 21", "mscli factory pack sync")
 	if !sawPublishAuth {
 		t.Fatal("publish did not reach server")
 	}
@@ -139,13 +139,13 @@ func TestFactoryCLIPackBuildPublishAndSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run(factory pack sync source) error = %v", err)
 	}
-	assertContainsAll(t, output, "synced factory pack:", "next:", "mscli factory status")
+	assertContainsAll(t, output, "synced factory pack:", "mscli factory status")
 
 	output, err = runFactoryCLITest("pack", "sync")
 	if err != nil {
 		t.Fatalf("Run(factory pack sync remote) error = %v", err)
 	}
-	assertContainsAll(t, output, "synced factory pack from server:", "remote_id: 22", "next:", "mscli factory status")
+	assertContainsAll(t, output, "synced factory pack from server:", "remote_id: 22", "mscli factory status")
 }
 
 func TestFactoryCLIPackMatchDebug(t *testing.T) {

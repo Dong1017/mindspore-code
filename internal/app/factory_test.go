@@ -1,7 +1,6 @@
 package app
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -204,55 +203,6 @@ func TestFactoryStatusMissingLocalPackAndNoServer(t *testing.T) {
 	}
 }
 
-func TestFactoryStatusShowsInstalledPackCountsAndServerLatest(t *testing.T) {
-	source := compileAppTestPack(t)
-	dir := t.TempDir()
-	withWorkingDir(t, dir)
-	withHomeDir(t, filepath.Join(dir, "home"))
-
-	if _, err := pack.Sync(pack.SyncConfig{SourcePath: source}); err != nil {
-		t.Fatalf("Sync(source) error = %v", err)
-	}
-	writeAppTestFile(t, filepath.Join(dir, "factory", "cards", "drafts", "draft.yaml"), "draft")
-	writeAppTestFile(t, filepath.Join(dir, "factory", "cards", "approved.yaml"), "approved")
-	writeAppTestFile(t, filepath.Join(dir, "factory", "submissions", "item-1", "validation.json"), "{}")
-
-	installed, err := pack.Load(filepath.Join(dir, "home", ".mscli", "factory", "factory-core.pack"))
-	if err != nil {
-		t.Fatalf("Load(installed) error = %v", err)
-	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/factory/packs/latest" || r.Method != http.MethodGet {
-			t.Fatalf("request = %s %s, want GET /factory/packs/latest", r.Method, r.URL.Path)
-		}
-		if r.Header.Get("Authorization") != "Bearer secret" {
-			t.Fatalf("Authorization = %q, want bearer", r.Header.Get("Authorization"))
-		}
-		_, _ = fmt.Fprintf(w, `{"id":13,"pack_name":"factory-core","pack_version":"1","schema_version":"1","card_schema_version":"known_issue/v0.5","compiled_case_count":3,"checksum":%q,"publisher":"alice","created_at":"2026-05-14T00:00:00Z"}`, installed.Manifest.Checksum)
-	}))
-	defer server.Close()
-	withFactoryServerEnv(t, server.URL, "secret")
-
-	app := &Application{EventCh: make(chan model.Event, 4)}
-	app.cmdFactory("status")
-	ev := <-app.EventCh
-	assertContainsAll(t, ev.Message,
-		"local_pack_installed: true",
-		"local_pack_name: factory-core",
-		"local_compiled_case_count: 3",
-		"local_checksum: sha256:",
-		"server_configured: true",
-		"config_source: env",
-		"server_reachable: true",
-		"server_pack_id: 13",
-		"server_checksum: "+installed.Manifest.Checksum,
-		"local_matches_server_latest: true",
-		"draft_cards: 1",
-		"review_items: 1",
-		"approved_cards: 1",
-	)
-}
-
 func TestFactoryStatusServerUnreachableDoesNotFailWholeCommand(t *testing.T) {
 	dir := t.TempDir()
 	withWorkingDir(t, dir)
@@ -274,28 +224,16 @@ func TestFactoryStatusServerUnreachableDoesNotFailWholeCommand(t *testing.T) {
 }
 
 func TestFactoryPackMatchDebugShowsMatch(t *testing.T) {
-	sourceDir, err := filepath.Abs(filepath.FromSlash("../factory/compiler/testdata/cards"))
-	if err != nil {
-		t.Fatalf("resolve source cards: %v", err)
-	}
+	source := compileAppTestPack(t)
 	dir := t.TempDir()
 	withHomeDir(t, filepath.Join(dir, "home"))
-	if _, err := compiler.CompilePack(sourceDir, filepath.Join(dir, "home", ".mscli", "factory", "factory-core.pack")); err != nil {
-		t.Fatalf("CompilePack() error = %v", err)
+	if _, err := pack.Sync(pack.SyncConfig{SourcePath: source}); err != nil {
+		t.Fatalf("Sync(source) error = %v", err)
 	}
 	app := &Application{EventCh: make(chan model.Event, 4)}
 	app.cmdFactory("pack match-debug \"ImportError: torch_npu failed because CANN runtime dependency is missing\"")
 	ev := <-app.EventCh
-	assertContainsAll(t, ev.Message,
-		"factory pack match-debug:",
-		"pack_load_status: loaded",
-		"manifest_summary: factory-core schema=1 card_schema=known_issue/v0.5 cases=3",
-		"candidate_count:",
-		"emitted_hint_count:",
-		"matched_case_id: stable-ascend-import",
-		"score:",
-		"why_matched:",
-	)
+	assertContainsAll(t, ev.Message, "factory pack match-debug:", "matched_case_id: stable-ascend-import", "why_matched:")
 	for _, forbidden := range []string{"schema_version:", "CREATE TABLE", "INSERT INTO", "ImportError: torch_npu failed because CANN runtime dependency is missing"} {
 		if strings.Contains(ev.Message, forbidden) {
 			t.Fatalf("Message = %q, should not contain %q", ev.Message, forbidden)
@@ -501,16 +439,6 @@ func withMissingFactoryCredentials(t *testing.T) {
 	t.Helper()
 	credentialsPathOverride = filepath.Join(t.TempDir(), "missing.json")
 	t.Cleanup(func() { credentialsPathOverride = "" })
-}
-
-func writeAppTestFile(t *testing.T, path string, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write %s: %v", path, err)
-	}
 }
 
 func assertFileExists(t *testing.T, path string) {

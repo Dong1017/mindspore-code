@@ -44,24 +44,18 @@ func TestFactoryPackRoutesPublishLatestAndDownload(t *testing.T) {
 	latest.Header.Set("Authorization", "Bearer secret")
 	latestRec := httptest.NewRecorder()
 	mux.ServeHTTP(latestRec, latest)
-	if latestRec.Code != http.StatusOK {
-		t.Fatalf("latest status = %d body = %s", latestRec.Code, latestRec.Body.String())
-	}
+	assertStatus(t, latestRec, http.StatusOK)
 
 	idNoAuth := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/factory/packs/%d/download", metadata.ID), nil)
 	idNoAuthRec := httptest.NewRecorder()
 	mux.ServeHTTP(idNoAuthRec, idNoAuth)
-	if idNoAuthRec.Code != http.StatusUnauthorized {
-		t.Fatalf("id download no auth status = %d, want 401", idNoAuthRec.Code)
-	}
+	assertStatus(t, idNoAuthRec, http.StatusUnauthorized)
 
 	idDownload := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/factory/packs/%d/download", metadata.ID), nil)
 	idDownload.Header.Set("Authorization", "Bearer secret")
 	idDownloadRec := httptest.NewRecorder()
 	mux.ServeHTTP(idDownloadRec, idDownload)
-	if idDownloadRec.Code != http.StatusOK {
-		t.Fatalf("id download status = %d body = %s", idDownloadRec.Code, idDownloadRec.Body.String())
-	}
+	assertStatus(t, idDownloadRec, http.StatusOK)
 	if !bytes.Equal(idDownloadRec.Body.Bytes(), body) {
 		t.Fatalf("id download bytes differ from uploaded pack")
 	}
@@ -75,9 +69,7 @@ func TestFactoryPackRoutesPublishLatestAndDownload(t *testing.T) {
 	download.Header.Set("Authorization", "Bearer secret")
 	downloadRec := httptest.NewRecorder()
 	mux.ServeHTTP(downloadRec, download)
-	if downloadRec.Code != http.StatusOK {
-		t.Fatalf("download status = %d body = %s", downloadRec.Code, downloadRec.Body.String())
-	}
+	assertStatus(t, downloadRec, http.StatusOK)
 	if downloadRec.Header().Get("Content-Type") != "application/octet-stream" {
 		t.Fatalf("download content-type = %q", downloadRec.Header().Get("Content-Type"))
 	}
@@ -99,17 +91,13 @@ func TestFactoryPackRoutesRequireAuthAndValidatePack(t *testing.T) {
 	noAuth := httptest.NewRequest(http.MethodGet, "/factory/packs/latest", nil)
 	noAuthRec := httptest.NewRecorder()
 	mux.ServeHTTP(noAuthRec, noAuth)
-	if noAuthRec.Code != http.StatusUnauthorized {
-		t.Fatalf("no auth status = %d, want 401", noAuthRec.Code)
-	}
+	assertStatus(t, noAuthRec, http.StatusUnauthorized)
 
 	invalid := httptest.NewRequest(http.MethodPost, "/factory/packs", bytes.NewReader([]byte("not a pack")))
 	invalid.Header.Set("Authorization", "Bearer secret")
 	invalidRec := httptest.NewRecorder()
 	mux.ServeHTTP(invalidRec, invalid)
-	if invalidRec.Code != http.StatusBadRequest {
-		t.Fatalf("invalid pack status = %d body = %s", invalidRec.Code, invalidRec.Body.String())
-	}
+	assertStatus(t, invalidRec, http.StatusBadRequest)
 }
 
 func TestFactoryPackStoreAllowsDuplicateChecksumsAndLatestByID(t *testing.T) {
@@ -132,6 +120,13 @@ func TestFactoryPackStoreAllowsDuplicateChecksumsAndLatestByID(t *testing.T) {
 	}
 	if latest.ID != second.ID || latest.Publisher != "bob" {
 		t.Fatalf("latest = %+v, want second publish", latest)
+	}
+}
+
+func assertStatus(t *testing.T, rec *httptest.ResponseRecorder, want int) {
+	t.Helper()
+	if rec.Code != want {
+		t.Fatalf("status = %d body = %s, want %d", rec.Code, rec.Body.String(), want)
 	}
 }
 
