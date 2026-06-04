@@ -25,8 +25,6 @@ need_cmd() {
 }
 
 need_cmd go
-need_cmd mktemp
-
 PLATFORMS=(
   "linux/amd64"
   "linux/arm64"
@@ -35,21 +33,14 @@ PLATFORMS=(
   "windows/amd64"
 )
 
-MIRROR_ROOT="${MSCLI_MIRROR_ROOT:-/opt/downloads/mscli/releases}"
-MIRROR_BASE_URL="${MSCLI_MIRROR_BASE_URL:-https://mscli.dev/mscli/releases}"
-TARGET_DIR="${MIRROR_ROOT}/${VERSION}"
-LATEST_LINK="${MIRROR_ROOT}/latest"
-PUBLIC_ROOT="$(dirname "${MIRROR_ROOT}")"
-INSTALL_SCRIPT_PATH="${PUBLIC_ROOT}/install.sh"
-PLAIN_VERSION="${VERSION#v}"
-BUILD_DIR="$(mktemp -d)"
+GITCODE_OWNER="${GITCODE_OWNER:-mindspore}"
+GITCODE_REPO="${GITCODE_REPO:-mscli}"
+DIST_DIR="${MSCLI_DIST_DIR:-${REPO_ROOT}/dist}"
+MODULE_PATH="$(cd "${REPO_ROOT}" && go list -m)"
 
-cleanup() {
-  rm -rf "${BUILD_DIR}"
-}
-trap cleanup EXIT
-
-echo "Building ${VERSION} into temporary directory ${BUILD_DIR}"
+echo "Building ${VERSION} into ${DIST_DIR}"
+rm -rf "${DIST_DIR}"
+mkdir -p "${DIST_DIR}"
 
 cd "${REPO_ROOT}"
 
@@ -62,8 +53,8 @@ for platform in "${PLATFORMS[@]}"; do
   fi
   echo "  -> ${output}"
   GOOS="${GOOS}" GOARCH="${GOARCH}" go build \
-    -ldflags "-X github.com/mindspore-lab/mindspore-cli/internal/version.Version=${VERSION}" \
-    -o "${BUILD_DIR}/${output}" \
+    -ldflags "-X ${MODULE_PATH}/internal/version.Version=${VERSION}" \
+    -o "${DIST_DIR}/${output}" \
     ./cmd/mscli/
 done
 
@@ -76,33 +67,18 @@ fi
 
 echo "  -> ${SERVER_OUTPUT}"
 CGO_ENABLED=1 GOOS="${SERVER_GOOS}" GOARCH="${SERVER_GOARCH}" go build \
-  -ldflags "-X github.com/mindspore-lab/mindspore-cli/internal/version.Version=${VERSION}" \
-  -o "${BUILD_DIR}/${SERVER_OUTPUT}" \
+  -ldflags "-X ${MODULE_PATH}/internal/version.Version=${VERSION}" \
+  -o "${DIST_DIR}/${SERVER_OUTPUT}" \
   ./cmd/mscli-server/
 
-cat > "${BUILD_DIR}/manifest.json" <<MANIFEST
+cat > "${DIST_DIR}/manifest.json" <<MANIFEST
 {
-  "latest": "${PLAIN_VERSION}",
+  "latest": "${VERSION}",
   "min_allowed": "",
-  "download_base": "${MIRROR_BASE_URL}"
+  "download_base": "https://gitcode.com/${GITCODE_OWNER}/${GITCODE_REPO}/releases/download"
 }
 MANIFEST
 
 echo ""
-echo "Installing assets to ${TARGET_DIR}"
-mkdir -p "${TARGET_DIR}"
-cp "${BUILD_DIR}"/* "${TARGET_DIR}/"
-cp "${REPO_ROOT}/scripts/install.sh" "${INSTALL_SCRIPT_PATH}"
-chmod -R a+rX "${TARGET_DIR}"
-chmod a+rX "${INSTALL_SCRIPT_PATH}"
-ln -sfn "${TARGET_DIR}" "${LATEST_LINK}"
-
-echo ""
-echo "Release assets ready:"
-echo "  ${TARGET_DIR}"
-echo "Latest link:"
-echo "  ${LATEST_LINK} -> ${TARGET_DIR}"
-echo "Public install script:"
-echo "  ${INSTALL_SCRIPT_PATH}"
-echo "Manifest download_base:"
-echo "  ${MIRROR_BASE_URL}"
+echo "Release assets ready in ${DIST_DIR}:"
+ls -lh "${DIST_DIR}"

@@ -24,7 +24,9 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 1
 fi
 
-BASE_URL="https://github.com/mindspore-lab/mindspore-cli/releases/download/${VERSION}"
+GITCODE_OWNER="${GITCODE_OWNER:-mindspore}"
+GITCODE_REPO="${GITCODE_REPO:-mscli}"
+BASE_URL="https://gitcode.com/${GITCODE_OWNER}/${GITCODE_REPO}/releases/download/${VERSION}"
 
 assets=(
   "manifest.json"
@@ -33,12 +35,11 @@ assets=(
   "mscli-darwin-amd64"
   "mscli-darwin-arm64"
   "mscli-windows-amd64.exe"
-  "mscli-server-linux-amd64"
 )
 
 mkdir -p "${OUTPUT_DIR}"
 
-echo "Downloading release assets for ${VERSION} into ${OUTPUT_DIR}"
+echo "Downloading GitCode release assets for ${VERSION} into ${OUTPUT_DIR}"
 
 for asset in "${assets[@]}"; do
   echo "  -> ${asset}"
