@@ -1,0 +1,113 @@
+schema_version: known_issue/v0.6
+kind: known_issue
+id: accuracy-model-diffusers-scheduler-regression
+title: Diffusers scheduler scalar-tensor eq demotion drift
+tags:
+- accuracy
+- model
+- diffusers
+- scheduler
+- eq
+- scalar-tensor
+- fp64
+- demotion
+case:
+  problem_type: accuracy
+  stage: infer
+  domain: mindone
+  hardware: ascend
+  severity: high
+  occurrence_count: 1
+  environment:
+    frameworks:
+    - name: mindone
+      version: v0.3.0-dev
+    - name: mindspore
+      version: master
+      commit: ae2c0a77a
+    - name: torch
+      version: 2.4.0
+    - name: transformers
+      version: 4.46.3
+    - name: tokenizers
+      version: 0.20.4
+    runtime:
+      cann_version: 9.0.0 / 20260323
+    model:
+      model_area: diffusers scheduler
+      execution_mode: PyNative
+      testcase: tests/diffusers_tests/test_schedulers.py
+      dtype: comparison path involves float64 operands
+    affected:
+    - mindone diffusers scheduler regression test
+    - 两个输入进入 eq/==，其中右侧是标量 Tensor
+    - 重载特性把标量 Tensor 自动降成标量
+match:
+  metadata:
+    problem_type: accuracy
+    stage: infer
+    domain: mindone
+    hardware: ascend
+  keywords:
+  - DPMSolverSDEScheduler
+  - eq
+  - scalar Tensor
+  - disable_scalar_tensor
+  - float64
+  regex:
+  - "(?i)dpmsolversdescheduler"
+  - "(?i)eq.*scalar"
+guidance:
+  symptom: |
+    DPMSolverSDEScheduler fails its alignment test even though the scheduler
+    formula itself is not wrong; the drift comes from an `eq` comparison path
+    that silently changes scalar-tensor precision.
+  trigger_signals:
+  - DPMSolverSDEScheduler 精度不达标
+  - test_schedulers[float32-scheduler_name4] 断言失败
+  - 问题最终落在 compare/eq 分支，不在 scheduler 方程本身
+  representative_errors: []
+  diagnosis: 'The root-cause comment states that `==/eq` changed behavior after a
+    recent overload feature: when both operands should stay in float64 and the right-hand
+    side is a scalar Tensor, the scalar Tensor is silently converted to a scalar and
+    precision is demoted from fp64 to fp32, which corrupts the compare result used
+    by DPMSolverSDEScheduler.'
+  diagnosis_details:
+  - 问题不在 scheduler 公式，而在 compare 语义被重载特性改坏
+  - 右侧标量 Tensor 被默认转标量时丢失 fp64 精度
+  - 比较结果变错后，scheduler 分支判断随之漂移
+  actions:
+  - '在 `eq.yaml` 中增加 `disable_scalar_tensor: other`，禁用右侧标量 Tensor 自动转标量。'
+  - 回归 `tests/diffusers_tests/test_schedulers.py` 中的 DPMSolverSDEScheduler 场景，并保留这个
+    compare 形态的看护用例。
+  fix: 修复 `eq` 的标量 Tensor 自动降级路径，在右侧为标量 Tensor 时保持 Tensor compare 语义。
+  why_it_works:
+  - 右侧操作数不再被偷偷降成标量后，float64 compare 保持在 Tensor 路径上，不会误降到 fp32。
+  - scheduler 分支判断重新建立在正确的 compare 结果上，因此不需要修改 scheduler 公式本身。
+  verification: |
+    After the fix, DPMSolverSDEScheduler aligns with the reference without any
+    scheduler-equation workaround, because the underlying eq compare semantics
+    are corrected.
+  non_causes:
+  - 不是单纯 scheduler 推导错误
+provenance:
+  references:
+  - issue:org-issues#42290
+  - introduced_by:mindspore#91746
+  - fixed_by:mindspore#92163
+  notes: Rewritten from org-issues#42290 issue body and root-cause comments. The source
+    issue reports DPMSolverSDEScheduler test failure, and the root-cause comment ties
+    it to eq overload behavior rather than scheduler math.
+  expected_behavior:
+  - 原始 test_schedulers 中 DPMSolverSDEScheduler case 通过
+  - daily 包回归通过
+  - 新增 ST 看护当前 scalar-tensor eq 场景
+  regression_tests:
+  - tests/diffusers_tests/test_schedulers.py
+governance:
+  confidence: verified
+  lifecycle: stable
+  review_status: pending
+  rationale: rewritten from org-issues#42290 source body and root-cause comments on
+    2026-05-12
+  updated_at: '2026-05-12'

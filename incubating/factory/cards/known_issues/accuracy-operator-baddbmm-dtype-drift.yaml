@@ -1,0 +1,109 @@
+schema_version: known_issue/v0.6
+kind: known_issue
+id: accuracy-operator-baddbmm-dtype-drift
+title: Mint baddbmm benchmark input mutation drift
+tags:
+- accuracy
+- operator
+- baddbmm
+- mint
+- cann
+- input-mutation
+- benchmark-pollution
+- dynamic-shape
+case:
+  problem_type: accuracy
+  stage: infer
+  domain: mindspore
+  hardware: ascend
+  severity: high
+  occurrence_count: 1
+  environment:
+    frameworks:
+    - name: mindspore
+      version: master
+      commit: 6f53027e
+    runtime:
+      cann_version: '20260330'
+      python_version: '3.12'
+    model:
+      execution_mode:
+      - PYNATIVE_MODE
+      - GRAPH_MODE + O0 + ME_DYNAMIC_SHAPE=1
+      testcase_family:
+      - dynamic_shape_mint_f_baddbmm_dyn_rank_*
+      - dynamic_shape_mint_f_baddbmm_dyn_shape_*
+      - mint_f_baddbmm_bfloat16_3d_3x3x7_random
+    affected:
+    - mint.baddbmm
+    - beta 路径参与计算
+    - benchmark 直接复用 MindSpore 输入
+match:
+  metadata:
+    problem_type: accuracy
+    stage: infer
+    domain: mindspore
+    hardware: ascend
+  keywords:
+  - baddbmm
+  - fp16
+  - fp32
+  - dynamic shape
+  - beta
+  - input0
+  - 原地乘beta
+  regex:
+  - "(?i)baddbmm.*ascend"
+guidance:
+  symptom: |
+    Ascend `mint.baddbmm` looks inaccurate in both regular and dynamic-shape
+    scenes, but the visible mismatch is caused by polluted benchmark input.
+  trigger_signals:
+  - mint.baddbmm fp16/fp32 ascend 结果与标杆不一致
+  - dynamic shape 场景也会报
+  - 同类问题在 bfloat16 图模式动态 shape 场景也可复现
+  representative_errors:
+  - mint.baddbmm fp16/fp32 ascend 结果与标杆不一致
+  diagnosis: 'The root-cause discussion says the visible mismatch is not from baddbmm
+    math itself: a CANN-side optimization bug multiplies `input0` by `beta` in place,
+    so after MindSpore runs, the benchmark side reuses already-mutated input data
+    and reports a false mismatch. The same mutated-input family also shows up in dynamic-shape
+    and bfloat16 scenes.'
+  diagnosis_details:
+  - 海思算子优化引入问题，input0 会被原地乘 beta
+  - MindSpore 执行完后输入被改写，torch/benchmark 继续使用这份输入，导致参考值错误
+  - 动态 shape 与 bfloat16 场景复现的是同一类根因
+  actions:
+  - 不要直接复用 `ms_input` 做 benchmark/reference，先 clone/copy 输入。
+  - 确认运行环境使用了已修复这个原地改写问题的 CANN 版本。
+  - 按 issue 评论回归普通场景、dynamic-shape 场景和 bfloat16 图模式场景。
+  fix: 隔离 benchmark 输入，避免复用被原地改写的 `input0`，并在已修复该问题的 CANN 版本上回归。
+  why_it_works:
+  - 参考路径输入不再被污染后，误差来源会从“假阳性 benchmark 漂移”恢复成真实数值比较。
+  - 同一类 mutated-input 根因在静态、动态和 bfloat16 场景里会一起消失。
+  verification: |
+    After the fix, `mint.baddbmm` no longer shows false drift caused by a
+    mutated benchmark input across static and dynamic scenes.
+  non_causes:
+  - 不是 mint.baddbmm 主输出本身数值公式错误
+provenance:
+  references:
+  - issue:org-issues#42253
+  notes: Rewritten from org-issues#42253 issue body and root-cause comments. The source
+    issue covers mint.baddbmm drift in regular, dynamic-shape, and bfloat16 scenes,
+    and the comments trace them back to the same mutated-input bug.
+  expected_behavior:
+  - clone 后 benchmark 与框架结果恢复一致
+  - 动态 shape case 重新通过
+  - bfloat16 动态 shape case 重新通过
+  regression_tests:
+  - dynamic_shape_mint_f_baddbmm_dyn_rank_*
+  - dynamic_shape_mint_f_baddbmm_dyn_shape_*
+  - mint_f_baddbmm_bfloat16_3d_3x3x7_random
+governance:
+  confidence: verified
+  lifecycle: stable
+  review_status: pending
+  rationale: rewritten from org-issues#42253 source body and root-cause comments on
+    2026-05-12
+  updated_at: '2026-05-12'

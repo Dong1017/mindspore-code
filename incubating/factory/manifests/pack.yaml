@@ -3,7 +3,7 @@ channel: stable
 created_at: "2026-03-19"
 card_count:
   operators: 6
-  known_issues: 3
+  known_issues: 14
   perf_features: 9
   algo_features: 9
   models: 1
@@ -17,6 +17,17 @@ cards:
   - { id: dsa-torch27-ascend, kind: known_issue, path: known_issues/dsa-torch27-ascend.yaml }
   - { id: fp16-softmax-drift, kind: known_issue, path: known_issues/fp16-softmax-drift.yaml }
   - { id: cann-flash-attn-version, kind: known_issue, path: known_issues/cann-flash-attn-version.yaml }
+  - { id: accuracy-compile-fusion-controlflow-drift, kind: known_issue, path: known_issues/accuracy-compile-fusion-controlflow-drift.yaml }
+  - { id: accuracy-lite-int8-conv1x1-input-pack-batch-missing, kind: known_issue, path: known_issues/accuracy-lite-int8-conv1x1-input-pack-batch-missing.yaml }
+  - { id: accuracy-model-diffusers-scheduler-regression, kind: known_issue, path: known_issues/accuracy-model-diffusers-scheduler-regression.yaml }
+  - { id: accuracy-model-qwen3vl-resize-interpolate-mismatch, kind: known_issue, path: known_issues/accuracy-model-qwen3vl-resize-interpolate-mismatch.yaml }
+  - { id: accuracy-operator-atan-precision-drift, kind: known_issue, path: known_issues/accuracy-operator-atan-precision-drift.yaml }
+  - { id: accuracy-operator-atan2-precision-drift, kind: known_issue, path: known_issues/accuracy-operator-atan2-precision-drift.yaml }
+  - { id: accuracy-operator-baddbmm-dtype-drift, kind: known_issue, path: known_issues/accuracy-operator-baddbmm-dtype-drift.yaml }
+  - { id: accuracy-operator-baddbmm-precision-drift, kind: known_issue, path: known_issues/accuracy-operator-baddbmm-precision-drift.yaml }
+  - { id: accuracy-operator-clamp-precision-drift, kind: known_issue, path: known_issues/accuracy-operator-clamp-precision-drift.yaml }
+  - { id: accuracy-operator-cos-precision-drift, kind: known_issue, path: known_issues/accuracy-operator-cos-precision-drift.yaml }
+  - { id: function-runtime-module-import-missing, kind: known_issue, path: known_issues/function-runtime-module-import-missing.yaml }
   - { id: fused-adam, kind: perf_feature, path: perf_features/fused-adam.yaml }
   - { id: flash-attn-v2, kind: perf_feature, path: perf_features/flash-attn-v2.yaml }
   - { id: gradient-ckpt, kind: perf_feature, path: perf_features/gradient-ckpt.yaml }

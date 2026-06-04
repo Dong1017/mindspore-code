@@ -1,0 +1,120 @@
+schema_version: known_issue/v0.6
+kind: known_issue
+id: accuracy-lite-int8-conv1x1-input-pack-batch-missing
+title: Lite int8 Conv1x1 batch packing drift
+tags:
+- accuracy
+- lite
+- int8
+- conv1x1
+- batch-pack
+- android
+- cpp-infer
+case:
+  problem_type: accuracy
+  stage: infer
+  domain: mindspore-lite
+  hardware: cpu
+  severity: high
+  occurrence_count: 1
+  environment:
+    frameworks:
+    - name: mindspore-lite
+      version: master
+      commit: dcd0eebbc7fbbb34e8173cbdce720019dd10b983
+    runtime:
+      python_version: '3.10'
+      runtime_target: android_aarch64_cpu_mate40
+      model_format: tflite
+      accelerator_version: Ascend 310
+    model:
+      runtime: Android aarch64 CPU
+      execution_mode: Lite C++ inference
+      quantization: int8
+      model: Q_language_model_hrmini_Q4_b4_17w.tflite
+      lite_build:
+        enable_train: 'ON'
+        enable_tools: 'ON'
+        enable_controlflow: 'ON'
+        enable_auto_parallel: 'ON'
+        enable_weight_decode: 'ON'
+        enable_custom_kernel: 'ON'
+        enable_mindrt: 'ON'
+        enable_delegate: 'ON'
+        enable_fp16: 'ON'
+        enable_int8: 'ON'
+    affected:
+    - mindspore-lite int8 inference
+    - Conv1x1
+    - batch dimension > 1
+    - Android aarch64 CPU Mate40
+match:
+  metadata:
+    problem_type: accuracy
+    stage: infer
+    domain: mindspore-lite
+    hardware: cpu
+  keywords:
+  - Conv1x1InputPack
+  - Conv1x1InputPackBatch
+  - android_aarch64_cpu_mate40
+  - int8
+  - 端侧C++推理精度失败
+  - Q_language_model_hrmini_Q4_b4_17w.tflite
+  regex:
+  - "(?i)conv1x1.*pack"
+  - "(?i)android.*cpu.*accuracy"
+guidance:
+  symptom: |
+    Android-side int8 C++ inference shows large output drift on a Lite model
+    when the Conv1x1 path sees batched input.
+  trigger_signals:
+  - 端侧 C++ 推理精度失败
+  - 同模型单 batch 正常，多 batch 漂移明显
+  - "[Check][Result][failed][base/backbone_out/Relu]: accepted=0.99, actual=0.766398"
+  - "[Check][Result][failed][base/class_out/BiasAdd]: accepted=0.99, actual=0.405105"
+  representative_errors:
+  - "[Check][Result][failed][base/backbone_out/Relu]: accepted=0.99, actual=0.766398"
+  - "[Check][Result][failed][base/class_out/BiasAdd]: accepted=0.99, actual=0.405105"
+  diagnosis: 'The source issue and root-cause comment both point to the same bug:
+    the low-level Conv1x1InputPack path only handled single-batch data and ignored
+    the batch dimension, so batched int8 inputs were packed into the wrong memory
+    layout before Conv1x1 execution.'
+  diagnosis_details:
+  - 底层 Conv1x1InputPack 函数只处理单 batch 数据
+  - batch 维度没有被正确打包进输入布局
+  - 在 int8 卷积调用点继续走旧 packing 路径，导致 batch>1 时输入读入错位
+  actions:
+  - 新增 Conv1x1InputPackBatch，显式支持多 batch 输入打包。
+  - 把 int8 Conv1x1 调用点切到新的 batch-aware packing 路径，而不是继续复用单 batch 的 Conv1x1InputPack。
+  - 按 issue 里的 Android 端转换 + C++ 推理流程回归，并执行 UT `TestConv1x1Int8.Conv1x1InputPackBatch_GoldenTest`。
+  fix: 新增 `Conv1x1InputPackBatch` 支持多 batch 打包，并把 int8 Conv1x1 调用点改到这个新路径。
+  why_it_works:
+  - batch 维度进入 packing 逻辑后，Conv1x1 读取的输入布局重新与真实 batched 数据对齐。
+  - 同一模型在端侧 C++ 推理路径上不再因为 batch>1 的 packing 错位而出现精度漂移。
+  verification: |
+    After the fix, batched int8 Conv1x1 inference no longer drifts from the
+    baseline on Android CPU.
+  non_causes:
+  - 不是模型权重本身损坏
+  - 不是 Android 端随机数值波动
+provenance:
+  references:
+  - issue:org-issues#42339
+  - fixed_by:mindspore-lite#738
+  notes: Rewritten from org-issues#42339 issue body and root-cause comments. The source
+    issue describes Android-side conversion and C++ inference steps, and the root-cause
+    comment pins the problem to single-batch-only Conv1x1InputPack handling.
+  expected_behavior:
+  - 原始 Android 端 C++ 推理 case 输出重新与 baseline 对齐
+  - 本地 UT TestConv1x1Int8.Conv1x1InputPackBatch_GoldenTest 通过
+  - 端侧精度回归通过
+  regression_tests:
+  - TestConv1x1Int8.Conv1x1InputPackBatch_GoldenTest
+governance:
+  confidence: verified
+  lifecycle: stable
+  review_status: pending
+  rationale: rewritten from org-issues#42339 source body and root-cause comments on
+    2026-05-12
+  updated_at: '2026-05-12'
