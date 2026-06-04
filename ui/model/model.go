@@ -87,6 +87,8 @@ const (
 	AgentReplyDelta       EventType = "AgentReplyDelta"
 	AgentBackgroundWork   EventType = "AgentBackgroundWork"
 	PermissionPrompt      EventType = "PermissionPrompt"
+	AskUserQuestionPrompt EventType = "AskUserQuestionPrompt"
+	AskUserQuestionClose  EventType = "AskUserQuestionClose"
 	PermissionsView       EventType = "PermissionsView"
 	AgentThinking         EventType = "AgentThinking"
 	ContextCompactStarted EventType = "ContextCompactStarted"
@@ -100,6 +102,7 @@ const (
 	ToolEdit              EventType = "ToolEdit"
 	ToolWrite             EventType = "ToolWrite"
 	ToolSkill             EventType = "ToolSkill"
+	ToolAskUserQuestion   EventType = "ToolAskUserQuestion"
 	ToolInterrupted       EventType = "ToolInterrupted"
 	ToolWarning           EventType = "ToolWarning"
 	ToolError             EventType = "ToolError"
@@ -121,29 +124,30 @@ const (
 // Event is sent from the agent loop to the TUI.
 // Implements tea.Msg so Bubble Tea can route it.
 type Event struct {
-	Type          EventType
-	Task          string
-	Message       string
-	RawANSI       bool
-	ToolName      string
-	ToolCallID    string
-	Summary       string
-	Meta          map[string]any
-	ReplayWait    *ReplayWaitData
-	CtxUsed       int
-	CtxMax        int
-	TokensUsed    int
-	Train         *TrainEventData // non-nil for train events only
-	Project       *ProjectStatusView
-	Permission    *PermissionPromptData
-	Permissions   *PermissionsViewData
-	Popup         *SelectionPopup // non-nil for popup events only
-	SetupPopup    *SetupPopup     // non-nil for model setup popup events
-	SessionPicker *SessionPicker
-	RewindPicker  *RewindPicker
-	IssueView     *IssueEventData // non-nil for issue view events only
-	Issue         *issuepkg.Issue // reserved for lightweight issue payloads
-	InputPrefill  string
+	Type            EventType
+	Task            string
+	Message         string
+	RawANSI         bool
+	ToolName        string
+	ToolCallID      string
+	Summary         string
+	Meta            map[string]any
+	ReplayWait      *ReplayWaitData
+	CtxUsed         int
+	CtxMax          int
+	TokensUsed      int
+	Train           *TrainEventData // non-nil for train events only
+	Project         *ProjectStatusView
+	Permission      *PermissionPromptData
+	AskUserQuestion *AskUserQuestionPromptData
+	Permissions     *PermissionsViewData
+	Popup           *SelectionPopup // non-nil for popup events only
+	SetupPopup      *SetupPopup     // non-nil for model setup popup events
+	SessionPicker   *SessionPicker
+	RewindPicker    *RewindPicker
+	IssueView       *IssueEventData // non-nil for issue view events only
+	Issue           *issuepkg.Issue // reserved for lightweight issue payloads
+	InputPrefill    string
 }
 
 // ReplayWaitData lets replay fast-forward the UI timer while using shorter real delays.
@@ -164,6 +168,27 @@ type PermissionOption struct {
 	// Input is the token sent back to backend permission handler, e.g. "1", "2", "3", "esc".
 	Input string
 	Label string
+}
+
+// AskUserQuestionPromptData describes a structured question prompt rendered by the UI.
+type AskUserQuestionPromptData struct {
+	Title        string
+	SubmitPrefix string
+	Questions    []AskUserQuestionView
+}
+
+// AskUserQuestionView is one question shown in the interactive prompt.
+type AskUserQuestionView struct {
+	Header      string
+	Question    string
+	Options     []AskUserQuestionOption
+	MultiSelect bool
+}
+
+// AskUserQuestionOption is one selectable answer option.
+type AskUserQuestionOption struct {
+	Label       string
+	Description string
 }
 
 // PermissionsViewData is the payload for interactive /permissions view.
