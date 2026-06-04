@@ -8,18 +8,12 @@ import (
 	"testing"
 )
 
-func TestManifestURLsDefaultOrder(t *testing.T) {
+func TestManifestURLsEmptyByDefault(t *testing.T) {
 	t.Setenv("MSCLI_MANIFEST_URL", "")
 
 	got := ManifestURLs()
-	if len(got) != 2 {
-		t.Fatalf("ManifestURLs() len = %d, want 2", len(got))
-	}
-	if got[0] != defaultMirrorManifestURL {
-		t.Fatalf("ManifestURLs()[0] = %q, want %q", got[0], defaultMirrorManifestURL)
-	}
-	if got[1] != defaultGitHubManifestURL {
-		t.Fatalf("ManifestURLs()[1] = %q, want %q", got[1], defaultGitHubManifestURL)
+	if len(got) != 0 {
+		t.Fatalf("ManifestURLs() len = %d, want 0", len(got))
 	}
 }
 

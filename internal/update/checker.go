@@ -199,11 +199,11 @@ func parseSemver(v string) semverVersion {
 	return result
 }
 
-// FetchReleaseNotes fetches the body of a GitHub release by tag.
+// FetchReleaseNotes fetches the body of a GitCode release by tag.
 // Returns empty string on any failure (non-fatal).
 func FetchReleaseNotes(ctx context.Context, version string) string {
 	version = strings.TrimPrefix(version, "v")
-	url := fmt.Sprintf("https://api.github.com/repos/mindspore-lab/mindspore-cli/releases/tags/v%s", version)
+	url := fmt.Sprintf("https://api.gitcode.com/api/v5/repos/mindspore/mscli/releases/tags/v%s", version)
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -212,7 +212,7 @@ func FetchReleaseNotes(ctx context.Context, version string) string {
 	if err != nil {
 		return ""
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

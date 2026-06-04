@@ -25,7 +25,7 @@ type RemoteConfig struct {
 	TokenPath string `yaml:"token_path,omitempty"`
 }
 
-const DefaultServerURL = "https://mscli.dev"
+const DefaultServerURL = ""
 const DefaultRequestMaxIterations = 100
 
 func (c *Config) normalize() {

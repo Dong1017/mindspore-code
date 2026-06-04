@@ -45,7 +45,7 @@ mindspore-cli/
     skills/                skill loading tool
   ui/                      Bubble Tea app, shared model, panels, slash commands
   configs/                 config loading, state, shared config types
-  scripts/                 release, install, mirror deploy scripts
+  scripts/                 release and install scripts
   docs/                    architecture and contributor guide
 ```
 

@@ -6,11 +6,6 @@ import (
 	"runtime"
 )
 
-const (
-	defaultMirrorManifestURL = "https://mscli.dev/mscli/releases/latest/manifest.json"
-	defaultGitHubManifestURL = "https://github.com/mindspore-lab/mindspore-cli/releases/latest/download/manifest.json"
-)
-
 // InstallDir returns ~/.mscli/bin.
 func InstallDir() string {
 	return filepath.Join(ConfigDir(), "bin")
@@ -46,5 +41,5 @@ func ManifestURLs() []string {
 	if u := os.Getenv("MSCLI_MANIFEST_URL"); u != "" {
 		return []string{u}
 	}
-	return []string{defaultMirrorManifestURL, defaultGitHubManifestURL}
+	return nil
 }
