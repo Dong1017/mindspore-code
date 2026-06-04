@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"testing"
 
@@ -250,8 +251,8 @@ func TestRunFailsWhenIterationBudgetExpiresBeforeCompletion(t *testing.T) {
 		ID:          "task-exceed-limit",
 		Description: "read the file",
 	})
-	if err != nil {
-		t.Fatalf("Run failed: %v", err)
+	if !errors.Is(err, ErrMaxIterations) {
+		t.Fatalf("Run error = %v, want ErrMaxIterations", err)
 	}
 	if len(events) == 0 {
 		t.Fatal("expected events, got none")

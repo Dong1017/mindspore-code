@@ -563,8 +563,8 @@ func TestWireAndSetProviderRespectMSCLIMaxIterations(t *testing.T) {
 			ID:          taskID,
 			Description: "read the file",
 		})
-		if err != nil {
-			t.Fatalf("Engine.Run() error = %v", err)
+		if !errors.Is(err, loop.ErrMaxIterations) {
+			t.Fatalf("Engine.Run() error = %v, want ErrMaxIterations", err)
 		}
 		if len(events) == 0 {
 			t.Fatal("expected events, got none")
