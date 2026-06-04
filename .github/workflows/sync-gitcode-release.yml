@@ -1,0 +1,154 @@
+name: Sync GitCode Release
+
+on:
+  release:
+    types:
+      - published
+      - edited
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Preview the GitCode API request without creating or updating a release"
+        required: false
+        default: true
+        type: boolean
+      tag_name:
+        description: "Release tag to sync"
+        required: true
+        type: string
+      release_name:
+        description: "Release title to sync (defaults to tag name if empty)"
+        required: false
+        type: string
+      body:
+        description: "Release notes markdown"
+        required: false
+        type: string
+      prerelease:
+        description: "Whether this should be treated as a prerelease"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-gitcode-release-${{ github.event.release.tag_name || inputs.tag_name || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  sync-gitcode-release:
+    runs-on: ubuntu-latest
+    env:
+      GITCODE_OWNER: ${{ secrets.GITCODE_OWNER }}
+      GITCODE_REPO: ${{ secrets.GITCODE_REPO }}
+      GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+      GITCODE_API_BASE: ${{ secrets.GITCODE_API_BASE || 'https://gitcode.com/api/v5' }}
+      GH_TAG: ${{ github.event.release.tag_name || inputs.tag_name }}
+      GH_NAME: ${{ github.event.release.name || inputs.release_name }}
+      GH_BODY: ${{ github.event.release.body || inputs.body }}
+      GH_PRERELEASE: ${{ github.event.release.prerelease || inputs.prerelease || false }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+
+    steps:
+      - name: Validate configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GITCODE_OWNER}"
+          test -n "${GITCODE_REPO}"
+          test -n "${GH_TAG}"
+          if [ "${DRY_RUN}" != "true" ]; then
+            test -n "${GITCODE_TOKEN}"
+          fi
+
+      - name: Sync release metadata to GitCode
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          api="${GITCODE_API_BASE}/repos/${GITCODE_OWNER}/${GITCODE_REPO}"
+          release_name="${GH_NAME:-$GH_TAG}"
+          release_body="${GH_BODY:-}"
+
+          payload="$(jq -n \
+            --arg tag "${GH_TAG}" \
+            --arg name "${release_name}" \
+            --arg body "${release_body}" \
+            --argjson prerelease "${GH_PRERELEASE:-false}" \
+            '{
+              tag_name: $tag,
+              name: $name,
+              body: $body,
+              prerelease: $prerelease
+            }'
+          )"
+
+          if [ "${DRY_RUN}" = "true" ]; then
+            echo "Dry run enabled. No GitCode release will be created or updated."
+            echo "Payload:"
+            echo "${payload}" | jq .
+            exit 0
+          fi
+
+          echo "Checking GitCode release for tag ${GH_TAG}..."
+          http_code="$(curl -sS -o release.json -w "%{http_code}" \
+            -H "Private-Token: ${GITCODE_TOKEN}" \
+            "${api}/releases/tags/${GH_TAG}")"
+          echo "Lookup HTTP ${http_code}"
+          echo "Lookup body:"
+          cat release.json || true
+          echo ""
+          api_error_code="$(jq -r '.error_code // empty' release.json 2>/dev/null || true)"
+          api_error_message="$(jq -r '.error_message // empty' release.json 2>/dev/null || true)"
+
+          if [ "${http_code}" = "200" ]; then
+            echo "GitCode release ${GH_TAG} already exists."
+            jq '{tag_name, name}' release.json
+            exit 0
+          fi
+
+          # Detect bad token early — GitCode returns 404 with "token not found" for invalid tokens.
+          if echo "${api_error_message}" | grep -qi "token not found"; then
+            echo "ERROR: GITCODE_TOKEN is invalid or expired."
+            exit 1
+          fi
+
+          if [ "${http_code}" = "400" ] && [ "${api_error_code}" = "404" ]; then
+            http_code="404"
+          fi
+
+          if [ "${http_code}" != "404" ]; then
+            echo "Unexpected GitCode release lookup response: ${http_code}"
+            exit 1
+          fi
+
+          echo "Creating GitCode release for tag ${GH_TAG}..."
+          create_code="$(curl -sS -o result.json -w "%{http_code}" \
+            -X POST \
+            "${api}/releases" \
+            -H "Private-Token: ${GITCODE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "${payload}")"
+          echo "Create HTTP ${create_code}"
+          echo "Create body:"
+          cat result.json || true
+          echo ""
+          if [ "${create_code}" != "200" ] && [ "${create_code}" != "201" ]; then
+            echo "ERROR: failed to create GitCode release"
+            exit 1
+          fi
+          jq '{tag_name, name}' result.json
+
+      - name: Summary
+        shell: bash
+        run: |
+          {
+            echo "## GitCode release sync"
+            echo ""
+            echo "- tag: \`${GH_TAG}\`"
+            echo "- repo: \`${GITCODE_OWNER}/${GITCODE_REPO}\`"
+            echo "- source: \`${{ github.event_name }}\`"
+            echo "- dry-run: \`${DRY_RUN}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"

@@ -1,0 +1,37 @@
+# Binaries
+/mscli
+/mscode
+/dist/
+*.exe
+*.out
+
+# Go build/test artifacts
+*.test
+*.prof
+
+# Go workspace and cache files
+*.coverprofile
+
+# mscli local state
+.mscli/
+.mscode/
+/.cache
+
+# Server runtime artifacts
+mscli-server
+mscode-server
+issues.db
+
+
+# Debug/log files
+*.log
+debug*.log
+sse_debug.log
+
+# Local scripts
+scripts/download-stats.sh
+
+# IDE files
+.vscode/
+.cursor/
+.codex
