@@ -85,10 +85,11 @@ type Application struct {
 	projectService *projectpkg.Service
 
 	// Foreground chat task state
-	taskRunID    uint64
-	taskCancels  map[uint64]context.CancelFunc
-	replayCancel context.CancelFunc
-	taskMu       sync.Mutex
+	pendingMaxIterationDecision bool
+	taskRunID                   uint64
+	taskCancels                 map[uint64]context.CancelFunc
+	replayCancel                context.CancelFunc
+	taskMu                      sync.Mutex
 
 	// Model preset runtime override state.
 	activeModelPresetID  string

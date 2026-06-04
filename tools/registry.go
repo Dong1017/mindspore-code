@@ -91,12 +91,40 @@ func (r *Registry) Count() int {
 
 // ToLLMTools converts all tools to LLM tool format.
 func (r *Registry) ToLLMTools() []llm.Tool {
+	return r.ToLLMToolsFiltered(func(Tool, ToolMetadata) bool { return true })
+}
+
+func (r *Registry) Metadata(name string) ToolMetadata {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if _, ok := r.tools[name]; !ok {
+		return ToolMetadata{}
+	}
+	return builtinMetadata(name)
+}
+
+func (r *Registry) HasClass(name string, class ToolClass) bool {
+	metadata := r.Metadata(name)
+	for _, current := range metadata.Classes {
+		if current == class {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *Registry) ToLLMToolsFiltered(allow func(Tool, ToolMetadata) bool) []llm.Tool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	result := make([]llm.Tool, 0, len(r.tools))
 	for _, name := range r.order {
 		if t, ok := r.tools[name]; ok {
+			metadata := builtinMetadata(name)
+			if allow != nil && !allow(t, metadata) {
+				continue
+			}
 			result = append(result, llm.Tool{
 				Type: "function",
 				Function: llm.ToolFunction{

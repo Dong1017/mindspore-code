@@ -26,6 +26,8 @@ type EngineConfig struct {
 	SystemPrompt   string
 }
 
+var ErrMaxIterations = errors.New("maximum iterations exceeded")
+
 // Engine runs the ReAct loop: LLM → tool call → LLM → done.
 type Engine struct {
 	config      EngineConfig
@@ -224,6 +226,7 @@ func (ex *executor) run(ctx context.Context) ([]Event, error) {
 		ex.addEvent(NewEvent(EventTaskCompleted, "Task completed successfully"))
 	} else if ex.engine.config.MaxIterations > 0 && ex.iterCount >= ex.engine.config.MaxIterations {
 		ex.addEvent(NewEvent(EventTaskFailed, "Task exceeded maximum iterations."))
+		return ex.events, ErrMaxIterations
 	} else {
 		ex.addEvent(NewEvent(EventTaskCompleted, "Task completed successfully"))
 	}
@@ -244,7 +247,7 @@ func (ex *executor) callLLM(ctx context.Context) (*llm.CompletionResponse, error
 
 	req := &llm.CompletionRequest{
 		Messages:    ex.requestMessages(),
-		Tools:       ex.engine.tools.ToLLMTools(),
+		Tools:       ex.filteredTools(),
 		Temperature: ex.engine.config.Temperature,
 		MaxTokens:   ex.engine.config.MaxTokens,
 	}
@@ -270,6 +273,32 @@ func (ex *executor) callLLM(ctx context.Context) (*llm.CompletionResponse, error
 	}
 
 	return resp, nil
+}
+
+func (ex *executor) filteredTools() []llm.Tool {
+	if !ex.task.DisableResearchTools {
+		return ex.engine.tools.ToLLMTools()
+	}
+
+	filtered := ex.engine.tools.ToLLMToolsFiltered(func(_ tools.Tool, metadata tools.ToolMetadata) bool {
+		if len(metadata.Classes) == 0 {
+			return false
+		}
+		return !hasToolClass(metadata, tools.ToolClassExploration) && !hasToolClass(metadata, tools.ToolClassContextExpansion)
+	})
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
+}
+
+func hasToolClass(metadata tools.ToolMetadata, class tools.ToolClass) bool {
+	for _, current := range metadata.Classes {
+		if current == class {
+			return true
+		}
+	}
+	return false
 }
 
 func (ex *executor) sanitizeToolPairsBeforeRequest() {
@@ -306,6 +335,24 @@ func (ex *executor) sanitizeToolPairsBeforeRequest() {
 }
 
 func (ex *executor) requestMessages() []llm.Message {
+	msgs := ex.baseRequestMessages()
+	if !ex.task.DisableResearchTools {
+		return msgs
+	}
+
+	guidance := llm.NewSystemMessage("Research tools are disabled for this turn. Produce the requested answer or artifact from the existing context. You may still use any available non-research tools.")
+	out := make([]llm.Message, 0, len(msgs)+1)
+	if len(msgs) > 0 && msgs[0].Role == "system" {
+		out = append(out, msgs[0], guidance)
+		out = append(out, msgs[1:]...)
+		return out
+	}
+	out = append(out, guidance)
+	out = append(out, msgs...)
+	return out
+}
+
+func (ex *executor) baseRequestMessages() []llm.Message {
 	if !ex.usesResponsesChain() || ex.responsesPreviousID == "" || len(ex.responsesFollowup) == 0 {
 		return ex.engine.ctxManager.GetMessages()
 	}

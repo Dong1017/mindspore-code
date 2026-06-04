@@ -254,6 +254,11 @@ func (a *Application) processInput(input string) {
 		return
 	}
 
+	if a.pendingMaxIterationDecision {
+		a.handleMaxIterationDecision(trimmed)
+		return
+	}
+
 	expanded, err := a.expandInputText(trimmed)
 	if err != nil {
 		a.emitInputExpansionError(err)
@@ -292,6 +297,10 @@ func (a *Application) handlePermissionSettingsPromptInput(input string) {
 }
 
 func (a *Application) runTask(description string) {
+	a.runTaskWithOptions(description, false)
+}
+
+func (a *Application) runTaskWithOptions(description string, disableResearchTools bool) {
 	emit := func(ev model.Event) { a.EventCh <- ev }
 	persistSnapshot := func() {
 		if err := a.persistSessionSnapshot(); err != nil {
@@ -313,8 +322,9 @@ func (a *Application) runTask(description string) {
 	}
 
 	task := loop.Task{
-		ID:          generateTaskID(),
-		Description: description,
+		ID:                   generateTaskID(),
+		Description:          description,
+		DisableResearchTools: disableResearchTools,
 	}
 	if a.ctxManager != nil && a.ctxManager.ShouldCompactAfterAdding(llm.NewUserMessage(description)) {
 		emit(model.Event{
@@ -331,10 +341,17 @@ func (a *Application) runTask(description string) {
 		}
 	})
 	if errors.Is(err, context.Canceled) {
+		a.pendingMaxIterationDecision = false
 		persistSnapshot()
 		return
 	}
 	if err != nil {
+		if errors.Is(err, loop.ErrMaxIterations) {
+			a.pendingMaxIterationDecision = true
+			persistSnapshot()
+			a.emitMaxIterationDecisionPrompt("")
+			return
+		}
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "deadline") {
 			errMsg = fmt.Sprintf("%s\n\nTip: The request timed out. Try:\n  1. Run /compact to reduce context size\n  2. Start a new conversation with /clear\n  3. Increase timeout in config (model.timeout_sec)", errMsg)
@@ -354,7 +371,40 @@ func (a *Application) runTask(description string) {
 		persistSnapshot()
 		return
 	}
+	a.pendingMaxIterationDecision = false
 	persistSnapshot()
+}
+
+func (a *Application) handleMaxIterationDecision(input string) {
+	switch strings.ToLower(strings.TrimSpace(input)) {
+	case "1", "continue":
+		a.pendingMaxIterationDecision = false
+		a.EventCh <- model.Event{Type: model.UserInput, Message: "Continue"}
+		go a.runTaskWithOptions("Continue from the existing context.", false)
+	case "2", "write now", "write":
+		a.pendingMaxIterationDecision = false
+		a.EventCh <- model.Event{Type: model.UserInput, Message: "Write now"}
+		go a.runTaskWithOptions("Produce the requested answer or artifact now using the existing context.", true)
+	case "3", "stop":
+		a.pendingMaxIterationDecision = false
+		if err := a.persistSessionSnapshot(); err != nil {
+			a.emitToolError("session", "Failed to persist session snapshot: %v", err)
+		}
+		a.EventCh <- model.Event{
+			Type:    model.AgentReply,
+			Message: "Stopped the max-iteration recovery flow. Existing context is preserved; send a new explicit instruction when ready.",
+		}
+	default:
+		a.emitMaxIterationDecisionPrompt("Please choose Continue, Write now, or Stop.")
+	}
+}
+
+func (a *Application) emitMaxIterationDecisionPrompt(prefix string) {
+	message := "Max iterations were reached. Choose one: Continue, Write now, or Stop."
+	if prefix != "" {
+		message = prefix + "\n" + message
+	}
+	a.EventCh <- model.Event{Type: model.AgentReply, Message: message}
 }
 
 func (a *Application) beginTaskRun() (context.Context, uint64) {
