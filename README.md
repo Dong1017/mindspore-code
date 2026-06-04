@@ -31,7 +31,9 @@ MindSpore CLI is the official end-to-end interface of MindSpore Model Agent. It 
 ### Install from script
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mindspore-lab/mindspore-cli/main/scripts/install.sh | bash
+tmpdir="$(mktemp -d)"
+git clone --depth 1 https://gitcode.com/mindspore/mscli.git "$tmpdir"
+bash "$tmpdir/scripts/install.sh"
 ```
 
 ### Build from source
@@ -39,8 +41,8 @@ curl -fsSL https://raw.githubusercontent.com/mindspore-lab/mindspore-cli/main/sc
 Go 1.24.2+:
 
 ```bash
-git clone https://github.com/mindspore-lab/mindspore-cli.git
-cd mindspore-cli
+git clone https://gitcode.com/mindspore/mscli.git
+cd mscli
 go build -o mscli ./cmd/mscli
 ./mscli
 ```
