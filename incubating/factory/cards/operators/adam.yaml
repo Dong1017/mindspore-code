@@ -1,0 +1,20 @@
+kind: operator
+id: adam
+name: Adam
+category: optimizer
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+platforms:
+  torch-2.7+ascend-910b:
+    status: supported
+    profiled: true
+    latency_ms: 400
+optimized_variant: fused-adam
+description: |
+  Standard Adam optimizer. On Ascend 910B, step latency is ~400ms which
+  is a known bottleneck. The fused-adam variant reduces this to ~250ms
+  with a custom kernel, boosting throughput by ~10%.

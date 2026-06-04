@@ -1,0 +1,61 @@
+required: [kind, id, lifecycle, source, confidence, context, observation]
+properties:
+  kind:
+    const: report
+  id:
+    type: string
+  lifecycle:
+    type: object
+    properties:
+      state:
+        enum: [draft, stable, archived]
+  source:
+    type: object
+    properties:
+      kind:
+        enum: [bootstrap, execution, manual]
+  confidence:
+    type: object
+    properties:
+      level:
+        enum: [bootstrap, observed, verified]
+  submitted_by:
+    type: string
+  submitted_at:
+    type: string
+    format: date-time
+  context:
+    type: object
+    properties:
+      model:
+        type: string
+      method:
+        type: string
+      platform:
+        type: string
+      framework:
+        type: string
+      device_count:
+        type: integer
+  observation:
+    type: object
+    properties:
+      type:
+        enum: [failure, accuracy, performance, success]
+      summary:
+        type: string
+      error_log:
+        type: string
+  metrics:
+    type: object
+    properties:
+      steps_completed:
+        type: integer
+      final_loss:
+        type: number
+      throughput:
+        type: number
+      eval_acc:
+        type: object
+  config_snapshot:
+    type: object

@@ -1,0 +1,52 @@
+kind: known_issue
+id: dsa-torch27-ascend
+symptom: failure
+severity: critical
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+tags: [dsa, ascend, torch, operator, crash]
+affects_operators: [dsa]
+affects_platforms: [ascend-910b]
+detection:
+  pattern: "DSA operator.*not implemented"
+description: |
+  Training crashes during operator initialization when the script calls
+  torch.ops.npu.dsa(). The DSA (Dynamic Sparse Attention) operator is
+  not implemented in torch 2.7 for the Ascend backend. The crash occurs
+  at the step where DSA is first invoked.
+fix:
+  summary: Implement DSA kernel in torch_npu and recompile
+  diff: |
+    --- a/torch_npu/csrc/aten/ops/dsa_kernel.cpp
+    +++ b/torch_npu/csrc/aten/ops/dsa_kernel.cpp
+    @@ -0,0 +1,22 @@
+    +#include <ATen/native/npu/DsaKernel.h>
+    +#include <torch_npu/csrc/framework/OpCommand.h>
+    +
+    +namespace at_npu {
+    +namespace native {
+    +
+    +at::Tensor dsa_forward_npu(
+    +    const at::Tensor& query,
+    +    const at::Tensor& key,
+    +    const at::Tensor& value,
+    +    double scale) {
+    +  auto output = at::empty_like(query);
+    +  OpCommand cmd;
+    +  cmd.Name("DSA")
+    +     .Input(query)
+    +     .Input(key)
+    +     .Input(value)
+    +     .Attr("scale", static_cast<float>(scale))
+    +     .Output(output)
+    +     .Run();
+    +  return output;
+    +}
+    +
+    +} // namespace native
+    +} // namespace at_npu
+  operator_id: dsa

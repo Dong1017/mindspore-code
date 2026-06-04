@@ -1,0 +1,19 @@
+kind: operator
+id: fused-adam
+name: Fused Adam
+category: optimizer
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+platforms:
+  torch-2.7+ascend-910b:
+    status: supported
+    profiled: true
+    latency_ms: 250
+description: |
+  Fused Adam optimizer with custom Ascend 910B kernel. Reduces per-step
+  latency from ~400ms (standard adam) to ~250ms. Throughput improves
+  from ~518 tok/s to ~571 tok/s on qwen3-7b lora training.

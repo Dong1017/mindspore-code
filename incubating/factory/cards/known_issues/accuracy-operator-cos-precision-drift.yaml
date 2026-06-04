@@ -1,0 +1,95 @@
+schema_version: known_issue/v0.6
+kind: known_issue
+id: accuracy-operator-cos-precision-drift
+title: Cos complex benchmark conjugate false positive
+tags:
+- accuracy
+- operator
+- cos
+- complex
+- benchmark
+- conjugate
+- testcase
+case:
+  problem_type: accuracy
+  stage: infer
+  domain: mindspore
+  hardware: cpu
+  severity: medium
+  occurrence_count: 1
+  environment:
+    frameworks:
+    - name: mindspore
+      version: master
+      commit: 0b12b4a1
+    runtime:
+      cann_version: none
+    model:
+      execution_mode: GRAPH_MODE
+      testcase_family:
+      - test_p_cos_input_2d_complex64
+      - test_p_cos_input_4d_complex64
+      - test_p_cos_input_5d_complex128
+      - test_p_cos_input_6d_complex64
+      - test_p_cos_input_7d_complex128
+match:
+  metadata:
+    problem_type: accuracy
+    stage: infer
+    domain: mindspore
+    hardware: cpu
+  keywords:
+  - cos
+  - complex64
+  - complex128
+  - conjugate
+  regex:
+  - "(?i)cos.*complex"
+guidance:
+  symptom: |
+    Complex `cos` on CPU appears inaccurate, but the mismatch is caused by an
+    extra conjugate inserted in the benchmark path.
+  trigger_signals:
+  - cos 算子复数类型 complex64/complex128 精度异常
+  - 框架输出和参考值方向相反或被额外处理
+  representative_errors: []
+  diagnosis: 'The root-cause comment explicitly says this is not an operator problem:
+    the testcase wrote the benchmark path incorrectly by applying an extra conjugate,
+    so the comparison target itself was wrong.'
+  diagnosis_details:
+  - 与开发确认后结论是测试用例写错
+  - 多做的共轭导致 reference 被改坏，不是算子输出错误
+  actions:
+  - 检查 complex benchmark/reference 是否多做了 conjugate。
+  - 删除测试用例中的额外共轭处理。
+  - 回归 complex64/complex128 的各个 shape 场景。
+  fix: 修改测试用例，去掉 benchmark 路径里多余的 conjugate。
+  why_it_works:
+  - 参考路径恢复正确后，CPU complex `cos` 的输出会自然与基准对齐。
+  verification: |
+    After the fix, complex `cos` no longer shows a false mismatch caused by the
+    benchmark path.
+  non_causes:
+  - 不是 cos kernel 的复数实现错误
+provenance:
+  references:
+  - issue:org-issues#42131
+  notes: Rewritten from org-issues#42131 issue body and root-cause comments. The source
+    issue reports complex cos precision failure, and the root-cause comment says the
+    testcase inserted an extra conjugate.
+  expected_behavior:
+  - complex64/complex128 场景对齐
+  - CPU 端参考值一致
+  regression_tests:
+  - test_p_cos_input_2d_complex64
+  - test_p_cos_input_4d_complex64
+  - test_p_cos_input_5d_complex128
+  - test_p_cos_input_6d_complex64
+  - test_p_cos_input_7d_complex128
+governance:
+  confidence: verified
+  lifecycle: stable
+  review_status: pending
+  rationale: rewritten from org-issues#42131 source body and root-cause comments on
+    2026-05-12
+  updated_at: '2026-05-12'

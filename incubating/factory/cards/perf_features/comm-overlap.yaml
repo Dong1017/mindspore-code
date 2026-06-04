@@ -1,0 +1,26 @@
+kind: perf_feature
+id: comm-overlap
+name: Communication Overlap
+category: communication
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+description: |
+  Overlap gradient allreduce communication with backward computation.
+  Gradient buckets are reduced asynchronously as soon as they are ready,
+  hiding communication latency behind compute.
+expected_gain: "reduced distributed training overhead"
+platforms: [ascend-910b]
+compatible_methods: [lora, full]
+config_diff: |
+  --- a/configs/qwen3_lora.yaml
+  +++ b/configs/qwen3_lora.yaml
+  @@ -38,2 +38,6 @@
+   distributed:
+  +  comm_overlap: True
+  +  overlap_grad_reduce: True
+  +  bucket_size_mb: 25
+  +  allreduce_fusion_threshold: 2048

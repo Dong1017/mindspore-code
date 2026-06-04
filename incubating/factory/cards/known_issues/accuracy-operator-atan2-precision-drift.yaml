@@ -1,0 +1,96 @@
+schema_version: known_issue/v0.6
+kind: known_issue
+id: accuracy-operator-atan2-precision-drift
+title: Atan2 910A boundary-value hardware limitation
+tags:
+- accuracy
+- operator
+- atan2
+- 910a
+- 910b
+- boundary-value
+- hardware-limitation
+case:
+  problem_type: accuracy
+  stage: infer
+  domain: mindspore
+  hardware: ascend
+  severity: medium
+  occurrence_count: 2
+  environment:
+    frameworks:
+    - name: mindspore
+      version: master
+      commit: c899f34dbd6ab49886b6970c72d432e0e6c0556e
+    runtime:
+      hardware_detail: 910A / 910B
+    model:
+      affected_scenes:
+      - mint.atan2(Tensor(False), Tensor(False))
+      - mint.atan2(0, 0)
+      hardware_scope: 910A only
+    affected:
+    - 910A boundary-value scene
+    - mint.atan2(False, False)
+    - mint.atan2(0, 0)
+match:
+  metadata:
+    problem_type: accuracy
+    stage: infer
+    domain: mindspore
+    hardware: ascend
+  keywords:
+  - atan2
+  - 910A
+  - 910B
+  - bool
+  - '0,0'
+  - boundary
+  regex:
+  - "(?i)atan2.*910a"
+guidance:
+  symptom: |
+    `atan2` appears inconsistent between 910A, 910B, and torch on a boundary
+    scene, but the mismatch is tied to a 910A hardware limitation rather than
+    a generic operator regression.
+  trigger_signals:
+  - mint.atan2 910A 对 Bool 类型支持与 torch 及 910B 不符
+  - 910A / 910B 输出不一致
+  - mint.atan2(False, False) 在 910A 返回 1.5708，而 torch 返回 0
+  representative_errors:
+  - 910A / 910B 输出不一致
+  diagnosis: 'Both root-cause comments say the same thing: this is a 910A hardware
+    limitation. 910A lacks part of the TBE instruction support for these boundary-value
+    scenes, so the `(False, False)` and `(0, 0)` cases cannot be made to match torch/910B
+    through a normal atan2 operator fix.'
+  diagnosis_details: []
+  actions:
+  - 确认问题只在 910A 边界值场景触发，而不是通用的 `atan2` 功能回退。
+  - 按 issue 评论修改看护策略：该边界场景不再对 910A 做精度看护。
+  - 保留 910B 和其他正常场景的持续看护，并在能力说明里标记 910A 的这个限制。
+  fix: 把该场景按 910A 硬件限制处理，调整测试看护范围，而不是尝试修补 `atan2` 数学实现。
+  why_it_works:
+  - 把硬件不支持的边界值从通用精度判定里剥离后，问题定位不会继续被误导成算子回归。
+  verification: |
+    After the fix, unsupported 910A boundary-value behavior is treated as a
+    documented hardware limitation instead of an operator regression.
+  non_causes:
+  - 不是通用 atan2 算法错误
+  - 不是所有 dtype 都存在该问题
+provenance:
+  references:
+  - issue:org-issues#42217
+  - issue:org-issues#42218
+  notes: Rewritten from org-issues#42217 and org-issues#42218 issue bodies and root-cause
+    comments. Both source issues describe the same 910A-only boundary-value limitation
+    for mint.atan2.
+  expected_behavior:
+  - 910A 边界值场景不再被当作通用精度缺陷
+  - 910B 与其他正常场景继续保持看护
+governance:
+  confidence: verified
+  lifecycle: stable
+  review_status: pending
+  rationale: rewritten from org-issues#42217/#42218 source bodies and root-cause
+    comments on 2026-05-12
+  updated_at: '2026-05-12'

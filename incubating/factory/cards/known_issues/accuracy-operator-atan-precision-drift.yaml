@@ -1,0 +1,89 @@
+schema_version: known_issue/v0.6
+kind: known_issue
+id: accuracy-operator-atan-precision-drift
+title: Atan complex tolerance false positive
+tags:
+- accuracy
+- operator
+- atan
+- complex
+- tolerance
+- testcase
+case:
+  problem_type: accuracy
+  stage: infer
+  domain: mindspore
+  hardware: cpu
+  severity: medium
+  occurrence_count: 1
+  environment:
+    frameworks:
+    - name: mindspore
+      version: master
+      commit: 20fd6e9d
+    runtime:
+      cann_version: none
+      python_version: unknown
+    model:
+      execution_mode: GRAPH_MODE
+      testcase: test_p_atan_input_20x7x8x2x3_complex64
+      overflow_flag: MS_ASCEND_CHECK_OVERFLOW_MODE=INFNAN_MODE
+match:
+  metadata:
+    problem_type: accuracy
+    stage: infer
+    domain: mindspore
+    hardware: cpu
+  keywords:
+  - atan
+  - complex64
+  - complex128
+  - tolerance
+  regex:
+  - "(?i)atan.*complex"
+guidance:
+  symptom: |
+    CPU `atan` appears to fail complex precision checks, but the mismatch comes
+    from an overly strict testcase tolerance rather than the operator kernel.
+  trigger_signals:
+  - CPU 后端 atan 算子精度异常
+  - complex64/complex128 场景误报不一致
+  - 把 complex64 loss 设成 1e-6 时失败，放宽后通过
+  representative_errors:
+  - complex64/complex128 场景误报不一致
+  diagnosis: 'The root-cause comment says this is not a kernel defect: the test repository
+    set the complex64 and complex128 loss thresholds too strictly, so normal floating-point
+    variation on complex atan was misclassified as an operator precision bug.'
+  diagnosis_details:
+  - complex64 原用例把 fact.loss 设成 1e-6，阈值过严
+  - 回归结论是 complex64 调到 1e-4、complex128 调到 1e-5 后即可通过
+  actions:
+  - 按 issue 评论调整测试阈值：`complex64` 场景把 `fact.loss` 调到 `1e-4`。
+  - 按 issue 评论调整测试阈值：`complex128` 场景把 `fact.loss` 调到 `1e-5`。
+  - 排查同类复数测试用例是否也沿用了过严的 loss 阈值。
+  fix: 放宽复数 `atan` 测试用例的 loss 阈值，而不是修改 CPU atan 算子实现。
+  why_it_works:
+  - 阈值回到合理区间后，正常复数浮点波动不会再被误报成精度缺陷。
+  verification: |
+    After the fix, complex `atan` no longer reports false precision failures
+    caused only by an over-strict testcase threshold.
+  non_causes:
+  - 不是 atan kernel 算法实现错误
+provenance:
+  references:
+  - issue:org-issues#42194
+  notes: Rewritten from org-issues#42194 issue body and root-cause comments. The source
+    issue reports CPU atan precision failure on complex inputs, and the root-cause
+    comment identifies it as an over-strict testcase threshold.
+  expected_behavior:
+  - complex64/complex128 case 在新容差下稳定通过
+  - 实数场景容差不被放宽过度
+  regression_tests:
+  - test_p_atan_input_20x7x8x2x3_complex64
+governance:
+  confidence: verified
+  lifecycle: stable
+  review_status: pending
+  rationale: rewritten from org-issues#42194 source body and root-cause comments on
+    2026-05-12
+  updated_at: '2026-05-12'

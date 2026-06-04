@@ -1,0 +1,46 @@
+required: [kind, id, lifecycle, source, confidence, name, category]
+properties:
+  kind:
+    const: operator
+  id:
+    type: string
+  name:
+    type: string
+  category:
+    enum: [attention, optimizer, activation, norm, comm, memory]
+  lifecycle:
+    type: object
+    properties:
+      state:
+        enum: [draft, stable, archived]
+  source:
+    type: object
+    properties:
+      kind:
+        enum: [bootstrap, execution, manual]
+  confidence:
+    type: object
+    properties:
+      level:
+        enum: [bootstrap, observed, verified]
+  platforms:
+    type: object
+    additionalProperties:
+      type: object
+      properties:
+        status:
+          enum: [supported, not_supported, experimental]
+        profiled:
+          type: boolean
+        latency_ms:
+          type: number
+        constraints:
+          type: array
+          items:
+            type: string
+  fallback:
+    type: string
+  optimized_variant:
+    type: string
+  description:
+    type: string

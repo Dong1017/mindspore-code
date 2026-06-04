@@ -1,0 +1,94 @@
+schema_version: known_issue/v0.6
+kind: known_issue
+id: accuracy-operator-baddbmm-precision-drift
+title: Baddbmm false precision drift from mutated reference input
+tags:
+- accuracy
+- operator
+- baddbmm
+- cann
+- reference-pollution
+- beta-path
+case:
+  problem_type: accuracy
+  stage: infer
+  domain: mindspore
+  hardware: ascend
+  severity: high
+  occurrence_count: 1
+  environment:
+    frameworks:
+    - name: mindspore
+      version: master
+      commit: 6f53027e
+    runtime:
+      cann_version: '20260330'
+      python_version: '3.12'
+    model:
+      execution_mode: PYNATIVE_MODE
+      testcase: tensor_baddbmm_input_dtype_float32_3d
+      runtime_observation: torch_npu shows the same wrong value as MindSpore after
+        input mutation
+match:
+  metadata:
+    problem_type: accuracy
+    stage: infer
+    domain: mindspore
+    hardware: ascend
+  keywords:
+  - baddbmm
+  - beta
+  - input tensor mutated
+  - reference polluted
+  - torch_npu
+  regex:
+  - "(?i)baddbmm.*precision"
+guidance:
+  symptom: |
+    `ops.baddbmm` is reported as a precision issue on Ascend, but the mismatch
+    comes from a polluted reference path after the input tensor is mutated.
+  trigger_signals:
+  - ops.baddbmm 存在精度问题
+  - 执行后参考值越来越偏
+  - torch_npu 复现出与 MindSpore 相同的错误值
+  representative_errors: []
+  diagnosis: The source comments explicitly say `input0` is multiplied by `beta` in
+    place during execution. The benchmark then reuses that polluted input to compute
+    the torch/numpy reference, so the reported mismatch is a false positive. The same
+    wrong value also reproduces in torch_npu, which further points to a lower-level
+    CANN issue rather than baddbmm operator math.
+  diagnosis_details:
+  - 问题由 CANN 升级引入
+  - input0 原地乘 beta 后，reference 继续复用被污染输入
+  - torch_npu 同样出现相同错误值，进一步指向底层 runtime 问题
+  actions:
+  - benchmark/reference 侧先复制输入，避免复用被 MindSpore 执行后污染的 `input0`。
+  - 升级到已修复该输入原地改写问题的 CANN 版本。
+  - 用 torch_npu / torch 交叉验证同一输入是否也会被底层原地改写。
+  fix: 先解耦 benchmark 输入，再在已修复该原地改写问题的 CANN 版本上验证 `baddbmm`。
+  why_it_works:
+  - 输入与 reference 解耦后，测试不再把“参考值被污染”误报成算子精度问题。
+  verification: |
+    After the fix, `baddbmm` no longer shows false precision drift caused by
+    mutated benchmark input.
+  non_causes:
+  - 不是 baddbmm 数学定义实现错误
+provenance:
+  references:
+  - issue:org-issues#42228
+  notes: Rewritten from org-issues#42228 issue body and root-cause comments. The source
+    issue reports baddbmm precision drift, while the root-cause comments identify
+    it as a CANN-side input-mutation problem that also reproduces in torch_npu.
+  expected_behavior:
+  - 复制输入后 reference 稳定
+  - 修复版 runtime 上 baddbmm case 通过
+  - MindSpore 结果正确而 reference 不再被输入污染
+  regression_tests:
+  - tensor_baddbmm_input_dtype_float32_3d
+governance:
+  confidence: verified
+  lifecycle: stable
+  review_status: pending
+  rationale: rewritten from org-issues#42228 source body and root-cause comments on
+    2026-05-12
+  updated_at: '2026-05-12'

@@ -1,0 +1,28 @@
+kind: perf_feature
+id: sequence-parallel
+name: Sequence Parallel
+category: communication
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+description: |
+  Split the sequence dimension across the tensor parallel group. Each
+  device processes a portion of the sequence length, reducing per-device
+  memory for activations. Scatter and gather operations are overlapped
+  with computation.
+expected_gain: "reduced activation memory per device"
+platforms: [ascend-910b]
+compatible_methods: [lora, full]
+config_diff: |
+  --- a/configs/qwen3_lora.yaml
+  +++ b/configs/qwen3_lora.yaml
+  @@ -38,3 +38,7 @@
+   parallelism:
+     tensor_parallel: 4
+  +  sequence_parallel: True
+  +  sp_size: 4  # split sequence across TP group
+  +  sp_comm_overlap: True
+  +  scatter_gather_tensors: True

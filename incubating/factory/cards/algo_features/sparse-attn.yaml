@@ -1,0 +1,28 @@
+kind: algo_feature
+id: sparse-attn
+name: Sparse Attention
+category: attention
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+description: |
+  Apply block-sparse attention pattern to reduce the quadratic complexity
+  of full attention. Each token attends only within local blocks plus a
+  small set of global tokens. Sparsity ratio of 0.75 means only 25% of
+  attention entries are computed.
+expected_gain: "reduced attention complexity, 0.75 sparsity ratio"
+platforms: [ascend-910b]
+compatible_methods: [lora, full]
+config_diff: |
+  --- a/configs/qwen3_lora.yaml
+  +++ b/configs/qwen3_lora.yaml
+  @@ -12,3 +12,6 @@
+   attention:
+  -  type: "full"
+  +  type: "block_sparse"
+  +  block_size: 64
+  +  num_global_tokens: 16
+  +  sparsity_ratio: 0.75

@@ -1,0 +1,29 @@
+kind: algo_feature
+id: lora-plus
+name: LoRA+
+category: optimizer
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+description: |
+  LoRA+ uses differential learning rates for LoRA A and B matrices.
+  The B matrix uses a 10x smaller learning rate than A, which improves
+  convergence by better balancing the low-rank decomposition updates.
+expected_gain: "improved convergence via differential LR"
+platforms: [ascend-910b]
+compatible_methods: [lora]
+config_diff: |
+  --- a/configs/qwen3_lora.yaml
+  +++ b/configs/qwen3_lora.yaml
+  @@ -25,4 +25,7 @@
+   lora:
+     rank: 16
+     alpha: 32
+  -  lr: 2e-4
+  +  # LoRA+: differential LR for A/B matrices
+  +  lr_A: 2e-4
+  +  lr_B: 2e-5       # 10x smaller for B matrix
+  +  lr_scheduler: "cosine_with_warmup"

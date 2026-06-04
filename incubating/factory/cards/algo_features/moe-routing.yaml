@@ -1,0 +1,28 @@
+kind: algo_feature
+id: moe-routing
+name: MoE Routing
+category: scaling
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+description: |
+  Mixture-of-Experts with top-k dynamic routing. Each token is routed
+  to the top-k experts based on a learned gating function. A load
+  balancing loss prevents expert collapse.
+expected_gain: "increased model capacity without proportional compute increase"
+platforms: [ascend-910b]
+compatible_methods: [lora, full]
+config_diff: |
+  --- a/configs/qwen3_lora.yaml
+  +++ b/configs/qwen3_lora.yaml
+  @@ -14,2 +14,7 @@
+   model:
+  +  moe:
+  +    enabled: True
+  +    num_experts: 8
+  +    top_k: 2
+  +    capacity_factor: 1.25
+  +    load_balance_loss_weight: 0.01

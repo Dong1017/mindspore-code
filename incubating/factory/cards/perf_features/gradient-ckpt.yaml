@@ -1,0 +1,24 @@
+kind: perf_feature
+id: gradient-ckpt
+name: Gradient Checkpointing
+category: memory
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+description: |
+  Trade compute for memory by recomputing activations during the backward
+  pass instead of storing them. Checkpoints are placed every N layers to
+  balance memory savings against recomputation overhead.
+expected_gain: "reduced peak memory usage"
+platforms: [ascend-910b]
+compatible_methods: [lora, full]
+config_diff: |
+  --- a/configs/qwen3_lora.yaml
+  +++ b/configs/qwen3_lora.yaml
+  @@ -30,2 +30,4 @@
+   memory:
+  +  gradient_checkpointing: True
+  +  checkpoint_every_n_layers: 4

@@ -1,0 +1,22 @@
+kind: operator
+id: softmax
+name: Softmax
+category: activation
+lifecycle:
+  state: stable
+source:
+  kind: bootstrap
+confidence:
+  level: bootstrap
+platforms:
+  torch-2.7+ascend-910b:
+    status: supported
+    profiled: true
+    constraints:
+      - "fp16 accumulation causes precision drift on Ascend"
+      - "use bf16 or fp32 softmax_dtype to avoid accuracy regression"
+description: |
+  Softmax activation operator. On Ascend 910B, using float16 for softmax
+  accumulation causes precision loss that leads to significant accuracy
+  drift (-16.8 pts on ceval-valid). Switching softmax_dtype to bfloat16
+  or float32 resolves the issue.
