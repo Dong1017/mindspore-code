@@ -1,0 +1,28 @@
+schema_version: known_issue/v0.5
+kind: known_issue
+id: stable-mindspore-compile
+title: MindSpore compile failure
+tags: [mindspore, compile]
+case:
+  problem_type: failure
+  stage: compile
+  domain: mindspore
+  hardware: ascend
+match:
+  keywords: [mindspore, graph compile]
+  regex: ["Graph compile.*failed"]
+guidance:
+  symptom: MindSpore graph compile fails
+  diagnosis: MindSpore graph compilation fails before execution.
+  actions: [Collect graph compiler diagnostics.]
+  fix: Adjust the unsupported graph pattern or runtime configuration.
+  verification: Run graph compile smoke test.
+  non_causes: []
+provenance:
+  references: [issue-123]
+  expected_behavior: [MindSpore graph compiles successfully.]
+governance:
+  confidence: observed
+  lifecycle: stable
+  review_status: approved
+  rationale: observed

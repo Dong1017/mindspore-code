@@ -263,6 +263,12 @@ func (r *Registry) registerDefaults() {
 	})
 
 	r.Register(Command{
+		Name:        "/factory",
+		Description: "Create cards, submit review bundles, and build/sync Factory packs",
+		Usage:       "/factory <card|pack> ...",
+	})
+
+	r.Register(Command{
 		Name:        "/issues",
 		Description: "List issues",
 		Usage:       "/issues [status]",

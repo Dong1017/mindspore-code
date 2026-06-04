@@ -102,6 +102,18 @@ func (s *Store) migrate() error {
 			user       TEXT PRIMARY KEY,
 			last_seen  TEXT NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS factory_pack_versions (
+			id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+			pack_name            TEXT NOT NULL,
+			pack_version         TEXT NOT NULL,
+			schema_version       TEXT NOT NULL,
+			card_schema_version  TEXT NOT NULL,
+			checksum             TEXT NOT NULL,
+			compiled_case_count  INTEGER NOT NULL,
+			publisher            TEXT NOT NULL,
+			pack_blob            BLOB NOT NULL,
+			created_at           TEXT NOT NULL
+		)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.Exec(stmt); err != nil {
@@ -122,6 +134,8 @@ func (s *Store) migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_issue_activities_created_at ON issue_activities(created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_issue_notes_issue_id ON issue_notes(issue_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_issue_activities_issue_id ON issue_activities(issue_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_factory_pack_versions_created_at ON factory_pack_versions(created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_factory_pack_versions_checksum ON factory_pack_versions(checksum)`,
 	}
 	for _, stmt := range indexStmts {
 		if _, err := s.db.Exec(stmt); err != nil {

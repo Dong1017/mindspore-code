@@ -41,9 +41,10 @@ const (
 type bootstrapHelpTopic string
 
 const (
-	bootstrapHelpTopicRoot   bootstrapHelpTopic = "root"
-	bootstrapHelpTopicResume bootstrapHelpTopic = "resume"
-	bootstrapHelpTopicReplay bootstrapHelpTopic = "replay"
+	bootstrapHelpTopicRoot    bootstrapHelpTopic = "root"
+	bootstrapHelpTopicResume  bootstrapHelpTopic = "resume"
+	bootstrapHelpTopicReplay  bootstrapHelpTopic = "replay"
+	bootstrapHelpTopicFactory bootstrapHelpTopic = "factory"
 )
 
 type bootstrapHelpError struct {
@@ -76,6 +77,14 @@ func Run(args []string) error {
 	if len(args) > 0 && (args[0] == "--version" || args[0] == "-v") {
 		_, err := fmt.Fprintln(cliStdout, version.Version)
 		return err
+	}
+
+	if len(args) > 0 && args[0] == "factory" {
+		if len(args) > 1 && (args[1] == "--help" || args[1] == "-h" || args[1] == "help") {
+			_, err := io.WriteString(cliStdout, renderBootstrapHelp(bootstrapHelpTopicFactory))
+			return err
+		}
+		return runFactoryCLI(args[1:], cliStdout)
 	}
 
 	if len(args) > 0 && args[0] == "help" {
@@ -844,6 +853,8 @@ Examples:
   mscli replay sess_123
   mscli replay trajectory.json 2x
 `
+	case bootstrapHelpTopicFactory:
+		return renderFactoryHelpForSurface(factorySurfaceCLI) + "\n"
 	default:
 		return `MindSpore CLI starts the training-focused agent UI for MindSpore workflows.
 
@@ -853,6 +864,7 @@ Usage:
 Commands:
   resume    Resume a saved session; opens the session picker UI by default
   replay    Replay a saved session or trajectory; opens the session picker UI by default
+  factory   Run non-interactive Factory commands for external agents, shell scripts, and CI
 
 Flags:
   --url string
@@ -878,6 +890,8 @@ Examples:
   mscli resume sess_xxx
   mscli replay sess_xxx
   mscli replay trajectory.json 2x
+  mscli factory status
+  mscli factory pack sync
 
 Environment:
   MSCLI_PROVIDER
