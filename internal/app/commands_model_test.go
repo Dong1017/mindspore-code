@@ -13,79 +13,7 @@ import (
 	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
 
-func TestCmdModel_UnprefixedKeepsProvider(t *testing.T) {
-	app := newModelCommandTestApp()
-	app.Config.Model.Provider = "anthropic"
-	app.Config.Model.Model = "claude-3-5-sonnet"
-
-	app.cmdModel([]string{"claude-3-5-haiku"})
-
-	drainUntilEventType(t, app, model.AgentThinking)
-	drainUntilEventType(t, app, model.ModelUpdate)
-	drainUntilEventType(t, app, model.AgentReply)
-
-	if got, want := app.Config.Model.Provider, "anthropic"; got != want {
-		t.Fatalf("provider = %q, want %q", got, want)
-	}
-	if got, want := app.Config.Model.Model, "claude-3-5-haiku"; got != want {
-		t.Fatalf("model = %q, want %q", got, want)
-	}
-}
-
-func TestCmdModel_PrefixedUpdatesProviderAndModel(t *testing.T) {
-	app := newModelCommandTestApp()
-	app.Config.Model.Provider = "openai-completion"
-	app.Config.Model.Model = "gpt-4o-mini"
-
-	app.cmdModel([]string{"anthropic:claude-3-5-sonnet"})
-
-	drainUntilEventType(t, app, model.AgentThinking)
-	drainUntilEventType(t, app, model.ModelUpdate)
-	drainUntilEventType(t, app, model.AgentReply)
-
-	if got, want := app.Config.Model.Provider, "anthropic"; got != want {
-		t.Fatalf("provider = %q, want %q", got, want)
-	}
-	if got, want := app.Config.Model.Model, "claude-3-5-sonnet"; got != want {
-		t.Fatalf("model = %q, want %q", got, want)
-	}
-}
-
-func TestCmdModel_ModelUpdateCarriesContextWindow(t *testing.T) {
-	app := newModelCommandTestApp()
-	app.Config.Context.Window = 200000
-
-	app.cmdModel([]string{"gpt-4o"})
-
-	drainUntilEventType(t, app, model.AgentThinking)
-	ev := drainUntilEventType(t, app, model.ModelUpdate)
-
-	if got, want := ev.CtxMax, 200000; got != want {
-		t.Fatalf("model update ctx max = %d, want %d", got, want)
-	}
-}
-
-func TestCmdModel_InvalidPrefixNoMutation(t *testing.T) {
-	app := newModelCommandTestApp()
-	app.Config.Model.Provider = "openai-completion"
-	app.Config.Model.Model = "gpt-4o-mini"
-
-	app.cmdModel([]string{"invalid:gpt-4o"})
-
-	ev := drainUntilEventType(t, app, model.AgentReply)
-	if !strings.Contains(ev.Message, "Unsupported provider prefix") {
-		t.Fatalf("unexpected message: %q", ev.Message)
-	}
-
-	if got, want := app.Config.Model.Provider, "openai-completion"; got != want {
-		t.Fatalf("provider = %q, want %q", got, want)
-	}
-	if got, want := app.Config.Model.Model, "gpt-4o-mini"; got != want {
-		t.Fatalf("model = %q, want %q", got, want)
-	}
-}
-
-func TestCmdModel_NoArgsShowsSetupPopup(t *testing.T) {
+func TestCmdModel_AlwaysShowsSetupPopup(t *testing.T) {
 	app := newModelCommandTestApp()
 
 	app.cmdModel(nil)
@@ -102,39 +30,51 @@ func TestCmdModel_NoArgsShowsSetupPopup(t *testing.T) {
 	}
 }
 
-func TestCmdModel_BuiltinPresetRequiresLogin(t *testing.T) {
+func TestCmdModel_WithArgsStillShowsPopup(t *testing.T) {
 	app := newModelCommandTestApp()
-	t.Setenv("HOME", t.TempDir())
 
-	app.cmdModel([]string{"kimi-k2.5-free"})
+	app.cmdModel([]string{"deepseek"})
 
-	drainUntilEventType(t, app, model.AgentThinking)
-	ev := drainUntilEventType(t, app, model.ToolError)
-	if !strings.Contains(ev.Message, "not logged in") {
-		t.Fatalf("tool error = %q, want login requirement", ev.Message)
+	ev := drainUntilEventType(t, app, model.ModelSetupOpen)
+	if ev.SetupPopup == nil {
+		t.Fatal("ModelSetupOpen popup = nil, want SetupPopup")
 	}
 }
 
-func TestCmdModel_BuiltinPresetUsesServerCredentialAndRestoresOnSwitchBack(t *testing.T) {
+func TestCmdModelSetup_RequiresLoginWhenNoCredentials(t *testing.T) {
 	app := newModelCommandTestApp()
-	app.Config.Model.Provider = "openai-completion"
-	app.Config.Model.URL = "https://api.openai.com/v1"
-	app.Config.Model.Model = "gpt-4o-mini"
-	app.Config.Model.Key = "env-key"
+	t.Setenv("HOME", t.TempDir())
+
+	app.cmdModelSetup([]string{"kimi-k2.5-free"})
+
+	drainUntilEventType(t, app, model.AgentThinking)
+	ev := drainUntilEventType(t, app, model.ModelSetupTokenError)
+	if !strings.Contains(ev.Message, "not logged in") {
+		t.Fatalf("error = %q, want login requirement", ev.Message)
+	}
+}
+
+func TestCmdModelSetup_UseSavedCredentialsWithoutToken(t *testing.T) {
+	app := newModelCommandTestApp()
 
 	var capturedAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedAuth = r.Header.Get("Authorization")
-		if r.URL.Path != "/model-presets/kimi-k2.5-free/credential" {
+		switch r.URL.Path {
+		case "/me":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"user": "alice", "role": "user"})
+		case "/model-presets/kimi-k2.5-free/credential":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"api_key": "server-kimi-key"})
+		default:
 			http.NotFound(w, r)
-			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"api_key": "server-kimi-key"})
 	}))
 	t.Cleanup(srv.Close)
 
 	t.Setenv("HOME", t.TempDir())
+	app.Config.Server.URL = srv.URL
 	cred := credentials{
 		ServerURL: srv.URL,
 		Token:     "user-token",
@@ -153,10 +93,11 @@ func TestCmdModel_BuiltinPresetUsesServerCredentialAndRestoresOnSwitchBack(t *te
 	}
 	defer func() { buildProvider = origBuildProvider }()
 
-	app.cmdModel([]string{"kimi-k2.5-free"})
+	// No token argument — should use saved credentials.
+	app.cmdModelSetup([]string{"kimi-k2.5-free"})
 	drainUntilEventType(t, app, model.AgentThinking)
 	drainUntilEventType(t, app, model.ModelUpdate)
-	drainUntilEventType(t, app, model.AgentReply)
+	drainUntilEventType(t, app, model.ModelSetupClose)
 
 	if got, want := capturedAuth, "Bearer user-token"; got != want {
 		t.Fatalf("credential request auth = %q, want %q", got, want)
@@ -164,32 +105,46 @@ func TestCmdModel_BuiltinPresetUsesServerCredentialAndRestoresOnSwitchBack(t *te
 	if got, want := string(resolved.Kind), "anthropic"; got != want {
 		t.Fatalf("resolved provider = %q, want %q", got, want)
 	}
-	if got, want := resolved.BaseURL, "https://api.kimi.com/coding/"; got != want {
-		t.Fatalf("resolved base url = %q, want %q", got, want)
-	}
-	if got, want := resolved.Model, "kimi-k2.5"; got != want {
-		t.Fatalf("resolved model = %q, want %q", got, want)
-	}
 	if got, want := resolved.APIKey, "server-kimi-key"; got != want {
 		t.Fatalf("resolved key = %q, want %q", got, want)
 	}
+}
 
-	app.cmdModel([]string{"gpt-4o"})
+func TestCmdModelSetup_WithTokenLoginAndApply(t *testing.T) {
+	app := newModelCommandTestApp()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/me":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"user": "bob", "role": "admin"})
+		case "/model-presets/kimi-k2.5-free/credential":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"api_key": "server-kimi-key"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	t.Setenv("HOME", t.TempDir())
+	app.Config.Server.URL = srv.URL
+
+	origBuildProvider := buildProvider
+	buildProvider = func(cfg llm.ResolvedConfig) (llm.Provider, error) {
+		return &blockingStreamProvider{started: make(chan struct{})}, nil
+	}
+	defer func() { buildProvider = origBuildProvider }()
+
+	// Provide token explicitly — should login and apply.
+	app.cmdModelSetup([]string{"kimi-k2.5-free", "new-token"})
 	drainUntilEventType(t, app, model.AgentThinking)
 	drainUntilEventType(t, app, model.ModelUpdate)
-	drainUntilEventType(t, app, model.AgentReply)
+	drainUntilEventType(t, app, model.ModelSetupClose)
 
-	if got, want := app.Config.Model.Provider, "openai-completion"; got != want {
-		t.Fatalf("provider after restore = %q, want %q", got, want)
-	}
-	if got, want := app.Config.Model.URL, "https://api.openai.com/v1"; got != want {
-		t.Fatalf("url after restore = %q, want %q", got, want)
-	}
-	if got, want := app.Config.Model.Key, "env-key"; got != want {
-		t.Fatalf("key after restore = %q, want %q", got, want)
-	}
-	if got, want := app.Config.Model.Model, "gpt-4o"; got != want {
-		t.Fatalf("model after switch = %q, want %q", got, want)
+	ev := drainUntilEventType(t, app, model.AgentReply)
+	if !strings.Contains(ev.Message, "bob") {
+		t.Fatalf("reply = %q, want user name", ev.Message)
 	}
 }
 

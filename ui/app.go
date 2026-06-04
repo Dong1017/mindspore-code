@@ -980,8 +980,18 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				opt := a.setupPopup.PresetOptions[a.setupPopup.PresetSelected]
 				if !opt.Disabled {
 					a.setupPopup.SelectedPreset = opt
-					a.setupPopup.Screen = model.SetupScreenTokenInput
-					a.setupPopup.TokenError = ""
+					if a.setupPopup.IsLoggedIn {
+						if a.userCh != nil {
+							cmd := fmt.Sprintf("%s %s", modelSetupToken, opt.ID)
+							select {
+							case a.userCh <- cmd:
+							default:
+							}
+						}
+					} else {
+						a.setupPopup.Screen = model.SetupScreenTokenInput
+						a.setupPopup.TokenError = ""
+					}
 				}
 				return a, nil
 			case "esc":

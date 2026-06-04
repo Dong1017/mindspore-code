@@ -855,6 +855,11 @@ func (a *Application) emitModelSetupPopup(canEscape bool) {
 		currentMode = modelModeOwn
 	}
 
+	isLoggedIn := false
+	if cred, err := loadCredentials(); err == nil && strings.TrimSpace(cred.Token) != "" {
+		isLoggedIn = true
+	}
+
 	popup := &model.SetupPopup{
 		Screen:        model.SetupScreenModeSelect,
 		PresetOptions: presetOptions,
@@ -862,6 +867,7 @@ func (a *Application) emitModelSetupPopup(canEscape bool) {
 		CurrentMode:   currentMode,
 		CurrentPreset: currentPreset,
 		TokenValue:    a.savedModelToken,
+		IsLoggedIn:    isLoggedIn,
 	}
 
 	a.EventCh <- model.Event{
