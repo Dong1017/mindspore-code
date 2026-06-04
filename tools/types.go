@@ -44,6 +44,21 @@ type StreamingTool interface {
 	ExecuteStream(ctx context.Context, params json.RawMessage, emit func(StreamEvent)) (*Result, error)
 }
 
+// InteractiveTool is an optional extension for tools that require user interaction.
+type InteractiveTool interface {
+	RequiresUserInteraction() bool
+}
+
+// ReadOnlyTool is an optional extension for tools that do not modify state.
+type ReadOnlyTool interface {
+	IsReadOnly() bool
+}
+
+// ConcurrencySafeTool is an optional extension for tools that can run concurrently.
+type ConcurrencySafeTool interface {
+	IsConcurrencySafe() bool
+}
+
 // Result is the result of a tool execution.
 type Result struct {
 	Content string // Main output content

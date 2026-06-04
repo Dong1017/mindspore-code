@@ -133,6 +133,8 @@ func (a App) renderMainView() string {
 	}
 	if a.permissionPrompt != nil {
 		parts = append(parts, renderPermissionPromptPopup(a.permissionPrompt))
+	} else if a.askUserQuestionPrompt != nil {
+		parts = append(parts, renderAskUserQuestionPromptPopup(a.askUserQuestionPrompt))
 	} else {
 		reservedParts := append([]string{}, parts...)
 		if queueBanner != "" {
@@ -537,7 +539,7 @@ func (a App) eventPrintCmd(ev model.Event, prevMessages []model.Message, suppres
 		return a.printMessage(model.Message{Kind: model.MsgAgent, Content: ev.Message, RawANSI: ev.RawANSI})
 	case model.AgentReplyDelta:
 		return a.printAgentDelta(ev.Message)
-	case model.AgentBackgroundWork, model.AgentThinking, model.ContextCompactStarted, model.TaskDone, model.TokenUpdate:
+	case model.AgentBackgroundWork, model.AgentThinking, model.ContextCompactStarted, model.TaskDone, model.TokenUpdate, model.AskUserQuestionPrompt, model.AskUserQuestionClose:
 		return nil
 	case model.ToolCallStart:
 		// Don't print pending tools to scrollback — they show in the live
@@ -556,7 +558,7 @@ func (a App) eventPrintCmd(ev model.Event, prevMessages []model.Message, suppres
 		return nil
 	case model.CmdFinished:
 		return a.printResolvedTool(ev)
-	case model.ToolRead, model.ToolGrep, model.ToolGlob, model.ToolEdit, model.ToolWrite, model.ToolSkill, model.ToolInterrupted, model.ToolWarning, model.ToolError, model.ToolReplay:
+	case model.ToolRead, model.ToolGrep, model.ToolGlob, model.ToolEdit, model.ToolWrite, model.ToolSkill, model.ToolAskUserQuestion, model.ToolInterrupted, model.ToolWarning, model.ToolError, model.ToolReplay:
 		return a.printResolvedTool(ev)
 	case model.ClearScreen:
 		return a.clearMessage(ev.Summary)
