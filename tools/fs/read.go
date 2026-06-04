@@ -12,14 +12,22 @@ import (
 	"github.com/mindspore-lab/mindspore-cli/tools"
 )
 
+// MaxReadBytes is the maximum file content the read tool will return inline.
+// Files larger than this are spilled to disk with a preview notice.
+const MaxReadBytes = 100_000
+
 // ReadTool reads file contents.
 type ReadTool struct {
-	workDir string
+	workDir  string
+	spillDir string
 }
 
 // NewReadTool creates a new read tool.
 func NewReadTool(workDir string) *ReadTool {
-	return &ReadTool{workDir: workDir}
+	return &ReadTool{
+		workDir:  workDir,
+		spillDir: tools.DefaultSpillDir(workDir),
+	}
 }
 
 // Name returns the tool name.
@@ -100,6 +108,16 @@ func (t *ReadTool) Execute(ctx context.Context, params json.RawMessage) (*tools.
 	summary := fmt.Sprintf("%d lines", lines)
 	if p.Offset > 0 || p.Limit > 0 {
 		summary = fmt.Sprintf("%d lines (offset=%d, limit=%d)", lines, p.Offset, p.Limit)
+	}
+
+	// Overflow protection
+	truncated := len(content) > MaxReadBytes && t.spillDir != ""
+	if truncated {
+		_ = os.MkdirAll(t.spillDir, 0755) // best-effort
+		content = tools.SpillResult(content, MaxReadBytes, t.spillDir, "read")
+	}
+	if truncated {
+		summary += " (truncated, full file saved to disk)"
 	}
 
 	return tools.StringResultWithSummary(content, summary), nil

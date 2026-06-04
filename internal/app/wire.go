@@ -897,7 +897,7 @@ func initTools(cfg *configs.Config, workDir string) *tools.Registry {
 			"PYTHONUNBUFFERED": "1",
 		},
 	})
-	registry.MustRegister(shell.NewShellTool(shellRunner))
+	registry.MustRegister(shell.NewShellTool(shellRunner, workDir))
 
 	return registry
 }
