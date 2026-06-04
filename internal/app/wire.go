@@ -18,6 +18,7 @@ import (
 	"github.com/mindspore-lab/mindspore-cli/configs"
 	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
 	"github.com/mindspore-lab/mindspore-cli/integrations/skills"
+	factoryruntime "github.com/mindspore-lab/mindspore-cli/internal/factory/runtime"
 	issuepkg "github.com/mindspore-lab/mindspore-cli/internal/issues"
 	projectpkg "github.com/mindspore-lab/mindspore-cli/internal/project"
 	itrain "github.com/mindspore-lab/mindspore-cli/internal/train"
@@ -71,9 +72,12 @@ type Application struct {
 	startupOnce   sync.Once
 
 	// Issue tracking
-	issueService *issuepkg.Service
-	issueUser    string
-	issueRole    string
+	issueService          *issuepkg.Service
+	issueUser             string
+	issueRole             string
+	latestDiagnoseSummary *factoryruntime.DiagnoseRunSummary
+	latestFixSummary      *factoryruntime.FixRunSummary
+	latestRunKind         string
 
 	// Project tracking
 	projectService *projectpkg.Service

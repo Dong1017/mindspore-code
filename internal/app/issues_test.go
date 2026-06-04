@@ -188,6 +188,89 @@ func TestBuildSkillTaskIssueTargetFailureKind(t *testing.T) {
 	}
 }
 
+func TestBuildDiagnosticContextExtractsConservativeSignals(t *testing.T) {
+	ctx := buildDiagnosticContext(issueCommandTarget{Prompt: "ImportError: torch_npu runtime dependency missing on Ascend CANN while importing MindSpore"}, "")
+	if ctx.Command != "/diagnose" {
+		t.Fatalf("Command = %q, want /diagnose", ctx.Command)
+	}
+	if ctx.UserInput != "ImportError: torch_npu runtime dependency missing on Ascend CANN while importing MindSpore" {
+		t.Fatalf("UserInput = %q", ctx.UserInput)
+	}
+	if ctx.Problem.InferredType != string(issuepkg.KindFailure) {
+		t.Fatalf("InferredType = %q, want failure", ctx.Problem.InferredType)
+	}
+	if ctx.Problem.InferredStage != "import" {
+		t.Fatalf("InferredStage = %q, want import", ctx.Problem.InferredStage)
+	}
+	if ctx.Signals.MainError == "" {
+		t.Fatal("MainError is empty, want inferred error")
+	}
+	if !containsString(ctx.Signals.Keywords, "torch_npu") {
+		t.Fatalf("Keywords = %#v, want torch_npu", ctx.Signals.Keywords)
+	}
+	if !containsString(ctx.Signals.StackKeywords, "importerror") {
+		t.Fatalf("StackKeywords = %#v, want importerror", ctx.Signals.StackKeywords)
+	}
+	if ctx.Environment.Hardware.Accelerator != "ascend" {
+		t.Fatalf("Accelerator = %q, want ascend", ctx.Environment.Hardware.Accelerator)
+	}
+	if len(ctx.Environment.Frameworks) == 0 || ctx.Environment.Frameworks[0].Name != "mindspore" {
+		t.Fatalf("Frameworks = %#v, want mindspore", ctx.Environment.Frameworks)
+	}
+}
+
+func TestBuildDiagnosticContextKeepsTorchFrameworkName(t *testing.T) {
+	ctx := buildDiagnosticContext(issueCommandTarget{Prompt: "RuntimeError from torch on Ascend"}, "")
+	if len(ctx.Environment.Frameworks) == 0 || ctx.Environment.Frameworks[0].Name != "torch" {
+		t.Fatalf("Frameworks = %#v, want first framework torch", ctx.Environment.Frameworks)
+	}
+}
+
+func TestBuildDiagnosticContextUsesTaskTextForIssueTarget(t *testing.T) {
+	task := "Load skill failure-agent in diagnose mode.\n\nIssue: ISSUE-42 — ImportError torch_npu missing on Ascend\nKind: failure\nSummary: CANN import failure"
+	ctx := buildDiagnosticContext(issueCommandTarget{HasIssue: true, IssueID: 42}, task)
+	if !strings.Contains(ctx.UserInput, "ISSUE-42") {
+		t.Fatalf("UserInput = %q, want issue text", ctx.UserInput)
+	}
+	if ctx.Problem.InferredType != string(issuepkg.KindFailure) {
+		t.Fatalf("InferredType = %q, want failure", ctx.Problem.InferredType)
+	}
+	if ctx.Problem.InferredStage != "import" {
+		t.Fatalf("InferredStage = %q, want import", ctx.Problem.InferredStage)
+	}
+	if ctx.Environment.Hardware.Accelerator != "ascend" {
+		t.Fatalf("Accelerator = %q, want ascend", ctx.Environment.Hardware.Accelerator)
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func TestEnrichDiagnoseTaskMissingPackReturnsOriginalTask(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
+
+	app := &Application{}
+	task := "Load the appropriate diagnosis skill in diagnose mode."
+	got := app.enrichDiagnoseTask(task, issueCommandTarget{Prompt: "ImportError: torch_npu runtime dependency missing"})
+	if got != task {
+		t.Fatalf("enriched task = %q, want original task", got)
+	}
+	if app.latestDiagnoseSummary == nil {
+		t.Fatal("latestDiagnoseSummary = nil, want summary")
+	}
+	if len(app.latestDiagnoseSummary.FactoryHintsUsed) != 0 {
+		t.Fatalf("FactoryHintsUsed = %d, want 0", len(app.latestDiagnoseSummary.FactoryHintsUsed))
+	}
+}
+
 func TestCmdDiagnoseEmptyInputReturnsUsage(t *testing.T) {
 	app := &Application{
 		EventCh: make(chan model.Event, 4),

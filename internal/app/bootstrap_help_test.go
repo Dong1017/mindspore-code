@@ -12,7 +12,7 @@ func TestRenderBootstrapHelpRoot(t *testing.T) {
 
 	for _, want := range []string{
 		"Usage:\n  mscli [flags] [command]",
-		"Commands:\n  resume    Resume a saved session; opens the session picker UI by default\n  replay    Replay a saved session or trajectory; opens the session picker UI by default",
+		"Commands:\n  resume    Resume a saved session; opens the session picker UI by default\n  replay    Replay a saved session or trajectory; opens the session picker UI by default\n  factory   Run non-interactive Factory commands for external agents, shell scripts, and CI",
 		"-v, --version",
 		"type / to browse slash commands",
 		"MSCLI_PROVIDER=openai-completion MSCLI_API_KEY=sk-... MSCLI_MODEL=gpt-4o mscli",
@@ -114,6 +114,7 @@ func TestRunHelpReturnsNil(t *testing.T) {
 		{name: "root", args: []string{"--help"}, want: "Usage:\n  mscli [flags] [command]"},
 		{name: "resume", args: []string{"resume", "--help"}, want: "Usage:\n  mscli resume [flags] [sess_xxx]"},
 		{name: "replay", args: []string{"replay", "--help"}, want: "Usage:\n  mscli replay [flags] [sess_xxx|trajectory.json|trajectory.jsonl] [speed]"},
+		{name: "factory", args: []string{"factory", "--help"}, want: "Factory commands:"},
 	}
 
 	for _, tt := range tests {

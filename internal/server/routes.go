@@ -37,5 +37,11 @@ func NewMux(store *Store, tokens []configs.TokenEntry, modelPresets []configs.Mo
 	mux.Handle("DELETE /project/tasks/{id}", auth(AdminOnly(http.HandlerFunc(HandleDeleteProjectTask(store)))))
 	mux.Handle("PATCH /project/overview", auth(AdminOnly(http.HandlerFunc(HandleUpdateProjectOverview(store)))))
 
+	// Factory pack routes
+	mux.Handle("POST /factory/packs", auth(http.HandlerFunc(HandlePublishFactoryPack(store))))
+	mux.Handle("GET /factory/packs/latest", auth(http.HandlerFunc(HandleGetLatestFactoryPack(store))))
+	mux.Handle("GET /factory/packs/latest/download", auth(http.HandlerFunc(HandleDownloadLatestFactoryPack(store))))
+	mux.Handle("GET /factory/packs/{id}/download", auth(http.HandlerFunc(HandleDownloadFactoryPack(store))))
+
 	return mux
 }
