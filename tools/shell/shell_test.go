@@ -2,6 +2,8 @@ package shell
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -16,7 +18,7 @@ func TestShellToolExecute_DoesNotDuplicateCommandOrExit0InContent(t *testing.T) 
 		WorkDir: ".",
 		Timeout: 2 * time.Second,
 	})
-	tool := NewShellTool(runner)
+	tool := NewShellTool(runner, ".")
 
 	result, err := tool.Execute(context.Background(), []byte(`{"command":"printf 'hello\\n'"}`))
 	if err != nil {
@@ -42,7 +44,7 @@ func TestShellToolExecuteStream_EmitsStartedAndOutput(t *testing.T) {
 		WorkDir: ".",
 		Timeout: 2 * time.Second,
 	})
-	tool := NewShellTool(runner)
+	tool := NewShellTool(runner, ".")
 
 	var (
 		mu      sync.Mutex
@@ -83,12 +85,51 @@ func TestShellToolExecuteStream_EmitsStartedAndOutput(t *testing.T) {
 	}
 }
 
+func TestShellToolExecute_LargeOutputRunnerTruncation(t *testing.T) {
+	// The shell runner truncates output at 64KB (maxOutputBytes).
+	// Our tool-level SpillResult threshold is 100KB, so the runner's
+	// truncation fires first. This test verifies the tool handles
+	// runner-truncated output gracefully without double-truncation.
+	tmp := t.TempDir()
+	largeFile := filepath.Join(tmp, "large.txt")
+	content := strings.Repeat("x", 128*1024)
+	if err := os.WriteFile(largeFile, []byte(content+"\n"), 0644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+
+	runner := rshell.NewRunner(rshell.Config{
+		WorkDir: tmp,
+		Timeout: 2 * time.Second,
+	})
+	tool := NewShellTool(runner, tmp)
+
+	result, err := tool.Execute(context.Background(), []byte(`{"command":"cat large.txt"}`))
+	if err != nil {
+		t.Fatalf("execute shell tool: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("unexpected result error: %v", result.Error)
+	}
+
+	// Runner truncates at 64KB, so content should contain runner's mark
+	if !strings.Contains(result.Content, "[output truncated]") {
+		t.Errorf("expected runner truncation mark, got: %s", result.Content)
+	}
+	// Our 100KB spill should NOT fire (runner already capped it)
+	if strings.Contains(result.Content, "Result too large") {
+		t.Errorf("unexpected tool-level spill notice")
+	}
+	if strings.Contains(result.Summary, "truncated") {
+		t.Errorf("unexpected tool-level truncated summary, got: %s", result.Summary)
+	}
+}
+
 func TestShellToolExecuteStream_ReturnsInterruptedSummaryWithPartialOutput(t *testing.T) {
 	runner := rshell.NewRunner(rshell.Config{
 		WorkDir: ".",
 		Timeout: 5 * time.Second,
 	})
-	tool := NewShellTool(runner)
+	tool := NewShellTool(runner, ".")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -15,14 +16,22 @@ import (
 	"github.com/mindspore-lab/mindspore-cli/tools"
 )
 
+// MaxShellOutputBytes is the maximum shell output the tool will return inline.
+// Output larger than this is spilled to disk with a preview notice.
+const MaxShellOutputBytes = 100_000
+
 // ShellTool wraps shell execution as an LLM-callable Tool.
 type ShellTool struct {
-	runner *rshell.Runner
+	runner   *rshell.Runner
+	spillDir string
 }
 
 // NewShellTool creates a new shell tool backed by a runtime shell runner.
-func NewShellTool(runner *rshell.Runner) *ShellTool {
-	return &ShellTool{runner: runner}
+func NewShellTool(runner *rshell.Runner, workDir string) *ShellTool {
+	return &ShellTool{
+		runner:   runner,
+		spillDir: tools.DefaultSpillDir(workDir),
+	}
 }
 
 // Name returns the tool name.
@@ -122,6 +131,16 @@ func (t *ShellTool) ExecuteStream(ctx context.Context, params json.RawMessage, e
 	}
 	if result.Error != nil {
 		summary = fmt.Sprintf("error: %s", result.Error.Error())
+	}
+
+	// Overflow protection
+	truncated := len(output) > MaxShellOutputBytes && t.spillDir != ""
+	if truncated {
+		_ = os.MkdirAll(t.spillDir, 0755) // best-effort
+		output = tools.SpillResult(output, MaxShellOutputBytes, t.spillDir, "shell")
+	}
+	if truncated {
+		summary += " (output truncated, full result saved to disk)"
 	}
 
 	return tools.StringResultWithSummary(output, summary), nil
