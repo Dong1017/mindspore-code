@@ -16,16 +16,8 @@ type Config struct {
 	Context       ContextConfig                `yaml:"context"`
 	Memory        MemoryConfig                 `yaml:"memory"`
 	Execution     ExecutionConfig              `yaml:"execution"`
-	Server        RemoteConfig                 `yaml:"server"`
 }
 
-// RemoteConfig holds the client-side server connection config.
-type RemoteConfig struct {
-	URL       string `yaml:"url,omitempty"`
-	TokenPath string `yaml:"token_path,omitempty"`
-}
-
-const DefaultServerURL = ""
 const DefaultRequestMaxIterations = 100
 
 func (c *Config) normalize() {
@@ -166,9 +158,6 @@ func DefaultConfig() *Config {
 		ModelProfiles: make(map[string]ModelTokenProfile),
 		Request: RequestConfig{
 			MaxIterations: &defaultMaxIterations,
-		},
-		Server: RemoteConfig{
-			URL: DefaultServerURL,
 		},
 		Execution: ExecutionConfig{
 			Mode:           "local",

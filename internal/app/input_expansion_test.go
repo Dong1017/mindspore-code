@@ -9,8 +9,6 @@ import (
 	ctxmanager "github.com/mindspore-lab/mindspore-cli/agent/context"
 	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
 	"github.com/mindspore-lab/mindspore-cli/integrations/skills"
-	issuepkg "github.com/mindspore-lab/mindspore-cli/internal/issues"
-	"github.com/mindspore-lab/mindspore-cli/internal/project"
 	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
 
@@ -136,79 +134,9 @@ func TestProcessInputEmitsExpandedUserInputEvent(t *testing.T) {
 	}
 }
 
-func TestHandleCommandProjectDoesNotExpandExcludedCommand(t *testing.T) {
-	store := newMockProjectStore()
-	app := &Application{
-		WorkDir:        t.TempDir(),
-		EventCh:        make(chan model.Event, 8),
-		projectService: project.NewService(store),
-		issueUser:      "alice",
-		issueRole:      "admin",
-	}
-
-	app.handleCommand(`/project add tasks "@missing.txt" --owner bob --progress 30`)
-
-	ev := drainUntilEventType(t, app, model.AgentReply)
-	if !strings.Contains(ev.Message, "created task #1") {
-		t.Fatalf("expected project command to succeed unchanged, got %q", ev.Message)
-	}
-	if got := store.tasks[0].Title; got != "@missing.txt" {
-		t.Fatalf("excluded command should keep literal title, got %q", got)
-	}
-}
-
-func TestHandleCommandReportExpandsOnlyTitleRemainder(t *testing.T) {
-	root := t.TempDir()
-	writeTestFile(t, root, "ctx.txt", "reported context")
-
-	store := &fakeAppIssueStore{}
-	app := &Application{
-		WorkDir:      root,
-		EventCh:      make(chan model.Event, 8),
-		issueService: issuepkg.NewService(store),
-		issueUser:    "alice",
-	}
-
-	app.handleCommand(`/feedback accuracy @ctx.txt`)
-
-	drainUntilEventType(t, app, model.AgentReply)
-	if got := store.lastCreateKind; got != issuepkg.KindAccuracy {
-		t.Fatalf("kind = %q, want %q", got, issuepkg.KindAccuracy)
-	}
-	if !strings.Contains(store.lastCreateTitle, `[file path="`+filepath.ToSlash(filepath.Join(root, "ctx.txt"))+`"]`) {
-		t.Fatalf("expected expanded report title, got %q", store.lastCreateTitle)
-	}
-	if strings.Contains(store.lastCreateTitle, "reported context") {
-		t.Fatalf("expected report title not to inline file content, got %q", store.lastCreateTitle)
-	}
-}
-
-func TestHandleCommandReportBadReferenceFailsWholeInput(t *testing.T) {
-	store := &fakeAppIssueStore{}
-	app := &Application{
-		WorkDir:      t.TempDir(),
-		EventCh:      make(chan model.Event, 8),
-		issueService: issuepkg.NewService(store),
-		issueUser:    "alice",
-	}
-
-	app.handleCommand(`/feedback accuracy @missing.txt`)
-
-	ev := drainUntilEventType(t, app, model.ToolError)
-	if !strings.Contains(ev.Message, "Failed to expand @file input") {
-		t.Fatalf("expected input expansion error, got %q", ev.Message)
-	}
-	if store.lastCreateTitle != "" {
-		t.Fatalf("report command should not execute on bad @file, got title %q", store.lastCreateTitle)
-	}
-}
-
-func TestHandleCommandFixPreservesIssueModeAndExpandsPromptRemainder(t *testing.T) {
+func TestHandleCommandFixExpandsPrompt(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, root, "ctx.txt", "fix context")
-	store := &fakeAppIssueStore{
-		issue: &issuepkg.Issue{ID: 42, Key: "ISSUE-42", Title: "demo issue", Kind: issuepkg.KindFailure},
-	}
 
 	app := &Application{
 		WorkDir:  root,
@@ -218,7 +146,6 @@ func TestHandleCommandFixPreservesIssueModeAndExpandsPromptRemainder(t *testing.
 			ContextWindow: 24000,
 			ReserveTokens: 4000,
 		}),
-		issueService: issuepkg.NewService(store),
 	}
 
 	app.handleCommand(`/fix ISSUE-42 @ctx.txt`)
@@ -229,7 +156,7 @@ func TestHandleCommandFixPreservesIssueModeAndExpandsPromptRemainder(t *testing.
 	}
 	msgs := app.ctxManager.GetNonSystemMessages()
 	if !containsUserMessage(msgs, "ISSUE-42") {
-		t.Fatalf("expected issue-target mode to be preserved, got %#v", msgs)
+		t.Fatalf("expected issue-like text to be preserved as prompt text, got %#v", msgs)
 	}
 	if !containsUserMessage(msgs, `[file path="`+filepath.ToSlash(filepath.Join(root, "ctx.txt"))+`"]`) {
 		t.Fatalf("expected expanded prompt remainder, got %#v", msgs)

@@ -127,24 +127,7 @@ func splitFirstToken(input string) (string, string) {
 }
 
 func (a *Application) expandIssueCommandInput(rawInput string) (string, error) {
-	first, remainder := splitFirstToken(rawInput)
-	if first == "" {
-		return strings.TrimSpace(rawInput), nil
-	}
-	if !looksLikeIssueKey(first) {
-		return a.expandInputText(strings.TrimSpace(rawInput))
-	}
-	if _, err := parseIssueRef(first); err != nil {
-		return strings.TrimSpace(rawInput), nil
-	}
-	if remainder == "" {
-		return first, nil
-	}
-	expanded, err := a.expandInputText(remainder)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(first + " " + expanded), nil
+	return a.expandInputText(strings.TrimSpace(rawInput))
 }
 
 func (a *Application) expandReportInput(rawInput string) (string, error) {

@@ -62,7 +62,7 @@ func (a *Application) cmdFactoryCardCreateFromLastRun() {
 		a.replyFactory("No latest /diagnose or /fix run summary is available.")
 		return
 	}
-	draft, err := card.NewDraftFromRunSummary(selected, card.DraftOptions{Reporter: a.issueUser})
+	draft, err := card.NewDraftFromRunSummary(selected, card.DraftOptions{})
 	if err != nil {
 		a.replyFactory(fmt.Sprintf("create draft card failed: %v", err))
 		return

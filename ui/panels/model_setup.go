@@ -37,8 +37,7 @@ func RenderSetupPopup(popup *model.SetupPopup) string {
 }
 
 const (
-	modeMSCLIProvided = "mscli-provided"
-	modeModeOwn        = "own"
+	modeModeOwn = "own"
 )
 
 func renderModeSelect(popup *model.SetupPopup) string {
@@ -46,7 +45,6 @@ func renderModeSelect(popup *model.SetupPopup) string {
 		label string
 		mode  string
 	}{
-		{"mscli-provided model", modeMSCLIProvided},
 		{"your own model", modeModeOwn},
 	}
 
@@ -84,7 +82,7 @@ func renderModeSelect(popup *model.SetupPopup) string {
 }
 
 func renderPresetPicker(popup *model.SetupPopup) string {
-	maxW := len("mscli-provided")
+	maxW := len("Model Presets")
 	for _, opt := range popup.PresetOptions {
 		if w := 2 + len(opt.Label) + 12; w > maxW {
 			maxW = w
@@ -92,7 +90,7 @@ func renderPresetPicker(popup *model.SetupPopup) string {
 	}
 
 	var lines []string
-	lines = append(lines, setupTitleStyle.Width(maxW).Render("mscli-provided"))
+	lines = append(lines, setupTitleStyle.Width(maxW).Render("Model Presets"))
 	lines = append(lines, "")
 	for i, opt := range popup.PresetOptions {
 		marker := "  "

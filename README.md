@@ -49,13 +49,6 @@ go build -o mscli ./cmd/mscli
 
 ## Quick Start
 
-### Use the free built-in model
-
-```bash
-mscli
-# Choose "mscli-provided" → "kimi-k2.5 [free]" on first run
-```
-
 ### Bring your own API key
 
 ```bash

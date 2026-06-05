@@ -243,7 +243,7 @@ type SelectionOption struct {
 type SetupScreen int
 
 const (
-	SetupScreenModeSelect   SetupScreen = iota // "mscli-provided" vs "your own model"
+	SetupScreenModeSelect   SetupScreen = iota // BYO model setup entry
 	SetupScreenPresetPicker                    // pick from preset list
 	SetupScreenTokenInput                      // enter token for selected preset
 	SetupScreenEnvInfo                         // show env var examples
@@ -252,16 +252,16 @@ const (
 // SetupPopup holds the full state of the multi-step model setup popup.
 type SetupPopup struct {
 	Screen         SetupScreen
-	ModeSelected   int // 0 = mscli-provided, 1 = your own model
+	ModeSelected   int
 	PresetOptions  []SelectionOption
 	PresetSelected int
 	SelectedPreset SelectionOption // set when user picks a preset
 	TokenValue     string
 	TokenError     string // inline error message
-	CurrentMode    string // "mscli-provided", "own", or "" — for (current) badge
+	CurrentMode    string // "own" or "" — for (current) badge
 	CurrentPreset  string // preset ID currently active — for (current) badge
 	CanEscape      bool   // false on first boot (no config to fall back to)
-	IsLoggedIn     bool   // true when saved credentials exist — skip token input
+	IsLoggedIn     bool   // retained for backward-compatible popup event copies
 }
 
 type SessionPickerMode string
@@ -316,9 +316,9 @@ type SessionPickerItem struct {
 	TurnCount      int
 }
 
-// MoveModeSelection moves the mode cursor by delta, wrapping around 2 options.
+// MoveModeSelection is retained for the setup popup API; BYO setup has one option.
 func (p *SetupPopup) MoveModeSelection(delta int) {
-	p.ModeSelected = (p.ModeSelected + delta%2 + 2) % 2
+	p.ModeSelected = 0
 }
 
 // MovePresetSelection moves the preset cursor by delta, wrapping around all options.

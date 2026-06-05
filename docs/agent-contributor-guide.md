@@ -51,7 +51,6 @@ This summary matches the current tree in this checkout.
 ```text
 mindspore-cli/
   cmd/mscli/              process entrypoint
-  cmd/mscli-server/       bug/issue/project server
   internal/
     app/                   bootstrap, wiring, commands, startup, train flow
     server/                HTTP API for bugs, issues, projects

@@ -17,7 +17,6 @@ mindspore-skills             instructions — SKILL.md + skill.yaml per skill
 ```text
 mindspore-cli/
   cmd/mscli/              process entrypoint
-  cmd/mscli-server/       bug/issue/project server
   internal/
     app/                   composition root, startup, commands, UI bridging
     server/                HTTP API for bugs, issues, projects

@@ -46,7 +46,6 @@ const (
 	interruptQueuedTrainToken       = "__interrupt_queued_train__"
 	interruptActiveTaskToken        = "__interrupt_active_task__"
 	internalPermissionsActionPrefix = "\x00permissions:"
-	modelSetupToken                 = "__model_setup"
 )
 
 // Style vars are populated by InitStyles() below.
@@ -207,15 +206,15 @@ type App struct {
 	bannerPrinted           bool
 	queuedInputs            []string
 
-	permissionPrompt *permissionPromptState
+	permissionPrompt      *permissionPromptState
 	askUserQuestionPrompt *askUserQuestionPromptState
-	permissionsView  *permissionsViewState
-	toolsExpanded    *bool
-	modelPicker      *model.SelectionPopup
-	setupPopup       *model.SetupPopup
-	sessionPicker    *model.SessionPicker
-	rewindPicker     *model.RewindPicker
-	appendHistoryFn  func(string)
+	permissionsView       *permissionsViewState
+	toolsExpanded         *bool
+	modelPicker           *model.SelectionPopup
+	setupPopup            *model.SetupPopup
+	sessionPicker         *model.SessionPicker
+	rewindPicker          *model.RewindPicker
+	appendHistoryFn       func(string)
 
 	// Transcript viewer (alt-screen overlay, toggled via Ctrl+O)
 	transcriptView *transcriptViewState
@@ -961,11 +960,7 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.setupPopup.MoveModeSelection(1)
 				return a, nil
 			case "enter":
-				if a.setupPopup.ModeSelected == 0 {
-					a.setupPopup.Screen = model.SetupScreenPresetPicker
-				} else {
-					a.setupPopup.Screen = model.SetupScreenEnvInfo
-				}
+				a.setupPopup.Screen = model.SetupScreenEnvInfo
 				return a, nil
 			case "esc":
 				if a.setupPopup.CanEscape {
@@ -973,70 +968,12 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				return a, a.syncModalAltScreen()
 			}
-		case model.SetupScreenPresetPicker:
-			switch msg.String() {
-			case "up", "left":
-				a.setupPopup.MovePresetSelection(-1)
-				return a, nil
-			case "down", "right":
-				a.setupPopup.MovePresetSelection(1)
-				return a, nil
-			case "enter":
-				opt := a.setupPopup.PresetOptions[a.setupPopup.PresetSelected]
-				if !opt.Disabled {
-					a.setupPopup.SelectedPreset = opt
-					if a.setupPopup.IsLoggedIn {
-						if a.userCh != nil {
-							cmd := fmt.Sprintf("%s %s", modelSetupToken, opt.ID)
-							select {
-							case a.userCh <- cmd:
-							default:
-							}
-						}
-					} else {
-						a.setupPopup.Screen = model.SetupScreenTokenInput
-						a.setupPopup.TokenError = ""
-					}
-				}
-				return a, nil
-			case "esc":
-				a.setupPopup.Screen = model.SetupScreenModeSelect
-				return a, nil
-			}
-		case model.SetupScreenTokenInput:
-			switch msg.String() {
-			case "enter":
-				if a.userCh != nil && strings.TrimSpace(a.setupPopup.TokenValue) != "" {
-					cmd := fmt.Sprintf("%s %s %s", modelSetupToken,
-						a.setupPopup.SelectedPreset.ID,
-						strings.TrimSpace(a.setupPopup.TokenValue))
-					select {
-					case a.userCh <- cmd:
-					default:
-					}
-				}
-				return a, nil
-			case "esc":
-				a.setupPopup.Screen = model.SetupScreenPresetPicker
-				return a, nil
-			case "backspace":
-				runes := []rune(a.setupPopup.TokenValue)
-				if len(runes) > 0 {
-					a.setupPopup.TokenValue = string(runes[:len(runes)-1])
-				}
-				return a, nil
-			default:
-				if msg.Type == tea.KeyRunes {
-					a.setupPopup.TokenValue += string(msg.Runes)
-				} else if msg.Type == tea.KeySpace {
-					// Don't add spaces to tokens
-				}
-				return a, nil
-			}
 		case model.SetupScreenEnvInfo:
 			if msg.String() == "esc" {
-				a.setupPopup.Screen = model.SetupScreenModeSelect
-				return a, nil
+				if a.setupPopup.CanEscape {
+					a.setupPopup = nil
+				}
+				return a, a.syncModalAltScreen()
 			}
 			return a, nil
 		}

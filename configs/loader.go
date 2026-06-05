@@ -105,11 +105,6 @@ func ApplyEnvOverrides(cfg *Config) {
 		refreshContextReserveDefaults(cfg, previousContextWindow)
 	}
 
-	// Issues server
-	if v := strings.TrimSpace(os.Getenv("MSCLI_SERVER_URL")); v != "" {
-		cfg.Server.URL = v
-	}
-
 	// Memory settings
 	if v := os.Getenv("MSCLI_MEMORY_ENABLED"); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {

@@ -13,9 +13,7 @@ func TestAppConfigRoundTrip(t *testing.T) {
 	t.Cleanup(func() { appConfigPathOverride = origPath })
 
 	cfg := &appConfig{
-		ModelMode:            "mscli-provided",
-		ModelPresetID:        "kimi-k2.5-free",
-		ModelToken:           "sk-test-token-123",
+		ModelMode:            modelModeOwn,
 		SessionRetentionDays: 45,
 	}
 	if err := saveAppConfig(cfg); err != nil {
@@ -28,12 +26,6 @@ func TestAppConfigRoundTrip(t *testing.T) {
 	}
 	if loaded.ModelMode != cfg.ModelMode {
 		t.Errorf("ModelMode = %q, want %q", loaded.ModelMode, cfg.ModelMode)
-	}
-	if loaded.ModelPresetID != cfg.ModelPresetID {
-		t.Errorf("ModelPresetID = %q, want %q", loaded.ModelPresetID, cfg.ModelPresetID)
-	}
-	if loaded.ModelToken != cfg.ModelToken {
-		t.Errorf("ModelToken = %q, want %q", loaded.ModelToken, cfg.ModelToken)
 	}
 	if loaded.SessionRetentionDays != cfg.SessionRetentionDays {
 		t.Errorf("SessionRetentionDays = %d, want %d", loaded.SessionRetentionDays, cfg.SessionRetentionDays)

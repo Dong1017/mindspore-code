@@ -688,8 +688,8 @@ func TestTextInputPrefersFileSuggestionsInSlashCommandArguments(t *testing.T) {
 	writeSuggestionFile(t, root, "ctx.txt")
 
 	input := NewTextInput().WithFileSuggestions(root)
-	input.Model.SetValue("/report accuracy @ct")
-	input.Model.SetCursor(len("/report accuracy @ct"))
+	input.Model.SetValue("/diagnose @ct")
+	input.Model.SetCursor(len("/diagnose @ct"))
 	input.updateSuggestions()
 
 	if !input.HasSuggestions() {

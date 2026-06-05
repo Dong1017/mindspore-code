@@ -58,19 +58,6 @@ for platform in "${PLATFORMS[@]}"; do
     ./cmd/mscli/
 done
 
-SERVER_GOOS="$(go env GOOS)"
-SERVER_GOARCH="$(go env GOARCH)"
-SERVER_OUTPUT="mscli-server-${SERVER_GOOS}-${SERVER_GOARCH}"
-if [ "${SERVER_GOOS}" = "windows" ]; then
-  SERVER_OUTPUT="${SERVER_OUTPUT}.exe"
-fi
-
-echo "  -> ${SERVER_OUTPUT}"
-CGO_ENABLED=1 GOOS="${SERVER_GOOS}" GOARCH="${SERVER_GOARCH}" go build \
-  -ldflags "-X ${MODULE_PATH}/internal/version.Version=${VERSION}" \
-  -o "${DIST_DIR}/${SERVER_OUTPUT}" \
-  ./cmd/mscli-server/
-
 cat > "${DIST_DIR}/manifest.json" <<MANIFEST
 {
   "latest": "${VERSION}",

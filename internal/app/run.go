@@ -26,7 +26,7 @@ import (
 	"github.com/mindspore-lab/mindspore-cli/ui/theme"
 )
 
-const provideAPIKeyFirstMsg = "LLM unavailable: provide api key first, or /login and switch to free model."
+const provideAPIKeyFirstMsg = "LLM unavailable: provide api key first."
 const interruptActiveTaskToken = "__interrupt_active_task__"
 const internalPermissionsActionPrefix = "\x00permissions:"
 const historyReplayReadyToken = "__history_replay_ready__"
@@ -153,11 +153,6 @@ func (a *Application) runReal() error {
 	})
 	p := tea.NewProgram(tui, tuiProgramOptions()...)
 
-	// Emit saved login so the topbar shows the user immediately.
-	if a.issueUser != "" {
-		a.EventCh <- model.Event{Type: model.IssueUserUpdate, Message: a.issueUser}
-	}
-
 	go a.inputLoop(userCh)
 	if !a.deferHistoryReplay {
 		a.startReplayHistory()
@@ -240,12 +235,6 @@ func (a *Application) processInput(input string) {
 		return
 	}
 	if a.questionUI != nil && a.questionUI.HandleInput(trimmed) {
-		return
-	}
-
-	if strings.HasPrefix(trimmed, modelSetupToken+" ") {
-		parts := strings.Fields(trimmed)
-		a.cmdModelSetup(parts[1:])
 		return
 	}
 

@@ -7,19 +7,15 @@ import (
 )
 
 const (
-	modelModeMSCLIProvided      = "mscli-provided"
 	modelModeOwn                = "own"
 	modelModeOwnEnv             = "own-env"
-	modelSetupToken             = "__model_setup"
 	defaultSessionRetentionDays = 30
 )
 
 // appConfig holds persistent local settings stored in ~/.mscli/config.json.
-// Separate from credentials.json (issue server auth) and configs/ (YAML + env).
+// Separate from configs/ (YAML + env).
 type appConfig struct {
-	ModelMode            string `json:"model_mode,omitempty"`             // "mscli-provided" or "own" or ""
-	ModelPresetID        string `json:"model_preset_id,omitempty"`        // e.g. "kimi-k2.5-free"
-	ModelToken           string `json:"model_token,omitempty"`            // API token for mscli-provided models
+	ModelMode            string `json:"model_mode,omitempty"`             // "own" or ""
 	SessionRetentionDays int    `json:"session_retention_days,omitempty"` // auto-delete sessions older than this many days
 }
 

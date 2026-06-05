@@ -226,13 +226,6 @@ func (r *Registry) registerDefaults() {
 	})
 
 	r.Register(Command{
-		Name:        "/project",
-		Description: "Show or edit project status data",
-		Usage:       "/project [status|add|update|rm]",
-		Hidden:      true,
-	})
-
-	r.Register(Command{
 		Name:        "/skill",
 		Description: "Load a skill and start it",
 		Usage:       "/skill <name> [request...]",
@@ -245,45 +238,21 @@ func (r *Registry) registerDefaults() {
 	})
 
 	r.Register(Command{
-		Name:        "/login",
-		Description: "Log in to the issue server",
-		Usage:       "/login <token>",
-	})
-
-	r.Register(Command{
-		Name:        "/logout",
-		Description: "Log out from the issue server",
-		Usage:       "/logout",
-	})
-
-	r.Register(Command{
-		Name:        "/feedback",
-		Description: "Report a bug or issue",
-		Usage:       "/feedback [tags] <title> | /feedback acc|fail|perf <title>",
-	})
-
-	r.Register(Command{
 		Name:        "/factory",
 		Description: "Create cards, submit review bundles, and build/sync Factory packs",
 		Usage:       "/factory <card|pack> ...",
 	})
 
 	r.Register(Command{
-		Name:        "/issues",
-		Description: "List issues",
-		Usage:       "/issues [status]",
-	})
-
-	r.Register(Command{
 		Name:        "/diagnose",
-		Description: "Diagnose a problem or issue",
-		Usage:       "/diagnose <problem text|ISSUE-id>",
+		Description: "Diagnose a problem",
+		Usage:       "/diagnose <problem text>",
 	})
 
 	r.Register(Command{
 		Name:        "/fix",
-		Description: "Fix a problem or issue",
-		Usage:       "/fix <problem text|ISSUE-id>",
+		Description: "Fix a problem",
+		Usage:       "/fix <problem text>",
 	})
 
 	r.Register(Command{
@@ -304,11 +273,6 @@ func (r *Registry) registerDefaults() {
 		Usage:       "/preflight [description]",
 	})
 
-	r.Register(Command{
-		Name:        "/now",
-		Description: "Show issue dashboard",
-		Usage:       "/now",
-	})
 }
 
 // DefaultRegistry is the global slash command registry.

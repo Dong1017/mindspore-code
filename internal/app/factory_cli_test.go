@@ -2,9 +2,6 @@ package app
 
 import (
 	"bytes"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,14 +17,12 @@ func TestFactoryCLIStatusPrintsStatus(t *testing.T) {
 	dir := t.TempDir()
 	withWorkingDir(t, dir)
 	withHomeDir(t, filepath.Join(dir, "home"))
-	withFactoryServerEnv(t, "", "")
-	withMissingFactoryCredentials(t)
 
 	output, err := runFactoryCLITest("status")
 	if err != nil {
 		t.Fatalf("Run(factory status) error = %v", err)
 	}
-	assertContainsAll(t, output, "factory status:", "local_pack_installed: false", "local_pack_reason: not installed", "server_configured: false", "config_source: none")
+	assertContainsAll(t, output, "factory status:", "local_pack_installed: false", "local_pack_reason: not installed")
 }
 
 func TestFactoryCLICardSubmitReviewAndApprove(t *testing.T) {
@@ -82,7 +77,7 @@ func TestFactoryCLICardSubmitReviewAndApprove(t *testing.T) {
 	}
 }
 
-func TestFactoryCLIPackBuildPublishAndSync(t *testing.T) {
+func TestFactoryCLIPackBuildAndSync(t *testing.T) {
 	sourceDir, err := filepath.Abs(filepath.FromSlash("../factory/compiler/testdata/cards"))
 	if err != nil {
 		t.Fatalf("resolve source cards: %v", err)
@@ -96,43 +91,9 @@ func TestFactoryCLIPackBuildPublishAndSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run(factory pack build) error = %v", err)
 	}
-	assertContainsAll(t, output, "built factory pack:", "mscli factory pack publish "+outputPack)
+	assertContainsAll(t, output, "built factory pack:", "mscli factory pack sync "+outputPack)
 	if _, err := pack.Load(outputPack); err != nil {
 		t.Fatalf("Load(built) error = %v", err)
-	}
-
-	var sawPublishAuth bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer secret" {
-			t.Fatalf("Authorization = %q, want bearer", r.Header.Get("Authorization"))
-		}
-		switch r.URL.Path {
-		case "/factory/packs":
-			sawPublishAuth = true
-			w.WriteHeader(http.StatusCreated)
-			_, _ = fmt.Fprint(w, `{"id":21,"pack_name":"factory-core","pack_version":"1","schema_version":"1","card_schema_version":"known_issue/v0.5","compiled_case_count":3,"checksum":"sha256:abc","publisher":"alice","created_at":"2026-05-14T00:00:00Z"}`)
-		case "/factory/packs/latest":
-			_, _ = fmt.Fprint(w, `{"id":22,"pack_name":"factory-core","pack_version":"1","schema_version":"1","card_schema_version":"known_issue/v0.5","compiled_case_count":3,"checksum":"sha256:abc","publisher":"alice","created_at":"2026-05-14T00:00:00Z"}`)
-		case "/factory/packs/latest/download":
-			data, err := os.ReadFile(outputPack)
-			if err != nil {
-				t.Fatalf("read output pack: %v", err)
-			}
-			_, _ = w.Write(data)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-	withFactoryServerEnv(t, server.URL, "secret")
-
-	output, err = runFactoryCLITest("pack", "publish", outputPack)
-	if err != nil {
-		t.Fatalf("Run(factory pack publish) error = %v", err)
-	}
-	assertContainsAll(t, output, "published factory pack:", "pack_id: 21", "mscli factory pack sync")
-	if !sawPublishAuth {
-		t.Fatal("publish did not reach server")
 	}
 
 	output, err = runFactoryCLITest("pack", "sync", outputPack)
@@ -140,12 +101,6 @@ func TestFactoryCLIPackBuildPublishAndSync(t *testing.T) {
 		t.Fatalf("Run(factory pack sync source) error = %v", err)
 	}
 	assertContainsAll(t, output, "synced factory pack:", "mscli factory status")
-
-	output, err = runFactoryCLITest("pack", "sync")
-	if err != nil {
-		t.Fatalf("Run(factory pack sync remote) error = %v", err)
-	}
-	assertContainsAll(t, output, "synced factory pack from server:", "remote_id: 22", "mscli factory status")
 }
 
 func TestFactoryCLIPackMatchDebug(t *testing.T) {

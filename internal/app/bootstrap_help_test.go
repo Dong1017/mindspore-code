@@ -29,7 +29,6 @@ func TestRenderBootstrapHelpRoot(t *testing.T) {
 
 	for _, unwanted := range []string{
 		"MSCLI_CONTEXT_WINDOW",
-		"MSCLI_SERVER_URL",
 		"mindspore-cli replay",
 	} {
 		if strings.Contains(got, unwanted) {

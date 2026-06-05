@@ -86,8 +86,6 @@ func runFactoryPack(args []string, opts factoryCommandOptions) (string, error) {
 	switch args[0] {
 	case "build":
 		return runFactoryPackBuild(args[1:], opts)
-	case "publish":
-		return runFactoryPackPublish(args[1:], opts)
 	case "sync":
 		return runFactoryPackSync(args[1:], opts)
 	case "match-debug":

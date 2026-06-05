@@ -19,8 +19,6 @@ import (
 	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
 	"github.com/mindspore-lab/mindspore-cli/integrations/skills"
 	factoryruntime "github.com/mindspore-lab/mindspore-cli/internal/factory/runtime"
-	issuepkg "github.com/mindspore-lab/mindspore-cli/internal/issues"
-	projectpkg "github.com/mindspore-lab/mindspore-cli/internal/project"
 	itrain "github.com/mindspore-lab/mindspore-cli/internal/train"
 	"github.com/mindspore-lab/mindspore-cli/internal/version"
 	"github.com/mindspore-lab/mindspore-cli/permission"
@@ -73,16 +71,10 @@ type Application struct {
 	skillsHomeDir string
 	startupOnce   sync.Once
 
-	// Issue tracking
-	issueService          *issuepkg.Service
-	issueUser             string
-	issueRole             string
+	// Local diagnosis summaries.
 	latestDiagnoseSummary *factoryruntime.DiagnoseRunSummary
 	latestFixSummary      *factoryruntime.FixRunSummary
 	latestRunKind         string
-
-	// Project tracking
-	projectService *projectpkg.Service
 
 	// Foreground chat task state
 	pendingMaxIterationDecision bool
@@ -91,11 +83,7 @@ type Application struct {
 	replayCancel                context.CancelFunc
 	taskMu                      sync.Mutex
 
-	// Model preset runtime override state.
-	activeModelPresetID  string
-	modelBeforePreset    *configs.ModelConfig
 	needsSetupPopup      bool
-	savedModelToken      string
 	startupSessionPicker *sessionPickerRequest
 
 	// Train mode state
@@ -178,37 +166,12 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		}
 	}
 
-	// If LLM is not ready (missing API key), try detecting saved model config.
+	// If LLM is not ready (missing API key), show the BYO model setup prompt.
 	var needsSetupPopup bool
-	var activePresetID string
-	var savedModelToken string
 	if !llmReady {
 		mode, appCfg := detectModelMode()
+		_ = appCfg
 		switch mode {
-		case modelModeMSCLIProvided:
-			savedModelToken = appCfg.ModelToken
-			if preset, ok := resolveBuiltinModelPreset(appCfg.ModelPresetID); ok {
-				config.Model.URL = preset.BaseURL
-				config.Model.Provider = preset.Provider
-				config.Model.Model = preset.Model
-				// Always re-fetch the API key from the server instead of
-				// reusing the cached one — it may have been rotated.
-				apiKey := appCfg.ModelToken
-				if freshKey, fetchErr := fetchPresetAPIKey(preset); fetchErr == nil {
-					apiKey = freshKey
-					// Update the saved config with the fresh key.
-					appCfg.ModelToken = freshKey
-					_ = saveAppConfig(appCfg)
-				}
-				config.Model.Key = apiKey
-				savedModelToken = apiKey
-				configs.RefreshModelTokenDefaults(config, previousModel)
-				provider, err = initProvider(config.Model, llm.ResolveOptions{PreferConfigAPIKey: true})
-				if err == nil {
-					llmReady = true
-					activePresetID = preset.ID
-				}
-			}
 		case modelModeOwnEnv:
 			// Env vars were applied but init still failed for another reason.
 		default:
@@ -391,9 +354,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		llmReady:                llmReady,
 		skillLoader:             skillLoader,
 		skillsHomeDir:           strings.TrimSpace(homeDir),
-		activeModelPresetID:     activePresetID,
 		needsSetupPopup:         needsSetupPopup,
-		savedModelToken:         savedModelToken,
 		startupSessionPicker:    startupSessionPicker,
 	}
 	permissionUI.SetYOLOCallbacks(
@@ -408,13 +369,6 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		},
 	)
 
-	// Auto-login from saved credentials.
-	if cred, err := loadCredentials(); err == nil {
-		app.issueService = issuepkg.NewService(issuepkg.NewRemoteStore(cred.ServerURL, cred.Token))
-		app.projectService = projectpkg.NewService(projectpkg.NewRemoteStore(cred.ServerURL, cred.Token))
-		app.issueUser = cred.User
-		app.issueRole = cred.Role
-	}
 	if sessionStoreReady {
 		app.sessionStoreReady.Store(true)
 	}
@@ -819,9 +773,7 @@ func newEngineConfig(cfg *configs.Config, systemPrompt string) loop.EngineConfig
 }
 
 // detectModelMode checks whether model config is already available.
-// Returns the mode string and the loaded appConfig (if any).
-// Mode is modelModeOwnEnv if env vars are complete, modelModeMSCLIProvided
-// if a saved token exists, or "" if neither is configured.
+// Mode is modelModeOwnEnv if BYO model env vars are complete.
 func detectModelMode() (string, *appConfig) {
 	provider := strings.TrimSpace(os.Getenv("MSCLI_PROVIDER"))
 	apiKey := strings.TrimSpace(os.Getenv("MSCLI_API_KEY"))
@@ -829,51 +781,20 @@ func detectModelMode() (string, *appConfig) {
 	if provider != "" && apiKey != "" && modelName != "" {
 		return modelModeOwnEnv, nil
 	}
-
-	cfg, err := loadAppConfig()
-	if err != nil {
-		return "", nil
-	}
-	if cfg.ModelMode == modelModeMSCLIProvided &&
-		strings.TrimSpace(cfg.ModelPresetID) != "" &&
-		strings.TrimSpace(cfg.ModelToken) != "" {
-		return modelModeMSCLIProvided, cfg
-	}
 	return "", nil
 }
 
 func (a *Application) emitModelSetupPopup(canEscape bool) {
-	presetOptions := []model.SelectionOption{}
-	for _, preset := range listBuiltinModelPresets() {
-		presetOptions = append(presetOptions, model.SelectionOption{
-			ID:       preset.ID,
-			Label:    preset.Label,
-			Disabled: preset.ComingSoon,
-		})
-	}
-
 	currentMode := ""
-	currentPreset := ""
-	if a.activeModelPresetID != "" {
-		currentMode = modelModeMSCLIProvided
-		currentPreset = a.activeModelPresetID
-	} else if a.llmReady {
+	if a.llmReady {
 		currentMode = modelModeOwn
 	}
 
-	isLoggedIn := false
-	if cred, err := loadCredentials(); err == nil && strings.TrimSpace(cred.Token) != "" {
-		isLoggedIn = true
-	}
-
 	popup := &model.SetupPopup{
-		Screen:        model.SetupScreenModeSelect,
-		PresetOptions: presetOptions,
-		CanEscape:     canEscape,
-		CurrentMode:   currentMode,
-		CurrentPreset: currentPreset,
-		TokenValue:    a.savedModelToken,
-		IsLoggedIn:    isLoggedIn,
+		Screen:       model.SetupScreenEnvInfo,
+		CanEscape:    canEscape,
+		CurrentMode:  currentMode,
+		ModeSelected: 0,
 	}
 
 	a.EventCh <- model.Event{

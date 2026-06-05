@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -13,8 +11,6 @@ import (
 
 	agentctx "github.com/mindspore-lab/mindspore-cli/agent/context"
 	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
-	issuepkg "github.com/mindspore-lab/mindspore-cli/internal/issues"
-	projectpkg "github.com/mindspore-lab/mindspore-cli/internal/project"
 	"github.com/mindspore-lab/mindspore-cli/permission"
 	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
@@ -54,27 +50,6 @@ func (a *Application) handleCommand(input string) {
 	case "/train":
 		a.EventCh <- model.Event{Type: model.AgentReply, Message: "Coming soon."}
 		return
-	case "/project":
-		a.cmdProjectInput(cmd.Remainder)
-	case "/login":
-		a.cmdLogin(args)
-	case "/logout":
-		a.cmdLogout()
-	case "/feedback":
-		expanded, err := a.expandReportInput(cmd.Remainder)
-		if err != nil {
-			a.emitInputExpansionError(err)
-			return
-		}
-		a.cmdFeedback(expanded)
-	case "/issues":
-		a.cmdIssues(args)
-	case "/__issue_detail":
-		a.cmdIssueDetail(args)
-	case "/__issue_note":
-		a.cmdIssueNoteInput(cmd.Remainder)
-	case "/__issue_claim":
-		a.cmdIssueClaim(args)
 	case "/diagnose":
 		expanded, err := a.expandIssueCommandInput(cmd.Remainder)
 		if err != nil {
@@ -113,7 +88,7 @@ func (a *Application) handleCommand(input string) {
 	case "/factory":
 		a.cmdFactory(cmd.Remainder)
 	case "/now":
-		a.cmdNow()
+		a.EventCh <- model.Event{Type: model.AgentReply, Message: "The server-backed issue dashboard has been removed."}
 	case "/skill":
 		if err := a.handleRawSkillCommand(cmd.Remainder); err != nil {
 			a.emitInputExpansionError(err)
@@ -193,191 +168,6 @@ func (a *Application) handleSkillAliasCommand(commandName, rawRemainder string) 
 
 func (a *Application) cmdModel(args []string) {
 	a.emitModelSetupPopup(true)
-}
-
-// applyPreset applies a preset with the given API key. It saves the current
-// model config for later restoration, sets the provider, and updates the
-// active preset ID. Returns an error if SetProvider fails.
-func (a *Application) applyPreset(preset builtinModelPreset, apiKey string) error {
-	if a.modelBeforePreset == nil {
-		a.modelBeforePreset = copyModelConfig(a.Config.Model)
-	}
-	previous := a.Config.Model
-	a.Config.Model.URL = preset.BaseURL
-	if err := a.SetProvider(preset.Provider, preset.Model, apiKey); err != nil {
-		a.Config.Model = previous
-		return err
-	}
-	a.activeModelPresetID = preset.ID
-	return nil
-}
-
-func (a *Application) restoreModelConfigFromPreset() {
-	if strings.TrimSpace(a.activeModelPresetID) == "" || a.modelBeforePreset == nil {
-		return
-	}
-	a.Config.Model = *copyModelConfig(*a.modelBeforePreset)
-	a.modelBeforePreset = nil
-	a.activeModelPresetID = ""
-}
-
-func (a *Application) cmdModelSetup(args []string) {
-	if len(args) < 1 {
-		a.EventCh <- model.Event{
-			Type:     model.ToolError,
-			ToolName: "model",
-			Message:  "model setup requires preset ID",
-		}
-		return
-	}
-	presetID := args[0]
-	token := ""
-	if len(args) >= 2 {
-		token = strings.TrimSpace(args[1])
-	}
-
-	preset, ok := resolveBuiltinModelPreset(presetID)
-	if !ok {
-		a.EventCh <- model.Event{
-			Type:     model.ToolError,
-			ToolName: "model",
-			Message:  fmt.Sprintf("unknown preset: %s", presetID),
-		}
-		return
-	}
-
-	serverURL := strings.TrimRight(a.Config.Server.URL, "/")
-	if serverURL == "" {
-		a.EventCh <- model.Event{
-			Type:    model.ModelSetupTokenError,
-			Message: "server URL not set. export MSCLI_SERVER_URL first.",
-		}
-		return
-	}
-
-	a.EventCh <- model.Event{Type: model.AgentThinking}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-	defer cancel()
-
-	// If no token provided, use saved credentials.
-	if token == "" {
-		cred, err := loadCredentials()
-		if err != nil || strings.TrimSpace(cred.Token) == "" {
-			a.EventCh <- model.Event{
-				Type:    model.ModelSetupTokenError,
-				Message: "not logged in. Please enter your token.",
-			}
-			return
-		}
-		token = cred.Token
-	}
-
-	// Step 1: Verify token and get user info.
-	userName, userRole, err := a.verifyUserToken(ctx, serverURL, token)
-	if err != nil {
-		a.EventCh <- model.Event{
-			Type:    model.ModelSetupTokenError,
-			Message: fmt.Sprintf("Login failed: %v", err),
-		}
-		return
-	}
-
-	// Step 2: Save credentials (so issue/bug services work too).
-	cred := &credentials{
-		ServerURL: serverURL,
-		Token:     token,
-		User:      userName,
-		Role:      userRole,
-	}
-	if err := saveCredentials(cred); err != nil {
-		a.emitToolError("config", "login ok but failed to save credentials: %v", err)
-	}
-	a.issueService = issuepkg.NewService(issuepkg.NewRemoteStore(serverURL, token))
-	a.projectService = projectpkg.NewService(projectpkg.NewRemoteStore(serverURL, token))
-	a.issueUser = userName
-	a.issueRole = userRole
-
-	// Step 3: Fetch LLM API key from server for the preset.
-	apiKey, err := a.resolveModelPresetAPIKey(ctx, preset)
-	if err != nil {
-		a.EventCh <- model.Event{
-			Type:    model.ModelSetupTokenError,
-			Message: fmt.Sprintf("Failed to fetch model credential: %v", err),
-		}
-		return
-	}
-
-	// Step 4: Apply preset with fetched API key.
-	if err := a.applyPreset(preset, apiKey); err != nil {
-		a.EventCh <- model.Event{
-			Type:     model.ToolError,
-			ToolName: "model",
-			Message:  fmt.Sprintf("Failed to apply preset: %v", err),
-		}
-		a.EventCh <- model.Event{
-			Type:    model.ModelSetupTokenError,
-			Message: fmt.Sprintf("Failed: %v", err),
-		}
-		return
-	}
-
-	// Step 5: Save model mode to config.json (token is in credentials.json).
-	appCfg, loadErr := loadAppConfig()
-	if loadErr != nil {
-		appCfg = &appConfig{}
-	}
-	appCfg.ModelMode = modelModeMSCLIProvided
-	appCfg.ModelPresetID = preset.ID
-	appCfg.ModelToken = token
-	if err := saveAppConfig(appCfg); err != nil {
-		a.emitToolError("config", "model applied but failed to save config: %v", err)
-	} else if loadErr != nil {
-		a.emitToolError("config", "model applied but failed to preserve existing config: %v", loadErr)
-	}
-
-	// Step 6: Emit UI updates.
-	a.EventCh <- model.Event{Type: model.IssueUserUpdate, Message: userName}
-	a.EventCh <- model.Event{
-		Type:    model.ModelUpdate,
-		Message: a.Config.Model.Model,
-		CtxMax:  a.Config.Context.Window,
-	}
-	a.EventCh <- model.Event{Type: model.ModelSetupClose}
-	a.EventCh <- model.Event{
-		Type:    model.AgentReply,
-		Message: fmt.Sprintf("Logged in as %s. Model configured: %s", userName, preset.Label),
-	}
-}
-
-// verifyUserToken verifies a user token against the mscli server.
-func (a *Application) verifyUserToken(ctx context.Context, serverURL, token string) (user, role string, err error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serverURL+"/me", nil)
-	if err != nil {
-		return "", "", fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", "", fmt.Errorf("cannot reach server: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("%s", body)
-	}
-
-	var me struct {
-		User string `json:"user"`
-		Role string `json:"role"`
-	}
-	if err := json.Unmarshal(body, &me); err != nil {
-		return "", "", fmt.Errorf("invalid response: %w", err)
-	}
-	return me.User, me.Role, nil
 }
 
 func (a *Application) cmdExit() {

@@ -6,14 +6,12 @@ Factory is a local-first known-issue card and pack workflow. `/factory ...` is t
 
 | Workflow | TUI | CLI | Scope |
 | --- | --- | --- | --- |
-| Status | `/factory status` | `mscli factory status` | Local state plus optional server metadata. |
+| Status | `/factory status` | `mscli factory status` | Local state. |
 | Create draft | `/factory card create` | Not supported | TUI-only latest `/diagnose` or `/fix` summary. |
 | Submit | `/factory card submit {card-path}` | `mscli factory card submit {card-path}` | Local validation and review bundle. |
 | Review | `/factory card review {card-id}` | `mscli factory card review {card-id}` | Read-only local review. |
 | Approve | `/factory card review {card-id} --approve --confidence observed --rationale "{manual rationale}"` | `mscli factory card review {card-id} --approve --confidence observed --rationale "{manual rationale}"` | Local manual approval. |
 | Build | `/factory pack build {cards-dir} {output-pack}` | `mscli factory pack build {cards-dir} {output-pack}` | Compile only. |
-| Publish | `/factory pack publish {pack-path}` | `mscli factory pack publish {pack-path}` | Validate with `pack.Load`, then upload. |
-| Sync latest | `/factory pack sync` | `mscli factory pack sync` | Server latest when configured; otherwise no-source error. |
 | Sync source | `/factory pack sync {source-path}` | `mscli factory pack sync {source-path}` | Explicit local source via validated `pack.Sync`. |
 | Match debug | `/factory pack match-debug "{diagnose text}"` | `mscli factory pack match-debug "{diagnose text}"` | Local bounded matching audit. |
 

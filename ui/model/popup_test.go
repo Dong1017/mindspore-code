@@ -6,10 +6,10 @@ func TestSetupPopupPresetNavigatesAllItems(t *testing.T) {
 	popup := &SetupPopup{
 		Screen: SetupScreenPresetPicker,
 		PresetOptions: []SelectionOption{
-			{ID: "kimi-k2.5-free", Label: "kimi-k2.5 [free]"},
-			{ID: "deepseek-v3", Label: "deepseek-v3"},
-			{ID: "glm-4.7", Label: "glm-4.7 (coming soon)", Disabled: true},
-			{ID: "minimax-m2.7", Label: "minimax-m2.7 (coming soon)", Disabled: true},
+			{ID: "preset-a", Label: "preset-a"},
+			{ID: "preset-b", Label: "preset-b"},
+			{ID: "preset-c", Label: "preset-c", Disabled: true},
+			{ID: "preset-d", Label: "preset-d", Disabled: true},
 		},
 		PresetSelected: 0,
 	}
@@ -37,11 +37,11 @@ func TestSetupPopupMoveMode(t *testing.T) {
 		ModeSelected: 0,
 	}
 	popup.MoveModeSelection(1)
-	if popup.ModeSelected != 1 {
-		t.Errorf("expected 1, got %d", popup.ModeSelected)
+	if popup.ModeSelected != 0 {
+		t.Errorf("expected 0, got %d", popup.ModeSelected)
 	}
 	popup.MoveModeSelection(1)
 	if popup.ModeSelected != 0 {
-		t.Errorf("expected wrap to 0, got %d", popup.ModeSelected)
+		t.Errorf("expected 0, got %d", popup.ModeSelected)
 	}
 }

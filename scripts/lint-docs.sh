@@ -48,7 +48,7 @@ done
 # 4. Check directory structure in contributor guide matches reality
 echo "Checking contributor guide structure..."
 if [ -f docs/agent-contributor-guide.md ]; then
-  for dir in cmd/mscli cmd/mscli-server internal/app agent/loop agent/session \
+  for dir in cmd/mscli internal/app agent/loop agent/session \
     integrations/llm integrations/skills permission runtime/shell tools/fs ui configs; do
     if [ ! -d "$dir" ]; then
       echo "FAIL: docs/agent-contributor-guide.md references '$dir' but it doesn't exist"
