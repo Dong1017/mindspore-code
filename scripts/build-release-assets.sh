@@ -66,6 +66,9 @@ cat > "${DIST_DIR}/manifest.json" <<MANIFEST
 }
 MANIFEST
 
+cp "${SCRIPT_DIR}/install.sh" "${DIST_DIR}/install.sh"
+chmod +x "${DIST_DIR}/install.sh"
+
 echo ""
 echo "Release assets ready in ${DIST_DIR}:"
 ls -lh "${DIST_DIR}"

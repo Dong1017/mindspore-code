@@ -31,9 +31,7 @@ MindSpore CLI 是 MindSpore Model Agent 的官方端到端交互入口。它面�
 ### 脚本安装
 
 ```bash
-tmpdir="$(mktemp -d)"
-git clone --depth 1 https://gitcode.com/mindspore/mscli.git "$tmpdir"
-bash "$tmpdir/scripts/install.sh"
+curl -fsSL https://gitcode.com/mindspore/mscli/releases/download/v0.1.4/install.sh | bash
 ```
 
 ### 从源码构建

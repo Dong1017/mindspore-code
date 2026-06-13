@@ -162,6 +162,27 @@ release_upload_header_args() {
   ' "${file}"
 }
 
+release_asset_exists() {
+  local file="$1"
+  local name="$2"
+  perl -MJSON::PP -e '
+    use strict;
+    use warnings;
+    my ($file, $name) = @ARGV;
+    local $/;
+    open my $fh, "<", $file or exit 1;
+    my $json = eval { decode_json(<$fh>) } or exit 1;
+    my $assets = $json->{assets};
+    exit 1 unless ref($assets) eq "ARRAY";
+    for my $asset (@$assets) {
+      next unless ref($asset) eq "HASH";
+      exit 0 if ($asset->{name} // q()) eq $name;
+    }
+    exit 1;
+  ' "${file}" "${name}"
+}
+
+
 create_or_update_release() {
   local payload
   local http_code
@@ -208,11 +229,18 @@ upload_assets() {
   local upload_url
   local upload_status
   local -a header_args
+  local release_assets
 
   if [ ! -d "${DIST_DIR}" ]; then
     echo "Error: asset directory not found: ${DIST_DIR}" >&2
     exit 1
   fi
+
+  release_assets="${WORK_DIR}/release-assets.json"
+  curl -sS --fail \
+    --connect-timeout "${CONNECT_TIMEOUT}" \
+    "${api}/releases/tags/${VERSION}?${auth_q}" \
+    > "${release_assets}"
 
   shopt -s nullglob
   for file in "${DIST_DIR}"/*; do
@@ -220,6 +248,10 @@ upload_assets() {
       continue
     fi
     file_name="$(basename "${file}")"
+    if release_asset_exists "${release_assets}" "${file_name}"; then
+      echo "Skipping ${file_name}; already uploaded."
+      continue
+    fi
     echo "Uploading ${file_name}..."
 
     upload_meta="${WORK_DIR}/upload-${file_name}.json"
