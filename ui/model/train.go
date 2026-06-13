@@ -260,8 +260,12 @@ type SetupPopup struct {
 	TokenError     string // inline error message
 	CurrentMode    string // "own" or "" — for (current) badge
 	CurrentPreset  string // preset ID currently active — for (current) badge
-	CanEscape      bool   // false on first boot (no config to fall back to)
-	IsLoggedIn     bool   // retained for backward-compatible popup event copies
+	Provider       string
+	BaseURL        string
+	ModelName      string
+	Configured     bool
+	CanEscape      bool // false on first boot (no config to fall back to)
+	IsLoggedIn     bool // retained for backward-compatible popup event copies
 }
 
 type SessionPickerMode string

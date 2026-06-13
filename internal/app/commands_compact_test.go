@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	agentctx "github.com/mindspore-lab/mindspore-cli/agent/context"
-	"github.com/mindspore-lab/mindspore-cli/agent/session"
-	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	agentctx "gitcode.com/mindspore/mscli/agent/context"
+	"gitcode.com/mindspore/mscli/agent/session"
+	"gitcode.com/mindspore/mscli/integrations/llm"
+	"gitcode.com/mindspore/mscli/ui/model"
 )
 
 func TestCmdCompactCompactsContextAndEmitsTokenUpdate(t *testing.T) {

@@ -3,7 +3,7 @@ package train
 import (
 	"context"
 
-	itrain "github.com/mindspore-lab/mindspore-cli/internal/train"
+	itrain "gitcode.com/mindspore/mscli/internal/train"
 )
 
 // Backend provides setup and run behavior for a training lane.

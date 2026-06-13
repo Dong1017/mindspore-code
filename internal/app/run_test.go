@@ -9,11 +9,11 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	ctxmanager "github.com/mindspore-lab/mindspore-cli/agent/context"
-	"github.com/mindspore-lab/mindspore-cli/agent/loop"
-	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
-	"github.com/mindspore-lab/mindspore-cli/tools"
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	ctxmanager "gitcode.com/mindspore/mscli/agent/context"
+	"gitcode.com/mindspore/mscli/agent/loop"
+	"gitcode.com/mindspore/mscli/integrations/llm"
+	"gitcode.com/mindspore/mscli/tools"
+	"gitcode.com/mindspore/mscli/ui/model"
 )
 
 type blockingStreamProvider struct {

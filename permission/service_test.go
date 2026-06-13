@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mindspore-lab/mindspore-cli/configs"
+	"gitcode.com/mindspore/mscli/configs"
 )
 
 type stubPermissionUI struct {

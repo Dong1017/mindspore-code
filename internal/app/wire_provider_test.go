@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mindspore-lab/mindspore-cli/agent/loop"
-	"github.com/mindspore-lab/mindspore-cli/agent/session"
-	"github.com/mindspore-lab/mindspore-cli/configs"
-	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
+	"gitcode.com/mindspore/mscli/agent/loop"
+	"gitcode.com/mindspore/mscli/agent/session"
+	"gitcode.com/mindspore/mscli/configs"
+	"gitcode.com/mindspore/mscli/integrations/llm"
 )
 
 func TestInitProviderAnthropic(t *testing.T) {

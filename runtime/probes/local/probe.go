@@ -4,8 +4,8 @@ package local
 import (
 	"context"
 
-	"github.com/mindspore-lab/mindspore-cli/internal/train"
-	"github.com/mindspore-lab/mindspore-cli/runtime/probes"
+	"gitcode.com/mindspore/mscli/internal/train"
+	"gitcode.com/mindspore/mscli/runtime/probes"
 )
 
 // Probe checks local machine readiness before training.

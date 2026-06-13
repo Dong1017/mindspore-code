@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	itrain "github.com/mindspore-lab/mindspore-cli/internal/train"
-	"github.com/mindspore-lab/mindspore-cli/runtime/probes"
-	localprobes "github.com/mindspore-lab/mindspore-cli/runtime/probes/local"
-	targetprobes "github.com/mindspore-lab/mindspore-cli/runtime/probes/target"
-	sshprobe "github.com/mindspore-lab/mindspore-cli/runtime/probes/target/ssh"
+	itrain "gitcode.com/mindspore/mscli/internal/train"
+	"gitcode.com/mindspore/mscli/runtime/probes"
+	localprobes "gitcode.com/mindspore/mscli/runtime/probes/local"
+	targetprobes "gitcode.com/mindspore/mscli/runtime/probes/target"
+	sshprobe "gitcode.com/mindspore/mscli/runtime/probes/target/ssh"
 )
 
 // RunSetupSequence runs the setup phase: local probes first, then target probes.

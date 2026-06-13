@@ -9,8 +9,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mindspore-lab/mindspore-cli/internal/update"
-	"github.com/mindspore-lab/mindspore-cli/internal/version"
+	"gitcode.com/mindspore/mscli/internal/update"
+	"gitcode.com/mindspore/mscli/internal/version"
 )
 
 var updatePromptSelectedStyle = lipgloss.NewStyle().

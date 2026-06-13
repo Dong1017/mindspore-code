@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"github.com/mindspore-lab/mindspore-cli/configs"
+	"gitcode.com/mindspore/mscli/configs"
 )
 
 func TestInitToolsRegisteredToolsHaveMetadata(t *testing.T) {

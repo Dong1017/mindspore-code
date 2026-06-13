@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mindspore-lab/mindspore-cli/internal/factory/pack"
-	factoryruntime "github.com/mindspore-lab/mindspore-cli/internal/factory/runtime"
-	issuepkg "github.com/mindspore-lab/mindspore-cli/internal/issues"
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	"gitcode.com/mindspore/mscli/internal/factory/pack"
+	factoryruntime "gitcode.com/mindspore/mscli/internal/factory/runtime"
+	issuepkg "gitcode.com/mindspore/mscli/internal/issues"
+	"gitcode.com/mindspore/mscli/ui/model"
 )
 
 func (a *Application) cmdDiagnose(input string) {

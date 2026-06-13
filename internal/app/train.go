@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mindspore-lab/mindspore-cli/internal/train"
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
-	wtrain "github.com/mindspore-lab/mindspore-cli/workflow/train"
+	"gitcode.com/mindspore/mscli/internal/train"
+	"gitcode.com/mindspore/mscli/ui/model"
+	wtrain "gitcode.com/mindspore/mscli/workflow/train"
 )
 
 type trainSnapshot struct {

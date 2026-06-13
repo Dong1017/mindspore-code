@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mindspore-lab/mindspore-cli/tools"
+	"gitcode.com/mindspore/mscli/tools"
 )
 
 type stubPromptUI struct {

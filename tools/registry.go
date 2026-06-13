@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
+	"gitcode.com/mindspore/mscli/integrations/llm"
 )
 
 // Registry manages all available tools.

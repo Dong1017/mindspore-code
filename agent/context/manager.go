@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mindspore-lab/mindspore-cli/configs"
-	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
+	"gitcode.com/mindspore/mscli/configs"
+	"gitcode.com/mindspore/mscli/integrations/llm"
 )
 
 // ManagerConfig holds the manager configuration.

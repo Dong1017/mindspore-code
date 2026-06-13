@@ -8,7 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	"gitcode.com/mindspore/mscli/ui/model"
 )
 
 var testANSIPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)

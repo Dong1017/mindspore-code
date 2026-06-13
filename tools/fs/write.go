@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
-	"github.com/mindspore-lab/mindspore-cli/tools"
+	"gitcode.com/mindspore/mscli/integrations/llm"
+	"gitcode.com/mindspore/mscli/tools"
 )
 
 // WriteTool writes or creates file contents.

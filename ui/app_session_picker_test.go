@@ -6,7 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	"gitcode.com/mindspore/mscli/ui/model"
 )
 
 func TestSessionPickerOpenAndSelectResume(t *testing.T) {

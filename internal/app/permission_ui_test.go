@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	"gitcode.com/mindspore/mscli/ui/model"
 )
 
 func TestPermissionPromptUI_RequestPermissionAndApproveSession(t *testing.T) {

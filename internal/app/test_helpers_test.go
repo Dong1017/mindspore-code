@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mindspore-lab/mindspore-cli/configs"
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	"gitcode.com/mindspore/mscli/configs"
+	"gitcode.com/mindspore/mscli/ui/model"
 )
 
 func newModelCommandTestApp() *Application {

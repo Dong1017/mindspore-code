@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	factoryruntime "github.com/mindspore-lab/mindspore-cli/internal/factory/runtime"
+	factoryruntime "gitcode.com/mindspore/mscli/internal/factory/runtime"
 	"gopkg.in/yaml.v3"
 )
 

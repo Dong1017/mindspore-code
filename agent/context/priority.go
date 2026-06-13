@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
+	"gitcode.com/mindspore/mscli/integrations/llm"
 )
 
 // Priority 消息优先级

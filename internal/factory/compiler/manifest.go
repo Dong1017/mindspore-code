@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/mindspore-lab/mindspore-cli/internal/factory/pack"
+	"gitcode.com/mindspore/mscli/internal/factory/pack"
 )
 
 func buildManifest(summary *BuildSummary, sourceHash string) map[string]string {

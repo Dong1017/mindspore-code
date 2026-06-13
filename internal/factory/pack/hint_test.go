@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mindspore-lab/mindspore-cli/internal/factory/pack"
+	"gitcode.com/mindspore/mscli/internal/factory/pack"
 )
 
 func TestRenderFactoryHintBlock(t *testing.T) {

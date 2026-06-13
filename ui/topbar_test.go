@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	"gitcode.com/mindspore/mscli/ui/model"
 )
 
 func TestViewOmitsPersistentTopBarAndViewportFill(t *testing.T) {
@@ -29,7 +29,7 @@ func TestViewOmitsPersistentTopBarAndViewportFill(t *testing.T) {
 }
 
 func TestRenderBannerIncludesMetadata(t *testing.T) {
-	banner := RenderBanner("MindSpore CLI. test", "/tmp/project", "github.com/mindspore-lab/mindspore-cli", "demo-model", 4096)
+	banner := RenderBanner("MindSpore CLI. test", "/tmp/project", "gitcode.com/mindspore/mscli", "demo-model", 4096)
 	for _, want := range []string{
 		"MindSpore CLI",
 		"demo-model",

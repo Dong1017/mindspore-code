@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	"gitcode.com/mindspore/mscli/ui/model"
 )
 
 func TestClearScreenClearsVisibleChatState(t *testing.T) {

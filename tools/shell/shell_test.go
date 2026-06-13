@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	rshell "github.com/mindspore-lab/mindspore-cli/runtime/shell"
-	"github.com/mindspore-lab/mindspore-cli/tools"
+	rshell "gitcode.com/mindspore/mscli/runtime/shell"
+	"gitcode.com/mindspore/mscli/tools"
 )
 
 func TestShellToolExecute_DoesNotDuplicateCommandOrExit0InContent(t *testing.T) {

@@ -12,24 +12,24 @@ import (
 	"sync/atomic"
 	"time"
 
-	agentctx "github.com/mindspore-lab/mindspore-cli/agent/context"
-	"github.com/mindspore-lab/mindspore-cli/agent/loop"
-	"github.com/mindspore-lab/mindspore-cli/agent/session"
-	"github.com/mindspore-lab/mindspore-cli/configs"
-	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
-	"github.com/mindspore-lab/mindspore-cli/integrations/skills"
-	factoryruntime "github.com/mindspore-lab/mindspore-cli/internal/factory/runtime"
-	itrain "github.com/mindspore-lab/mindspore-cli/internal/train"
-	"github.com/mindspore-lab/mindspore-cli/internal/version"
-	"github.com/mindspore-lab/mindspore-cli/permission"
-	rshell "github.com/mindspore-lab/mindspore-cli/runtime/shell"
-	"github.com/mindspore-lab/mindspore-cli/tools"
-	askuserquestion "github.com/mindspore-lab/mindspore-cli/tools/ask_user_question"
-	"github.com/mindspore-lab/mindspore-cli/tools/fs"
-	"github.com/mindspore-lab/mindspore-cli/tools/shell"
-	skillstool "github.com/mindspore-lab/mindspore-cli/tools/skills"
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
-	wtrain "github.com/mindspore-lab/mindspore-cli/workflow/train"
+	agentctx "gitcode.com/mindspore/mscli/agent/context"
+	"gitcode.com/mindspore/mscli/agent/loop"
+	"gitcode.com/mindspore/mscli/agent/session"
+	"gitcode.com/mindspore/mscli/configs"
+	"gitcode.com/mindspore/mscli/integrations/llm"
+	"gitcode.com/mindspore/mscli/integrations/skills"
+	factoryruntime "gitcode.com/mindspore/mscli/internal/factory/runtime"
+	itrain "gitcode.com/mindspore/mscli/internal/train"
+	"gitcode.com/mindspore/mscli/internal/version"
+	"gitcode.com/mindspore/mscli/permission"
+	rshell "gitcode.com/mindspore/mscli/runtime/shell"
+	"gitcode.com/mindspore/mscli/tools"
+	askuserquestion "gitcode.com/mindspore/mscli/tools/ask_user_question"
+	"gitcode.com/mindspore/mscli/tools/fs"
+	"gitcode.com/mindspore/mscli/tools/shell"
+	skillstool "gitcode.com/mindspore/mscli/tools/skills"
+	"gitcode.com/mindspore/mscli/ui/model"
+	wtrain "gitcode.com/mindspore/mscli/workflow/train"
 )
 
 var errAPIKeyNotFound = errors.New("api key not found")
@@ -335,7 +335,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		Engine:                  engine,
 		EventCh:                 eventCh,
 		WorkDir:                 workDir,
-		RepoURL:                 "github.com/mindspore-lab/mindspore-cli",
+		RepoURL:                 "gitcode.com/mindspore/mscli",
 		Config:                  config,
 		llmDebugDumper:          llmDebugDumper,
 		provider:                provider,
@@ -790,11 +790,24 @@ func (a *Application) emitModelSetupPopup(canEscape bool) {
 		currentMode = modelModeOwn
 	}
 
+	providerName, baseURL, modelName := "", "", ""
+	configured := false
+	if a.Config != nil {
+		providerName = strings.TrimSpace(a.Config.Model.Provider)
+		baseURL = strings.TrimSpace(a.Config.Model.URL)
+		modelName = strings.TrimSpace(a.Config.Model.Model)
+		configured = providerName != "" && baseURL != "" && modelName != ""
+	}
+
 	popup := &model.SetupPopup{
 		Screen:       model.SetupScreenEnvInfo,
 		CanEscape:    canEscape,
 		CurrentMode:  currentMode,
 		ModeSelected: 0,
+		Provider:     providerName,
+		BaseURL:      baseURL,
+		ModelName:    modelName,
+		Configured:   configured,
 	}
 
 	a.EventCh <- model.Event{

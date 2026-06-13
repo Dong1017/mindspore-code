@@ -1,6 +1,6 @@
 package compiler
 
-import "github.com/mindspore-lab/mindspore-cli/internal/factory/pack"
+import "gitcode.com/mindspore/mscli/internal/factory/pack"
 
 type BuildSummary struct {
 	PackName           string

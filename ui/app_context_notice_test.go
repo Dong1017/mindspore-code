@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	"gitcode.com/mindspore/mscli/ui/model"
 )
 
 func TestContextNoticeDoesNotInterruptStreamingAgentMessage(t *testing.T) {

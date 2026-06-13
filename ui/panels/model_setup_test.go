@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	"gitcode.com/mindspore/mscli/ui/model"
 )
 
 func TestRenderSetupPopupModeSelect(t *testing.T) {

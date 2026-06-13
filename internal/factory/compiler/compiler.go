@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mindspore-lab/mindspore-cli/internal/factory/card"
+	"gitcode.com/mindspore/mscli/internal/factory/card"
 )
 
 type sourceCard struct {

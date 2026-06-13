@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
-	"github.com/mindspore-lab/mindspore-cli/tools"
+	"gitcode.com/mindspore/mscli/integrations/llm"
+	"gitcode.com/mindspore/mscli/tools"
 )
 
 // EditTool edits file contents by replacing text.

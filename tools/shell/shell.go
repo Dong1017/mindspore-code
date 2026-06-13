@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
-	rshell "github.com/mindspore-lab/mindspore-cli/runtime/shell"
-	"github.com/mindspore-lab/mindspore-cli/tools"
+	"gitcode.com/mindspore/mscli/integrations/llm"
+	rshell "gitcode.com/mindspore/mscli/runtime/shell"
+	"gitcode.com/mindspore/mscli/tools"
 )
 
 // MaxShellOutputBytes is the maximum shell output the tool will return inline.

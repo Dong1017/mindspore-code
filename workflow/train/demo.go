@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	itrain "github.com/mindspore-lab/mindspore-cli/internal/train"
+	itrain "gitcode.com/mindspore/mscli/internal/train"
 )
 
 // demoSpeed controls the delay multiplier for demo playback.

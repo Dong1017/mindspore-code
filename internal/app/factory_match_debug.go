@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mindspore-lab/mindspore-cli/internal/factory/pack"
+	"gitcode.com/mindspore/mscli/internal/factory/pack"
 )
 
 func runFactoryPackMatchDebug(args []string, opts factoryCommandOptions) (string, error) {

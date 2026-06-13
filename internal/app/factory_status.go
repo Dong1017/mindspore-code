@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mindspore-lab/mindspore-cli/internal/factory/card"
-	"github.com/mindspore-lab/mindspore-cli/internal/factory/pack"
+	"gitcode.com/mindspore/mscli/internal/factory/card"
+	"gitcode.com/mindspore/mscli/internal/factory/pack"
 )
 
 func renderFactoryStatus() string {

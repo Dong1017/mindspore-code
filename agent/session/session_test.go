@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	"gitcode.com/mindspore/mscli/integrations/llm"
+	"gitcode.com/mindspore/mscli/ui/model"
 )
 
 func TestCreateDefersDiskWritesUntilActivate(t *testing.T) {

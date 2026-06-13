@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
-	// uirender "github.com/mindspore-lab/mindspore-cli/ui/render"
+	"gitcode.com/mindspore/mscli/ui/model"
+	// uirender "gitcode.com/mindspore/mscli/ui/render"
 )
 
 // Style vars are populated by InitStyles() in styles.go.

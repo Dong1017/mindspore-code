@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
-	"github.com/mindspore-lab/mindspore-cli/ui/theme"
+	"gitcode.com/mindspore/mscli/ui/model"
+	"gitcode.com/mindspore/mscli/ui/theme"
 )
 
 var testANSIPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)

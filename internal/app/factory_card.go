@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/mindspore-lab/mindspore-cli/internal/factory/card"
-	factoryruntime "github.com/mindspore-lab/mindspore-cli/internal/factory/runtime"
+	"gitcode.com/mindspore/mscli/internal/factory/card"
+	factoryruntime "gitcode.com/mindspore/mscli/internal/factory/runtime"
 )
 
 func (a *Application) cmdFactoryCardCreate(args []string) {

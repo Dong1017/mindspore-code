@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mindspore-lab/mindspore-cli/internal/factory/compiler"
-	"github.com/mindspore-lab/mindspore-cli/internal/factory/pack"
+	"gitcode.com/mindspore/mscli/internal/factory/compiler"
+	"gitcode.com/mindspore/mscli/internal/factory/pack"
 	_ "modernc.org/sqlite"
 )
 

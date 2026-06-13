@@ -1,4 +1,4 @@
-module github.com/mindspore-lab/mindspore-cli
+module gitcode.com/mindspore/mscli
 
 go 1.24.2
 

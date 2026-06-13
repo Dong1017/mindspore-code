@@ -3,8 +3,8 @@ package target
 import (
 	"context"
 
-	"github.com/mindspore-lab/mindspore-cli/internal/train"
-	"github.com/mindspore-lab/mindspore-cli/runtime/probes"
+	"gitcode.com/mindspore/mscli/internal/train"
+	"gitcode.com/mindspore/mscli/runtime/probes"
 )
 
 // AlgoProbe checks remote model checkpoint and train script visibility.

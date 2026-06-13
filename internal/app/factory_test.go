@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mindspore-lab/mindspore-cli/internal/factory/compiler"
-	"github.com/mindspore-lab/mindspore-cli/internal/factory/pack"
-	factoryruntime "github.com/mindspore-lab/mindspore-cli/internal/factory/runtime"
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	"gitcode.com/mindspore/mscli/internal/factory/compiler"
+	"gitcode.com/mindspore/mscli/internal/factory/pack"
+	factoryruntime "gitcode.com/mindspore/mscli/internal/factory/runtime"
+	"gitcode.com/mindspore/mscli/ui/model"
 )
 
 func TestCmdFactoryHelpRoutes(t *testing.T) {

@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mindspore-lab/mindspore-cli/configs"
-	itrain "github.com/mindspore-lab/mindspore-cli/internal/train"
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	"gitcode.com/mindspore/mscli/configs"
+	itrain "gitcode.com/mindspore/mscli/internal/train"
+	"gitcode.com/mindspore/mscli/ui/model"
 )
 
 // TestTrainPhase1Flow exercises the Phase 1 train lane:

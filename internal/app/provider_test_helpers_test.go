@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
+	"gitcode.com/mindspore/mscli/integrations/llm"
 )
 
 type stubHTTPClient struct {

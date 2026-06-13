@@ -3,9 +3,9 @@ package app
 import (
 	"strings"
 
-	agentctx "github.com/mindspore-lab/mindspore-cli/agent/context"
-	"github.com/mindspore-lab/mindspore-cli/agent/session"
-	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
+	agentctx "gitcode.com/mindspore/mscli/agent/context"
+	"gitcode.com/mindspore/mscli/agent/session"
+	"gitcode.com/mindspore/mscli/integrations/llm"
 )
 
 func providerUsageSnapshotFromDetails(details agentctx.TokenUsageDetails) *session.UsageSnapshot {

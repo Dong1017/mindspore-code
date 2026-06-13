@@ -1,9 +1,9 @@
 package app
 
 import (
-	"github.com/mindspore-lab/mindspore-cli/agent/loop"
-	"github.com/mindspore-lab/mindspore-cli/integrations/skills"
-	"github.com/mindspore-lab/mindspore-cli/ui/slash"
+	"gitcode.com/mindspore/mscli/agent/loop"
+	"gitcode.com/mindspore/mscli/integrations/skills"
+	"gitcode.com/mindspore/mscli/ui/slash"
 )
 
 const bootReadyToken = "__boot_ready__"

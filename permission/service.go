@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mindspore-lab/mindspore-cli/configs"
+	"gitcode.com/mindspore/mscli/configs"
 )
 
 // PermissionService controls tool-call permissions.

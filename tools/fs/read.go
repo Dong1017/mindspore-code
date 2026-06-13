@@ -8,8 +8,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
-	"github.com/mindspore-lab/mindspore-cli/tools"
+	"gitcode.com/mindspore/mscli/integrations/llm"
+	"gitcode.com/mindspore/mscli/tools"
 )
 
 // MaxReadBytes is the maximum file content the read tool will return inline.

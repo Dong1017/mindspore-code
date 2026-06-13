@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mindspore-lab/mindspore-cli/permission"
+	"gitcode.com/mindspore/mscli/permission"
 )
 
 type scopedPermissionSettingsFile struct {

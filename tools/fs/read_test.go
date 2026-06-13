@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mindspore-lab/mindspore-cli/tools"
+	"gitcode.com/mindspore/mscli/tools"
 )
 
 func TestReadTool_Execute_LargeFileOverflow(t *testing.T) {

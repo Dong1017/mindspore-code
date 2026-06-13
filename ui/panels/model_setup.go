@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	"gitcode.com/mindspore/mscli/ui/model"
 )
 
 // Style vars are populated by InitStyles() in styles.go.
@@ -160,18 +160,23 @@ func maskToken(token string) string {
 
 func renderEnvInfo(popup *model.SetupPopup) string {
 	var lines []string
-	lines = append(lines, setupTitleStyle.Width(50).Render("Your Own Model"))
+	if popup.Configured {
+		lines = append(lines, setupLabelStyle.Render("Current model environment config:"))
+		lines = append(lines, "")
+		lines = append(lines, setupNormalStyle.Render("  MSCLI_PROVIDER="+popup.Provider))
+		lines = append(lines, setupNormalStyle.Render("  MSCLI_BASE_URL="+popup.BaseURL))
+		lines = append(lines, setupNormalStyle.Render("  MSCLI_MODEL="+popup.ModelName))
+		return setupBorderStyle.Render(strings.Join(lines, "\n"))
+	}
+
+	lines = append(lines, setupLabelStyle.Render("Model environment config was not found. Set it before starting mscli:"))
 	lines = append(lines, "")
-	lines = append(lines, setupLabelStyle.Render("Set environment variables:"))
-	lines = append(lines, "")
-	lines = append(lines, setupNormalStyle.Render("  export MSCLI_PROVIDER=openai-completion"))
-	lines = append(lines, setupNormalStyle.Render("  export MSCLI_BASE_URL=https://api.openai.com/v1"))
-	lines = append(lines, setupNormalStyle.Render("  export MSCLI_API_KEY=sk-..."))
-	lines = append(lines, setupNormalStyle.Render("  export MSCLI_MODEL=gpt-5.4"))
+	lines = append(lines, setupNormalStyle.Render("  export MSCLI_PROVIDER=anthropic"))
+	lines = append(lines, setupNormalStyle.Render("  export MSCLI_BASE_URL=https://api.deepseek.com/anthropic"))
+	lines = append(lines, setupNormalStyle.Render("  export MSCLI_API_KEY=<your DeepSeek API key>"))
+	lines = append(lines, setupNormalStyle.Render("  export MSCLI_MODEL=deepseek-v4-pro"))
 	lines = append(lines, "")
 	lines = append(lines, setupHintStyle.Render("Then restart mscli."))
-	lines = append(lines, "")
-	lines = append(lines, setupHintStyle.Render("esc back"))
 
 	return setupBorderStyle.Render(strings.Join(lines, "\n"))
 }

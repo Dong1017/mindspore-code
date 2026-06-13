@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mindspore-lab/mindspore-cli/configs"
-	"github.com/mindspore-lab/mindspore-cli/permission"
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	"gitcode.com/mindspore/mscli/configs"
+	"gitcode.com/mindspore/mscli/permission"
+	"gitcode.com/mindspore/mscli/ui/model"
 )
 
 func newPermAppForTest(t *testing.T) (*Application, *permission.DefaultPermissionService) {

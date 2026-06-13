@@ -11,8 +11,8 @@ import (
 	// Factory pack build/load uses modernc.org/sqlite so it works when CGO is disabled; the existing go-sqlite3 dependency requires CGO.
 	_ "modernc.org/sqlite"
 
-	"github.com/mindspore-lab/mindspore-cli/internal/factory/card"
-	"github.com/mindspore-lab/mindspore-cli/internal/factory/pack"
+	"gitcode.com/mindspore/mscli/internal/factory/card"
+	"gitcode.com/mindspore/mscli/internal/factory/pack"
 )
 
 func writeSQLitePack(outputPath string, cards []*card.KnownIssueCard, manifest map[string]string) error {

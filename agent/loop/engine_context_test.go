@@ -7,9 +7,9 @@ import (
 	"io"
 	"testing"
 
-	ctxmanager "github.com/mindspore-lab/mindspore-cli/agent/context"
-	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
-	"github.com/mindspore-lab/mindspore-cli/tools"
+	ctxmanager "gitcode.com/mindspore/mscli/agent/context"
+	"gitcode.com/mindspore/mscli/integrations/llm"
+	"gitcode.com/mindspore/mscli/tools"
 )
 
 type captureProvider struct {

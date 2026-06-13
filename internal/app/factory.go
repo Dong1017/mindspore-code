@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	"gitcode.com/mindspore/mscli/ui/model"
 )
 
 func runFactoryCLI(args []string, stdout io.Writer) error {

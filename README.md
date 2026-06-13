@@ -49,31 +49,24 @@ go build -o mscli ./cmd/mscli
 
 ## Quick Start
 
-### Bring your own API key
+### Use Kimi Code Plan
 
 ```bash
-export MSCLI_API_KEY=sk-...
-export MSCLI_MODEL=deepseek-chat
+export MSCLI_PROVIDER=anthropic
+export MSCLI_BASE_URL=https://api.kimi.com/coding/
+export MSCLI_API_KEY=<your Kimi Code API key>
+export MSCLI_MODEL=kimi-k2.6
+
 mscli
 ```
 
-### Use OpenAI / Anthropic / OpenRouter
+### Use DeepSeek V4 Pro
 
 ```bash
-# OpenAI
-export MSCLI_PROVIDER=openai-completion
-export MSCLI_API_KEY=sk-...
-export MSCLI_MODEL=gpt-4o
-
-# Anthropic
 export MSCLI_PROVIDER=anthropic
-export MSCLI_API_KEY=sk-ant-...
-export MSCLI_MODEL=claude-sonnet-4-20250514
-
-# OpenRouter
-export MSCLI_PROVIDER=openai-completion
-export MSCLI_API_KEY=sk-or-...
-export MSCLI_BASE_URL=https://openrouter.ai/api/v1
+export MSCLI_BASE_URL=https://api.deepseek.com/anthropic
+export MSCLI_API_KEY=<your DeepSeek API key>
+export MSCLI_MODEL=deepseek-v4-pro
 
 mscli
 ```

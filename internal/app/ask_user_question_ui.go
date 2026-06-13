@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	askuserquestion "github.com/mindspore-lab/mindspore-cli/tools/ask_user_question"
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	askuserquestion "gitcode.com/mindspore/mscli/tools/ask_user_question"
+	"gitcode.com/mindspore/mscli/ui/model"
 )
 
 const askUserQuestionInputPrefix = "\x00ask_user_question:"

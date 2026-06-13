@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mindspore-lab/mindspore-cli/ui/components"
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
-	"github.com/mindspore-lab/mindspore-cli/ui/panels"
-	"github.com/mindspore-lab/mindspore-cli/ui/theme"
+	"gitcode.com/mindspore/mscli/ui/components"
+	"gitcode.com/mindspore/mscli/ui/model"
+	"gitcode.com/mindspore/mscli/ui/panels"
+	"gitcode.com/mindspore/mscli/ui/theme"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

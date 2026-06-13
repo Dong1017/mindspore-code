@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	agentctx "github.com/mindspore-lab/mindspore-cli/agent/context"
-	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
-	"github.com/mindspore-lab/mindspore-cli/permission"
-	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	agentctx "gitcode.com/mindspore/mscli/agent/context"
+	"gitcode.com/mindspore/mscli/integrations/llm"
+	"gitcode.com/mindspore/mscli/permission"
+	"gitcode.com/mindspore/mscli/ui/model"
 )
 
 func (a *Application) handleCommand(input string) {

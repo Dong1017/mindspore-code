@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	ctxmanager "github.com/mindspore-lab/mindspore-cli/agent/context"
-	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
+	ctxmanager "gitcode.com/mindspore/mscli/agent/context"
+	"gitcode.com/mindspore/mscli/integrations/llm"
 )
 
 func TestAddToolResultWithFallbackOnOversizedContent(t *testing.T) {

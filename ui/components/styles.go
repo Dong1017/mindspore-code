@@ -2,7 +2,7 @@ package components
 
 import (
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mindspore-lab/mindspore-cli/ui/theme"
+	"gitcode.com/mindspore/mscli/ui/theme"
 )
 
 var tipPrefixStyle lipgloss.Style
