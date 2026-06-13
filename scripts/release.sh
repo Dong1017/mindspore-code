@@ -122,31 +122,50 @@ json_get() {
   ' "${file}" "${field}"
 }
 
-find_release_id_in_list() {
+release_upload_field() {
+  local file="$1"
+  local field="$2"
+  perl -MJSON::PP -e '
+    use strict;
+    use warnings;
+    my ($file, $field) = @ARGV;
+    local $/;
+    open my $fh, "<", $file or exit 1;
+    my $json = decode_json(<$fh>);
+    my @path = split /\./, $field;
+    my $value = $json;
+    for my $part (@path) {
+      exit 1 unless ref($value) eq "HASH";
+      $value = $value->{$part};
+    }
+    exit 1 unless defined $value && !ref($value);
+    print $value;
+  ' "${file}" "${field}"
+}
+
+release_upload_header_args() {
   local file="$1"
   perl -MJSON::PP -e '
     use strict;
     use warnings;
-    my ($file, $tag) = @ARGV;
+    my ($file) = @ARGV;
     local $/;
     open my $fh, "<", $file or exit 0;
     my $json = eval { decode_json(<$fh>) } or exit 0;
-    exit 0 unless ref($json) eq "ARRAY";
-    for my $release (@$json) {
-      next unless ref($release) eq "HASH";
-      if (($release->{tag_name} // q()) eq $tag) {
-        print($release->{id} // q());
-        last;
-      }
+    my $headers = $json->{headers};
+    exit 0 unless ref($headers) eq "HASH";
+    for my $key (sort keys %$headers) {
+      my $value = $headers->{$key};
+      next if ref($value);
+      print "-H\0${key}: ${value}\0";
     }
-  ' "${file}" "${VERSION}"
+  ' "${file}"
 }
 
 create_or_update_release() {
   local payload
   local http_code
   local error_code
-  local release_id
 
   payload="$(json_payload)"
 
@@ -157,27 +176,7 @@ create_or_update_release() {
   error_code="$(json_get "${WORK_DIR}/release.json" error_code)"
 
   if [ "${http_code}" = "200" ]; then
-    release_id="$(json_get "${WORK_DIR}/release.json" id)"
-    if [ -z "${release_id}" ]; then
-      curl -sS -o "${WORK_DIR}/releases-list.json" \
-        --connect-timeout "${CONNECT_TIMEOUT}" \
-        "${api}/releases?${auth_q}&per_page=100"
-      release_id="$(find_release_id_in_list "${WORK_DIR}/releases-list.json")"
-    fi
-    if [ -z "${release_id}" ]; then
-      echo "Error: release exists but GitCode did not return an id for ${VERSION}" >&2
-      cat "${WORK_DIR}/release.json" >&2 || true
-      exit 1
-    fi
-    echo "Updating GitCode release id=${release_id}..." >&2
-    curl -sS --fail \
-      -X PATCH \
-      --connect-timeout "${CONNECT_TIMEOUT}" \
-      "${api}/releases/${release_id}?${auth_q}" \
-      -H "Content-Type: application/json" \
-      -d "${payload}" \
-      > "${WORK_DIR}/result.json"
-    printf '%s\n' "${release_id}"
+    echo "GitCode release ${VERSION} already exists." >&2
     return 0
   fi
 
@@ -199,19 +198,16 @@ create_or_update_release() {
     -H "Content-Type: application/json" \
     -d "${payload}" \
     > "${WORK_DIR}/result.json"
-  release_id="$(json_get "${WORK_DIR}/result.json" id)"
-  if [ -z "${release_id}" ]; then
-    echo "Error: GitCode release created but no id was returned" >&2
-    cat "${WORK_DIR}/result.json" >&2 || true
-    exit 1
-  fi
-  printf '%s\n' "${release_id}"
 }
 
+
 upload_assets() {
-  local release_id="$1"
   local file
   local file_name
+  local upload_meta
+  local upload_url
+  local upload_status
+  local -a header_args
 
   if [ ! -d "${DIST_DIR}" ]; then
     echo "Error: asset directory not found: ${DIST_DIR}" >&2
@@ -225,16 +221,39 @@ upload_assets() {
     fi
     file_name="$(basename "${file}")"
     echo "Uploading ${file_name}..."
+
+    upload_meta="${WORK_DIR}/upload-${file_name}.json"
     curl -sS --fail \
-      -X POST \
       --connect-timeout "${CONNECT_TIMEOUT}" \
-      -H "Authorization: Bearer ${GITCODE_TOKEN}" \
-      -F "file=@${file}" \
-      "${api}/releases/${release_id}/attach_files" \
-      >/dev/null
+      "${api}/releases/${VERSION}/upload_url?${auth_q}&file_name=${file_name}" \
+      > "${upload_meta}"
+    upload_url="$(release_upload_field "${upload_meta}" upload_url || release_upload_field "${upload_meta}" url || release_upload_field "${upload_meta}" data.upload_url || release_upload_field "${upload_meta}" data.url)"
+    if [ -z "${upload_url}" ]; then
+      echo "Error: GitCode did not return an upload URL for ${file_name}" >&2
+      cat "${upload_meta}" >&2 || true
+      exit 1
+    fi
+
+    header_args=()
+    while IFS= read -r -d '' arg; do
+      header_args+=("${arg}")
+    done < <(release_upload_header_args "${upload_meta}")
+
+    upload_status="$(curl -sS -o "${WORK_DIR}/upload-${file_name}.out" -w "%{http_code}" \
+      -X PUT \
+      --connect-timeout "${CONNECT_TIMEOUT}" \
+      "${header_args[@]}" \
+      --data-binary "@${file}" \
+      "${upload_url}")"
+    if [ "${upload_status}" != "200" ] && [ "${upload_status}" != "201" ] && [ "${upload_status}" != "204" ]; then
+      echo "Error: upload ${file_name} failed with HTTP ${upload_status}" >&2
+      cat "${WORK_DIR}/upload-${file_name}.out" >&2 || true
+      exit 1
+    fi
   done
   shopt -u nullglob
 }
+
 
 cd "${REPO_ROOT}"
 
@@ -249,11 +268,11 @@ echo "==> Building release assets"
 
 echo ""
 echo "==> Creating or updating GitCode release"
-release_id="$(create_or_update_release)"
+create_or_update_release
 
 echo ""
 echo "==> Uploading assets"
-upload_assets "${release_id}"
+upload_assets
 
 echo ""
 echo "Done. GitCode release:"
