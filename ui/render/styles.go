@@ -16,10 +16,4 @@ func InitStyles() {
 	ValueStyle = lipgloss.NewStyle().Foreground(t.TextPrimary)
 	StatusOpenStyle = lipgloss.NewStyle().Foreground(t.Success)
 	StatusDoingStyle = lipgloss.NewStyle().Foreground(t.Warning)
-	ActivityStyle = lipgloss.NewStyle().Foreground(t.TextSecondary)
-
-	// issues.go
-	statusClosedStyle = lipgloss.NewStyle().Foreground(t.TextSecondary)
-	issueRowSelectedStyle = lipgloss.NewStyle().Background(t.SelectionBG)
-	issueHeaderStyle = lipgloss.NewStyle().Foreground(t.TextPrimary)
 }

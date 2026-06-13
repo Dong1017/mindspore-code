@@ -17,12 +17,6 @@
 .mscode/
 /.cache
 
-# Server runtime artifacts
-mscli-server
-mscode-server
-issues.db
-
-
 # Debug/log files
 *.log
 debug*.log

@@ -14,7 +14,6 @@ var (
 	ValueStyle       lipgloss.Style
 	StatusOpenStyle  lipgloss.Style
 	StatusDoingStyle lipgloss.Style
-	ActivityStyle    lipgloss.Style
 )
 
 func Box(lines []string) string {

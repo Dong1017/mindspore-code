@@ -154,7 +154,7 @@ func TestClearScreenMarksBannerPrinted(t *testing.T) {
 func TestStartupBannerSuppressedBlocksEarlyBannerBeforeSessionPicker(t *testing.T) {
 	app := NewReplay(nil, nil, "test", ".", "", "demo-model", 4096).WithStartupBannerSuppressed()
 
-	next, _ := app.handleEvent(model.Event{Type: model.IssueUserUpdate, Message: "alice"})
+	next, _ := app.handleEvent(model.Event{Type: model.SkillsNoteUpdate, Message: "alice"})
 	app = next.(App)
 
 	if app.bannerPrinted {

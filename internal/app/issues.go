@@ -258,12 +258,8 @@ type issueCommandTarget struct {
 func parseIssueCommandTarget(input string, command string) (issueCommandTarget, error) {
 	trimmed := strings.TrimSpace(input)
 	if trimmed == "" {
-		return issueCommandTarget{}, fmt.Errorf("Usage: %s <problem text|ISSUE-id>", command)
+		return issueCommandTarget{}, fmt.Errorf("Usage: %s <problem text>", command)
 	}
 
 	return issueCommandTarget{Prompt: trimmed}, nil
-}
-
-func looksLikeIssueKey(token string) bool {
-	return false
 }

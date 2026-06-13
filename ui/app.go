@@ -199,7 +199,6 @@ type App struct {
 	// Train mode
 	trainView               model.TrainViewState
 	trainFocus              model.TrainPanelID
-	issueView               model.IssueViewState
 	bootActive              bool
 	startupBannerSuppressed bool
 	bootHighlight           int
@@ -518,10 +517,6 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Transcript viewer intercepts all keys when active.
 	if a.transcriptView != nil {
 		return a.handleTranscriptViewKey(msg)
-	}
-
-	if a.issueView.Active() {
-		return a.handleIssueKey(msg)
 	}
 
 	if msg.String() == "ctrl+o" {
@@ -1226,12 +1221,6 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		} else {
 			a.state = a.state.WithMessage(model.Message{Kind: model.MsgUser, Content: ev.Message})
 		}
-	case model.IssueIndexOpen:
-		a.openIssueIndex(ev.IssueView)
-
-	case model.IssueDetailOpen:
-		a.openIssueDetail(ev.IssueView)
-
 	case model.TaskDone:
 		a.replayWait = nil
 		a.backgroundModelWork = false
@@ -1556,9 +1545,6 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		if a.setupPopup != nil {
 			a.setupPopup.TokenError = ev.Message
 		}
-
-	case model.IssueUserUpdate:
-		a.state = a.state.WithIssueUser(ev.Message)
 
 	case model.SkillsNoteUpdate:
 		a.state.SkillsNote = ev.Message
@@ -3463,9 +3449,6 @@ func (a App) chatLine() string {
 func (a App) View() string {
 	if a.bootActive {
 		return panels.RenderBootScreen(a.width, a.height, a.bootHighlight)
-	}
-	if a.issueView.Active() {
-		return a.renderIssueView()
 	}
 	if !a.modalAltScreen {
 		return a.renderMainView()

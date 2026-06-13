@@ -53,7 +53,6 @@ mindspore-cli/
   cmd/mscli/              process entrypoint
   internal/
     app/                   bootstrap, wiring, commands, startup, train flow
-    server/                HTTP API for bugs, issues, projects
     project/               roadmap and weekly helpers
     train/                 training types and target abstraction
     update/                binary update checker

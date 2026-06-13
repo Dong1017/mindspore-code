@@ -19,7 +19,6 @@ mindspore-cli/
   cmd/mscli/              process entrypoint
   internal/
     app/                   composition root, startup, commands, UI bridging
-    server/                HTTP API for bugs, issues, projects
     project/               roadmap and weekly status helpers
     train/                 train request and target types
     update/                binary update checker

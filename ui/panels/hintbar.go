@@ -38,10 +38,6 @@ func RenderHintBar(s model.State, width int) string {
 		hintDescStyle.Render(formatCtxHint(s.Model.CtxUsed, s.Model.CtxMax, s.Model.Debug)) + sep +
 		hintDescStyle.Render(shortenHintPath(s.WorkDir))
 
-	if s.IssueUser != "" {
-		left += sep + hintDescStyle.Render("user: "+s.IssueUser)
-	}
-
 	right := ""
 	if s.SkillsNote != "" {
 		noteStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true)
@@ -124,49 +120,6 @@ func RenderTrainHUDHintBar(width int) string {
 
 	indicator := hintDescStyle.Render("  [train hud]")
 	return divider + "\n" + line + indicator
-}
-
-func RenderIssueHintBar(width int, mode model.IssueMode) string {
-	divider := hintDividerStyle.Render(repeatChar("─", width))
-
-	issueHints := []hint{{"esc", "back"}, {"ctrl+c", "quit"}}
-	switch mode {
-	case model.IssueModeIndex:
-		issueHints = []hint{
-			{"↑/↓", "move"},
-			{"j/k", "move"},
-			{"enter", "open"},
-			{"esc", "back"},
-			{"ctrl+c", "quit"},
-		}
-	case model.IssueModeDetail:
-		issueHints = []hint{
-			{"enter", "submit"},
-			{"d", "diagnose"},
-			{"f", "fix"},
-			{"l", "lead"},
-			{"s", "status"},
-			{"esc", "back"},
-			{"ctrl+c", "quit"},
-			{"ctrl+j or \\+enter", "newline"},
-		}
-	}
-
-	parts := make([]string, len(issueHints))
-	for i, h := range issueHints {
-		parts[i] = hintKeyStyle.Render(h.key) + " " + hintDescStyle.Render(h.desc)
-	}
-
-	sep := hintSepStyle.Render(" • ")
-	line := hintTextStyle.Render("")
-	for i, p := range parts {
-		if i > 0 {
-			line += sep
-		}
-		line += p
-	}
-
-	return divider + "\n" + line
 }
 
 // RenderTrainHintBar renders the hint bar for the train workspace with focus context.

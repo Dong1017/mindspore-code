@@ -87,8 +87,6 @@ func (a *Application) handleCommand(input string) {
 		a.cmdPreflight(expanded)
 	case "/factory":
 		a.cmdFactory(cmd.Remainder)
-	case "/now":
-		a.EventCh <- model.Event{Type: model.AgentReply, Message: "The server-backed issue dashboard has been removed."}
 	case "/skill":
 		if err := a.handleRawSkillCommand(cmd.Remainder); err != nil {
 			a.emitInputExpansionError(err)

@@ -3,8 +3,6 @@ package model
 import (
 	"fmt"
 	"time"
-
-	issuepkg "github.com/mindspore-lab/mindspore-cli/internal/issues"
 )
 
 // TaskInfo represents a task in the task pool.
@@ -115,7 +113,6 @@ const (
 	RewindPickerOpen      EventType = "RewindPickerOpen"
 	ModelSetupTokenError  EventType = "ModelSetupTokenError"
 	MouseModeToggle       EventType = "MouseModeToggle"
-	IssueUserUpdate       EventType = "IssueUserUpdate"
 	SkillsNoteUpdate      EventType = "SkillsNoteUpdate"
 	TaskDone              EventType = "TaskDone"
 	Done                  EventType = "Done"
@@ -137,7 +134,6 @@ type Event struct {
 	CtxMax          int
 	TokensUsed      int
 	Train           *TrainEventData // non-nil for train events only
-	Project         *ProjectStatusView
 	Permission      *PermissionPromptData
 	AskUserQuestion *AskUserQuestionPromptData
 	Permissions     *PermissionsViewData
@@ -145,8 +141,6 @@ type Event struct {
 	SetupPopup      *SetupPopup     // non-nil for model setup popup events
 	SessionPicker   *SessionPicker
 	RewindPicker    *RewindPicker
-	IssueView       *IssueEventData // non-nil for issue view events only
-	Issue           *issuepkg.Issue // reserved for lightweight issue payloads
 	InputPrefill    string
 }
 
@@ -224,7 +218,6 @@ type State struct {
 	WaitStartedAt    time.Time
 	WaitElapsed      time.Duration
 	MouseEnabled     bool   // whether mouse mode is enabled (for scrolling)
-	IssueUser        string // logged-in bug server user
 	SkillsNote       string // skills repo status for hint bar
 }
 
@@ -268,7 +261,6 @@ func (s State) WithTask(t TaskInfo) State {
 		WaitKind:         s.WaitKind,
 		WaitStartedAt:    s.WaitStartedAt,
 		MouseEnabled:     s.MouseEnabled,
-		IssueUser:        s.IssueUser,
 		SkillsNote:       s.SkillsNote,
 	}
 }
@@ -289,7 +281,6 @@ func (s State) WithMessage(m Message) State {
 		WaitKind:         s.WaitKind,
 		WaitStartedAt:    s.WaitStartedAt,
 		MouseEnabled:     s.MouseEnabled,
-		IssueUser:        s.IssueUser,
 		SkillsNote:       s.SkillsNote,
 	}
 }
@@ -310,7 +301,6 @@ func (s State) WithModel(m ModelInfo) State {
 		WaitKind:         s.WaitKind,
 		WaitStartedAt:    s.WaitStartedAt,
 		MouseEnabled:     s.MouseEnabled,
-		IssueUser:        s.IssueUser,
 		SkillsNote:       s.SkillsNote,
 	}
 }
@@ -331,7 +321,6 @@ func (s State) WithStats(stats TaskStats) State {
 		WaitKind:         s.WaitKind,
 		WaitStartedAt:    s.WaitStartedAt,
 		MouseEnabled:     s.MouseEnabled,
-		IssueUser:        s.IssueUser,
 		SkillsNote:       s.SkillsNote,
 	}
 }
@@ -352,7 +341,6 @@ func (s State) WithThinking(thinking bool) State {
 		WaitKind:         s.WaitKind,
 		WaitStartedAt:    s.WaitStartedAt,
 		MouseEnabled:     s.MouseEnabled,
-		IssueUser:        s.IssueUser,
 		SkillsNote:       s.SkillsNote,
 	}
 }
@@ -373,7 +361,6 @@ func (s State) WithWait(kind WaitKind, startedAt time.Time) State {
 		WaitKind:         kind,
 		WaitStartedAt:    startedAt,
 		MouseEnabled:     s.MouseEnabled,
-		IssueUser:        s.IssueUser,
 		SkillsNote:       s.SkillsNote,
 	}
 }
@@ -399,28 +386,6 @@ func (s State) ResetStats() State {
 		WaitKind:         s.WaitKind,
 		WaitStartedAt:    s.WaitStartedAt,
 		MouseEnabled:     s.MouseEnabled,
-		IssueUser:        s.IssueUser,
-		SkillsNote:       s.SkillsNote,
-	}
-}
-
-// WithIssueUser returns a new State with updated issue user.
-func (s State) WithIssueUser(user string) State {
-	return State{
-		Version:          s.Version,
-		Tasks:            s.Tasks,
-		ActiveTask:       s.ActiveTask,
-		Model:            s.Model,
-		Messages:         s.Messages,
-		ShowTaskSelector: s.ShowTaskSelector,
-		WorkDir:          s.WorkDir,
-		RepoURL:          s.RepoURL,
-		Stats:            s.Stats,
-		IsThinking:       s.IsThinking,
-		WaitKind:         s.WaitKind,
-		WaitStartedAt:    s.WaitStartedAt,
-		MouseEnabled:     s.MouseEnabled,
-		IssueUser:        user,
 		SkillsNote:       s.SkillsNote,
 	}
 }
@@ -441,7 +406,6 @@ func (s State) WithMouseEnabled(enabled bool) State {
 		WaitKind:         s.WaitKind,
 		WaitStartedAt:    s.WaitStartedAt,
 		MouseEnabled:     enabled,
-		IssueUser:        s.IssueUser,
 		SkillsNote:       s.SkillsNote,
 	}
 }
